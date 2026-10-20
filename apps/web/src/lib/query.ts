@@ -31,3 +31,16 @@ export const qTurns = (db: Db, callId: string) =>
 
 export const qApiKeys = (db: Db, userId: string) =>
   db.query('api_key').where({ owner: userId }).orderBy('created_at', 'desc').build();
+
+/** Material that is not ready yet, across all courses: the sidebar's "Needs attention". */
+export const qAttention = (db: Db, userId: string) =>
+  db
+    .query('material')
+    .where({ owner: userId, status: { _op: '!=', _val: 'ready' } })
+    .orderBy('updated_at', 'desc')
+    .limit(10)
+    .build();
+
+/** The latest calls across all courses, with their course and lecture. */
+export const qRecentCalls = (db: Db, userId: string, limit = 8) =>
+  db.query('call').where({ owner: userId }).related('course').related('material').orderBy('started_at', 'desc').limit(limit).build();

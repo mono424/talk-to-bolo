@@ -1,179 +1,179 @@
 @import 'tailwindcss';
 
 /*
- * Studycall's look is a ruled exam notebook: blue-lined paper, royal-blue ink,
- * the red margin line, and a yellow highlighter that only ever means "the call
- * is live". Every color is a token so the night palette can swap them.
+ * Quiet desktop-app chrome: a white window on a light gray canvas, gray
+ * secondary text, soft cards, pill buttons. Color is reserved for state:
+ * red for what needs attention, blue for what is running, green for ready.
+ * Every color is a token so the dark palette can swap them.
  */
 :root {
-  --paper: #f6f8fc;
-  --sheet: #ffffff;
-  --rule: #c9d6ee;
-  --rule-soft: #e3eaf6;
-  --ink: #1f3a93;
-  --ink-hover: #182e78;
-  --graphite: #262a33;
-  --pencil: #5f6676;
-  --margin: #d9474d;
-  --highlighter: #ffe45c;
-  --highlighter-ink: #3a3200;
-  --ok: #2f7d4f;
+  --canvas: #f1f1f0;
+  --surface: #ffffff;
+  --soft: #f4f4f3;
+  --hover: #efefee;
+  --line: #ebebea;
+  --line-strong: #dededc;
+  --fg: #1c1c1e;
+  --muted: #8a8a8e;
+  --faint: #b4b4b8;
+  --solid: #2b2b2d;
+  --solid-hover: #3a3a3d;
+  --solid-fg: #ffffff;
+  --red: #e5484d;
+  --red-soft: #fdecec;
+  --blue: #1d9bf0;
+  --green: #2f9e6a;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 10px 28px -12px rgb(0 0 0 / 0.12);
+  --shadow-frame: 0 1px 3px rgb(0 0 0 / 0.05), 0 24px 60px -24px rgb(0 0 0 / 0.18);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #12162a;
-    --sheet: #191e35;
-    --rule: #2f3858;
-    --rule-soft: #232a45;
-    --ink: #9db4ff;
-    --ink-hover: #bccbff;
-    --graphite: #e6e9f2;
-    --pencil: #9aa3b8;
-    --margin: #ff7a7e;
-    --highlighter: #ffe45c;
-    --highlighter-ink: #3a3200;
-    --ok: #7fd3a0;
+    --canvas: #0d0d0e;
+    --surface: #1a1a1c;
+    --soft: #242427;
+    --hover: #2a2a2d;
+    --line: #2b2b2e;
+    --line-strong: #38383c;
+    --fg: #f2f2f3;
+    --muted: #9a9aa0;
+    --faint: #66666b;
+    --solid: #f2f2f3;
+    --solid-hover: #ffffff;
+    --solid-fg: #1a1a1c;
+    --red: #ff6369;
+    --red-soft: #3a1d1f;
+    --blue: #4cb3ff;
+    --green: #4cc38a;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 10px 28px -12px rgb(0 0 0 / 0.6);
+    --shadow-frame: 0 1px 3px rgb(0 0 0 / 0.5), 0 24px 60px -24px rgb(0 0 0 / 0.8);
     color-scheme: dark;
   }
 }
 
 @theme inline {
-  --color-paper: var(--paper);
-  --color-sheet: var(--sheet);
-  --color-rule: var(--rule);
-  --color-rule-soft: var(--rule-soft);
-  --color-ink: var(--ink);
-  --color-ink-hover: var(--ink-hover);
-  --color-graphite: var(--graphite);
-  --color-pencil: var(--pencil);
-  --color-margin: var(--margin);
-  --color-highlighter: var(--highlighter);
-  --color-highlighter-ink: var(--highlighter-ink);
-  --color-ok: var(--ok);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-soft: var(--soft);
+  --color-hover: var(--hover);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-solid: var(--solid);
+  --color-solid-hover: var(--solid-hover);
+  --color-solid-fg: var(--solid-fg);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-blue: var(--blue);
+  --color-green: var(--green);
 
-  --font-sans: 'Atkinson Hyperlegible Next', ui-sans-serif, system-ui, sans-serif;
-  --font-serif: 'Literata', ui-serif, Georgia, serif;
+  --shadow-card: var(--shadow-card);
+  --shadow-frame: var(--shadow-frame);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
 html,
 body {
-  background: var(--paper);
-  color: var(--graphite);
+  background: var(--canvas);
+  color: var(--fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.005em;
 }
 
 :focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--blue);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 10px;
 }
 
-/* Ruled paper: the transcript and the empty states sit on it. */
-.ruled {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent calc(2rem - 1px),
-    var(--rule-soft) calc(2rem - 1px),
-    var(--rule-soft) 2rem
-  );
-  background-attachment: local;
+/* Thin, quiet scrollbars inside the window. */
+.scroll-quiet {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
-/* The red margin line down the left of a reading page. */
-.margin-line {
-  box-shadow: inset 2px 0 0 0 var(--margin);
-}
-
-/* Rendered lecture markdown. Literata, 68ch, generous leading. */
+/* Rendered lecture markdown. */
 .lecture {
-  font-family: var(--font-serif);
-  font-size: 1.0625rem;
-  line-height: 1.75;
-  max-width: 68ch;
+  font-size: 1rem;
+  line-height: 1.7;
+  max-width: 70ch;
 }
 .lecture h1,
 .lecture h2,
 .lecture h3,
 .lecture h4 {
-  font-family: var(--font-sans);
-  font-weight: 700;
-  line-height: 1.25;
-  margin: 2em 0 0.6em;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  margin: 1.9em 0 0.6em;
 }
-.lecture h1 { font-size: 1.75rem; }
-.lecture h2 { font-size: 1.375rem; }
-.lecture h3 { font-size: 1.125rem; }
+.lecture h1 { font-size: 1.6rem; }
+.lecture h2 { font-size: 1.3rem; }
+.lecture h3 { font-size: 1.08rem; }
+.lecture > :first-child { margin-top: 0; }
 .lecture p,
 .lecture ul,
 .lecture ol,
 .lecture pre,
 .lecture table,
 .lecture blockquote,
-.lecture figure { margin: 0 0 1.1em; }
-.lecture ul { list-style: disc; padding-left: 1.4em; }
-.lecture ol { list-style: decimal; padding-left: 1.4em; }
+.lecture figure { margin: 0 0 1em; }
+.lecture ul { list-style: disc; padding-left: 1.3em; }
+.lecture ol { list-style: decimal; padding-left: 1.3em; }
 .lecture li { margin: 0.25em 0; }
-.lecture a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.lecture li::marker { color: var(--muted); }
+.lecture a { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
 .lecture code {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.875em;
-  background: var(--rule-soft);
+  background: var(--soft);
   padding: 0.1em 0.35em;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 .lecture pre {
-  background: var(--rule-soft);
+  background: var(--soft);
   padding: 1em;
-  border-radius: 8px;
+  border-radius: 14px;
   overflow-x: auto;
 }
 .lecture pre code { background: none; padding: 0; }
 .lecture blockquote {
-  border-left: 3px solid var(--rule);
+  border-left: 3px solid var(--line-strong);
   padding-left: 1em;
-  color: var(--pencil);
+  color: var(--muted);
 }
 .lecture img {
   max-width: 100%;
   height: auto;
-  border-radius: 6px;
-  border: 1px solid var(--rule-soft);
+  border-radius: 14px;
+  border: 1px solid var(--line);
   background: #fff;
 }
-.lecture table { border-collapse: collapse; font-family: var(--font-sans); font-size: 0.9375rem; }
+.lecture table { border-collapse: collapse; font-size: 0.9375rem; }
 .lecture th,
-.lecture td { border: 1px solid var(--rule); padding: 0.4em 0.7em; text-align: left; }
-.lecture hr { border: 0; border-top: 1px solid var(--rule); margin: 2em 0; }
+.lecture td { border: 1px solid var(--line); padding: 0.45em 0.75em; text-align: left; }
+.lecture th { background: var(--soft); font-weight: 600; }
+.lecture hr { border: 0; border-top: 1px solid var(--line); margin: 2em 0; }
 
-/*
- * The line the tutor is speaking right now gets highlighted, drawn left to
- * right like a marker stroke. The app's one piece of ambient motion.
- */
-.highlight-sweep {
-  color: var(--highlighter-ink);
-  background-color: transparent;
-  background-image: linear-gradient(transparent 12%, var(--highlighter) 12%, var(--highlighter) 92%, transparent 92%);
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-  padding: 0 0.15em;
-  animation: highlighter-sweep 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+/* A running state's dot breathes; nothing else moves on its own. */
+@keyframes breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
 }
-@keyframes highlighter-sweep {
-  from { background-size: 0% 100%; }
-  to { background-size: 100% 100%; }
-}
+.dot-breathe { animation: breathe 1.6s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }

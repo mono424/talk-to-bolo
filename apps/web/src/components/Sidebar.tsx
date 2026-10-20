@@ -1,113 +1,164 @@
-import { A, useNavigate } from '@solidjs/router';
-import { createSignal, For, Show } from 'solid-js';
+import { A, useLocation, useNavigate } from '@solidjs/router';
+import { createMemo, createSignal, For, Show } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { KeyRound, LogOut, Plus } from 'lucide-solid';
+import { ChevronsDown, ChevronsUp, Folder, House, Plus } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { idKey, newId } from '../lib/ids';
+import { modeLabel } from '../lib/modes';
 import { COURSE_COLORS, courseColor, type CourseColor } from '../lib/palette';
-import { qCourses } from '../lib/query';
-import { inputClass } from './ui';
+import { qAttention, qCourses, qRecentCalls } from '../lib/query';
+import { Dot, materialTone, SectionLabel } from './ui';
 
-export function Sidebar() {
+const navClass = (active: boolean) =>
+  `flex h-11 items-center gap-3 rounded-2xl px-3 text-[15px] transition-colors ${active ? 'bg-soft text-fg' : 'text-fg hover:bg-soft'}`;
+
+/** Text for a material that is not ready, as the sidebar lists it. */
+export const attentionText = (m: { title: string; status: string }) =>
+  m.status === 'failed' ? `Fix ${m.title}` : m.status === 'processing' ? `Processing ${m.title}` : `Waiting: ${m.title}`;
+
+export function Sidebar(props: { open: boolean; onClose: () => void }) {
   const db = useDb<typeof schema>();
   const auth = useAuth();
   const navigate = useNavigate();
-  const courses = useQuery(() => {
-    const uid = auth.userId();
-    return uid ? qCourses(db, uid) : null;
-  });
+  const location = useLocation();
+
+  const uid = () => auth.userId();
+  const courses = useQuery(() => (uid() ? qCourses(db, uid()!) : null));
+  const attention = useQuery(() => (uid() ? qAttention(db, uid()!) : null));
+  const recents = useQuery(() => (uid() ? qRecentCalls(db, uid()!) : null));
+
+  const [showAll, setShowAll] = createSignal(false);
   const [adding, setAdding] = createSignal(false);
   const [title, setTitle] = createSignal('');
 
+  // Failed first, then what is still running.
+  const attentionItems = createMemo(() =>
+    [...(attention.data() ?? [])].sort((a, b) => Number(b.status === 'failed') - Number(a.status === 'failed')),
+  );
+  const visibleAttention = () => (showAll() ? attentionItems() : attentionItems().slice(0, 3));
+
   const create = async (e: SubmitEvent) => {
     e.preventDefault();
-    const uid = auth.userId();
     const t = title().trim();
-    if (!uid || !t) return;
+    if (!uid() || !t) return;
     const colors = Object.keys(COURSE_COLORS) as CourseColor[];
     const id = newId('course');
-    await db.create(id, {
-      owner: uid,
-      title: t,
-      color: colors[(courses.data()?.length ?? 0) % colors.length],
-      language: 'en',
-    });
+    await db.create(id, { owner: uid()!, title: t, color: colors[(courses.data()?.length ?? 0) % colors.length], language: 'en' });
     setTitle('');
     setAdding(false);
     navigate(`/courses/${idKey(id)}`);
   };
 
   return (
-    <aside class="border-b md:border-b-0 md:border-r border-rule bg-sheet/60 md:min-h-screen md:sticky md:top-0 md:h-screen flex flex-col">
-      <div class="px-5 pt-5 pb-3 flex items-center justify-between">
-        <A href="/" class="font-bold text-ink text-lg">
-          Studycall
-        </A>
-      </div>
-
-      <nav class="flex-1 overflow-y-auto px-3 pb-3" aria-label="Courses">
-        <ul class="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible">
-          <For each={courses.data() ?? []}>
-            {(course) => (
-              <li class="shrink-0">
-                <A
-                  href={`/courses/${idKey(course.id)}`}
-                  class="group flex items-center gap-3 rounded-r-lg pl-3 pr-3 py-2 text-[15px] hover:bg-rule-soft"
-                  activeClass="bg-rule-soft font-bold"
-                  end={false}
-                  style={{ 'box-shadow': `inset 4px 0 0 0 ${courseColor(course.color)}` }}
-                >
-                  <span class="truncate">{course.title}</span>
-                </A>
-              </li>
-            )}
-          </For>
-          <li class="shrink-0">
-            <Show
-              when={adding()}
-              fallback={
-                <button
-                  type="button"
-                  onClick={() => setAdding(true)}
-                  class="flex items-center gap-2 rounded-lg px-3 py-2 text-[15px] text-pencil hover:text-graphite hover:bg-rule-soft w-full"
-                >
-                  <Plus size={16} /> New course
-                </button>
-              }
-            >
-              <form onSubmit={create} class="px-1 py-1">
-                <input
-                  class={inputClass}
-                  placeholder="Course name"
-                  value={title()}
-                  onInput={(e) => setTitle(e.currentTarget.value)}
-                  onKeyDown={(e) => e.key === 'Escape' && setAdding(false)}
-                  onBlur={() => !title().trim() && setAdding(false)}
-                  aria-label="Course name"
-                  ref={(el) => queueMicrotask(() => el.focus())}
-                />
-              </form>
-            </Show>
-          </li>
-        </ul>
-      </nav>
-
-      <div class="border-t border-rule px-3 py-3 flex md:flex-col gap-1 text-sm">
-        <A href="/settings" class="flex items-center gap-2 rounded-lg px-3 py-2 text-pencil hover:text-graphite hover:bg-rule-soft" activeClass="text-graphite bg-rule-soft">
-          <KeyRound size={16} /> AI access
-        </A>
-        <button
-          type="button"
-          onClick={() => auth.signOut()}
-          class="flex items-center gap-2 rounded-lg px-3 py-2 text-pencil hover:text-graphite hover:bg-rule-soft text-left"
-        >
-          <LogOut size={16} /> Sign out
-          <Show when={auth.user()?.name}>
-            <span class="ml-auto truncate text-xs">{auth.user()?.name}</span>
+    <>
+      <Show when={props.open}>
+        <div class="absolute inset-0 z-20 bg-black/20 md:hidden" onClick={props.onClose} />
+      </Show>
+      <aside
+        class={`scroll-quiet absolute inset-y-0 left-0 z-30 w-[288px] shrink-0 overflow-y-auto border-r border-line bg-surface px-3 py-4 transition-transform md:static md:translate-x-0 ${
+          props.open ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        aria-label="Navigation"
+      >
+        <nav class="space-y-0.5">
+          <A href="/" class={navClass(location.pathname === '/')} end>
+            <House size={19} stroke-width={1.6} class="text-muted" /> Home
+          </A>
+          <Show
+            when={adding()}
+            fallback={
+              <button type="button" class={`${navClass(false)} w-full`} onClick={() => setAdding(true)}>
+                <Plus size={19} stroke-width={1.6} class="text-muted" /> New course
+              </button>
+            }
+          >
+            <form onSubmit={create} class="flex h-11 items-center gap-3 rounded-2xl bg-soft px-3">
+              <Plus size={19} stroke-width={1.6} class="shrink-0 text-muted" />
+              <input
+                class="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-faint"
+                placeholder="Course name"
+                value={title()}
+                onInput={(e) => setTitle(e.currentTarget.value)}
+                onKeyDown={(e) => e.key === 'Escape' && setAdding(false)}
+                onBlur={() => !title().trim() && setAdding(false)}
+                aria-label="Course name"
+                ref={(el) => queueMicrotask(() => el.focus())}
+              />
+            </form>
           </Show>
-        </button>
-      </div>
-    </aside>
+        </nav>
+
+        <Show when={attentionItems().length > 0}>
+          <div class="mt-5 overflow-hidden rounded-[18px] border border-line bg-surface shadow-card">
+            <div class="p-1.5">
+              <SectionLabel class="pt-2">Needs attention</SectionLabel>
+              <ul>
+                <For each={visibleAttention()}>
+                  {(m) => (
+                    <li>
+                      <A
+                        href={`/courses/${idKey(m.course)}/materials/${idKey(m.id)}`}
+                        class="flex h-11 items-center gap-3 rounded-2xl px-3 text-[15px] hover:bg-soft"
+                        title={m.status === 'failed' ? (m.error ?? undefined) : (m.status_detail ?? undefined)}
+                      >
+                        <Dot tone={materialTone(m.status)} class="ml-1 mr-1" />
+                        <span class="truncate">{attentionText(m)}</span>
+                      </A>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </div>
+            <Show when={attentionItems().length > 3}>
+              <button
+                type="button"
+                onClick={() => setShowAll(!showAll())}
+                class="flex h-11 w-full items-center gap-3 border-t border-line bg-soft/60 px-4 text-[15px] text-muted hover:text-fg"
+              >
+                {showAll() ? <ChevronsUp size={17} stroke-width={1.75} /> : <ChevronsDown size={17} stroke-width={1.75} />}
+                {showAll() ? 'Show less' : 'Show more'}
+              </button>
+            </Show>
+          </div>
+        </Show>
+
+        <section class="mt-7" aria-label="Courses">
+          <SectionLabel>Courses</SectionLabel>
+          <ul class="space-y-0.5">
+            <For each={courses.data() ?? []} fallback={<li class="px-3 py-2 text-[14px] text-faint">No courses yet</li>}>
+              {(c) => (
+                <li>
+                  <A href={`/courses/${idKey(c.id)}`} class={navClass(location.pathname.startsWith(`/courses/${idKey(c.id)}`))}>
+                    <Folder size={19} stroke-width={1.6} style={{ color: courseColor(c.color) }} fill={courseColor(c.color)} fill-opacity="0.18" />
+                    <span class="truncate">{c.title}</span>
+                  </A>
+                </li>
+              )}
+            </For>
+          </ul>
+        </section>
+
+        <Show when={(recents.data() ?? []).length > 0}>
+          <section class="mt-7" aria-label="Recent calls">
+            <SectionLabel>Recents</SectionLabel>
+            <ul class="space-y-0.5">
+              <For each={recents.data() ?? []}>
+                {(call) => (
+                  <li>
+                    <A href={`/calls/${idKey(call.id)}`} class={navClass(location.pathname === `/calls/${idKey(call.id)}`)}>
+                      <Dot tone={call.status === 'ended' ? 'idle' : 'running'} class="ml-1 mr-1" />
+                      <span class="truncate">
+                        {modeLabel(call.mode)}: {call.material?.title ?? call.course?.title ?? 'Course'}
+                      </span>
+                    </A>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </section>
+        </Show>
+      </aside>
+    </>
   );
 }

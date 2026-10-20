@@ -1,56 +1,122 @@
 import type { JSX } from 'solid-js';
-import { splitProps } from 'solid-js';
+import { Show, splitProps } from 'solid-js';
+
+// ── Buttons ───────────────────────────────────────────────────────────────
 
 type ButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'quiet' | 'danger' | 'call';
+  /** solid: the one main action. soft: secondary. ghost: dismiss-level. */
+  variant?: 'solid' | 'soft' | 'ghost' | 'danger';
   size?: 'sm' | 'md' | 'lg';
 };
 
 const VARIANTS = {
-  primary: 'bg-ink text-sheet hover:bg-ink-hover disabled:opacity-50',
-  quiet: 'text-graphite hover:bg-rule-soft border border-rule disabled:opacity-50',
-  danger: 'bg-margin text-white hover:brightness-95 disabled:opacity-50',
-  call: 'bg-highlighter text-highlighter-ink hover:brightness-95 disabled:opacity-60 font-bold',
+  solid: 'bg-solid text-solid-fg hover:bg-solid-hover',
+  soft: 'bg-soft text-fg hover:bg-hover',
+  ghost: 'text-fg hover:bg-soft',
+  danger: 'bg-red text-white hover:brightness-95',
 } as const;
 
 const SIZES = {
-  sm: 'text-sm px-3 py-1.5 rounded-md gap-1.5',
-  md: 'text-[15px] px-4 py-2 rounded-lg gap-2',
-  lg: 'text-base px-6 py-3 rounded-full gap-2.5',
+  sm: 'h-8 px-3.5 text-[13px] gap-1.5',
+  md: 'h-10 px-4.5 text-[15px] gap-2',
+  lg: 'h-12 px-6 text-base gap-2.5',
 } as const;
+
+/** Pill styling, for buttons and for links that act as buttons. */
+export const buttonClass = (variant: keyof typeof VARIANTS = 'solid', size: keyof typeof SIZES = 'md') =>
+  `inline-flex items-center justify-center whitespace-nowrap rounded-full font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none ${VARIANTS[variant]} ${SIZES[size]}`;
 
 export function Button(props: ButtonProps) {
   const [local, rest] = splitProps(props, ['variant', 'size', 'class', 'type']);
+  return <button type={local.type ?? 'button'} class={`${buttonClass(local.variant, local.size)} ${local.class ?? ''}`} {...rest} />;
+}
+
+/** Round icon-only button. */
+export function IconButton(props: JSX.ButtonHTMLAttributes<HTMLButtonElement> & { label: string; size?: 'sm' | 'md' | 'lg' }) {
+  const [local, rest] = splitProps(props, ['label', 'size', 'class', 'type']);
+  const size = { sm: 'h-8 w-8', md: 'h-10 w-10', lg: 'h-14 w-14' }[local.size ?? 'md'];
   return (
     <button
       type={local.type ?? 'button'}
-      class={`inline-flex items-center justify-center whitespace-nowrap font-medium transition-colors disabled:cursor-not-allowed ${VARIANTS[local.variant ?? 'primary']} ${SIZES[local.size ?? 'md']} ${local.class ?? ''}`}
+      aria-label={local.label}
+      title={local.label}
+      class={`inline-flex items-center justify-center rounded-full text-muted hover:text-fg hover:bg-soft transition-colors ${size} ${local.class ?? ''}`}
       {...rest}
     />
   );
 }
 
-export function Field(props: { label: string; hint?: string; children: JSX.Element; class?: string }) {
+// ── Surfaces ──────────────────────────────────────────────────────────────
+
+export function Card(props: { children: JSX.Element; class?: string; as?: 'section' | 'div' } & JSX.HTMLAttributes<HTMLElement>) {
+  const [local, rest] = splitProps(props, ['children', 'class', 'as']);
   return (
-    <label class={`block ${props.class ?? ''}`}>
-      <span class="block text-sm font-medium mb-1.5">{props.label}</span>
-      {props.children}
-      {props.hint && <span class="block text-xs text-pencil mt-1">{props.hint}</span>}
-    </label>
+    <section class={`rounded-[20px] border border-line bg-surface shadow-card ${local.class ?? ''}`} {...rest}>
+      {local.children}
+    </section>
   );
 }
 
-export const inputClass =
-  'w-full rounded-lg border border-rule bg-sheet px-3 py-2 text-[15px] placeholder:text-pencil/70 focus:border-ink focus:outline-none';
+/**
+ * A card that asks for a decision: icon, title, state dot, one or two lines of
+ * description, then actions. The sidebar's "Needs attention" items open these.
+ */
+export function NoticeCard(props: {
+  icon: JSX.Element;
+  title: string;
+  description?: string | null;
+  tone?: Tone;
+  children?: JSX.Element;
+  class?: string;
+}) {
+  return (
+    <Card class={`p-5 ${props.class ?? ''}`}>
+      <div class="flex items-start gap-3">
+        <span class="mt-0.5 shrink-0 text-muted">{props.icon}</span>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-3">
+            <h3 class="line-clamp-2 flex-1 text-[16px] font-semibold">{props.title}</h3>
+            <Show when={props.tone}>
+              <Dot tone={props.tone!} />
+            </Show>
+          </div>
+          <Show when={props.description}>
+            <p class="mt-1.5 text-[15px] leading-relaxed text-muted line-clamp-2">{props.description}</p>
+          </Show>
+          <Show when={props.children}>
+            <div class="mt-4 flex flex-wrap items-center gap-2">{props.children}</div>
+          </Show>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
-export function StatusBadge(props: { status: string; detail?: string | null }) {
-  const tone = () =>
-    ({
-      ready: 'text-ok',
-      failed: 'text-margin',
-      processing: 'text-ink',
-      pending: 'text-pencil',
-    })[props.status] ?? 'text-pencil';
+// ── State dots ────────────────────────────────────────────────────────────
+
+/** attention: red. running: blue, breathing. ready: green. idle: hollow ring. */
+export type Tone = 'attention' | 'running' | 'ready' | 'idle';
+
+export function Dot(props: { tone: Tone; class?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      class={`inline-block h-2 w-2 shrink-0 rounded-full ${
+        {
+          attention: 'bg-red',
+          running: 'bg-blue dot-breathe',
+          ready: 'bg-green',
+          idle: 'border-[1.5px] border-faint',
+        }[props.tone]
+      } ${props.class ?? ''}`}
+    />
+  );
+}
+
+export const materialTone = (status: string): Tone =>
+  status === 'failed' ? 'attention' : status === 'ready' ? 'ready' : status === 'processing' ? 'running' : 'idle';
+
+export function StatusText(props: { status: string; detail?: string | null }) {
   const label = () =>
     ({
       ready: 'Ready for calls',
@@ -59,15 +125,64 @@ export function StatusBadge(props: { status: string; detail?: string | null }) {
       pending: 'Waiting to process',
     })[props.status] ?? props.status;
   return (
-    <span class={`inline-flex items-center gap-1.5 text-xs ${tone()}`}>
-      <span
-        class={`h-1.5 w-1.5 rounded-full bg-current ${props.status === 'processing' ? 'animate-pulse' : ''}`}
-        aria-hidden="true"
-      />
+    <span class="inline-flex items-center gap-2 text-[13px] text-muted">
+      <Dot tone={materialTone(props.status)} />
       {label()}
     </span>
   );
 }
+
+// ── Lists and labels ──────────────────────────────────────────────────────
+
+export function SectionLabel(props: { children: JSX.Element; class?: string }) {
+  return <h2 class={`px-3 pb-1.5 text-[13px] font-normal text-muted ${props.class ?? ''}`}>{props.children}</h2>;
+}
+
+/** A row in a list card: hover tint, optional leading icon or dot. */
+export const rowClass = 'flex items-center gap-3 rounded-2xl px-3 h-11 text-[15px] hover:bg-soft transition-colors';
+
+// ── Forms ─────────────────────────────────────────────────────────────────
+
+export function Field(props: { label: string; hint?: string; children: JSX.Element; class?: string }) {
+  return (
+    <label class={`block ${props.class ?? ''}`}>
+      <span class="mb-1.5 block text-[13px] text-muted">{props.label}</span>
+      {props.children}
+      {props.hint && <span class="mt-1.5 block text-[12px] text-faint">{props.hint}</span>}
+    </label>
+  );
+}
+
+export const inputClass =
+  'w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-[15px] placeholder:text-faint transition-colors focus:border-line-strong focus:outline-none focus:ring-4 focus:ring-soft';
+
+/** Segmented control: light gray track, white selected pill. */
+export function Segmented<T extends string>(props: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+  label: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={props.label} class="inline-flex rounded-full bg-soft p-1">
+      {props.options.map((o) => (
+        <button
+          type="button"
+          role="radio"
+          aria-checked={props.value === o.value}
+          onClick={() => props.onChange(o.value)}
+          class={`h-8 rounded-full px-3.5 text-[14px] transition-colors ${
+            props.value === o.value ? 'bg-surface font-medium text-fg shadow-[0_1px_2px_rgb(0_0_0/0.08)]' : 'text-muted hover:text-fg'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Formatting ────────────────────────────────────────────────────────────
 
 export function formatDate(v: unknown, withTime = false): string {
   if (!v) return '';
@@ -78,4 +193,10 @@ export function formatDate(v: unknown, withTime = false): string {
     day: 'numeric',
     ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
   });
+}
+
+/** "Good morning" style greeting for the home screen. */
+export function greeting(date = new Date()): string {
+  const h = date.getHours();
+  return h < 5 ? 'Late night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }

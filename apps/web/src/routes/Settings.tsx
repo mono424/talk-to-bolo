@@ -1,20 +1,17 @@
 import { createSignal, For, Show } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { Copy } from 'lucide-solid';
+import { Copy, KeyRound } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { API_URL, createApiKey } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { qApiKeys } from '../lib/query';
-import { Button, Field, formatDate, inputClass } from '../components/ui';
+import { Button, Card, Dot, formatDate, inputClass, NoticeCard } from '../components/ui';
 
 /** API keys for AI clients that use the MCP server. */
 export default function SettingsPage() {
   const db = useDb<typeof schema>();
   const auth = useAuth();
-  const keys = useQuery(() => {
-    const uid = auth.userId();
-    return uid ? qApiKeys(db, uid) : null;
-  });
+  const keys = useQuery(() => (auth.userId() ? qApiKeys(db, auth.userId()!) : null));
   const [name, setName] = createSignal('');
   const [created, setCreated] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -39,42 +36,54 @@ export default function SettingsPage() {
   };
 
   return (
-    <div class="px-6 sm:px-10 py-10 max-w-3xl">
-      <h1 class="text-3xl font-bold leading-tight mb-3">AI access</h1>
-      <p class="text-pencil leading-relaxed mb-10 max-w-2xl">
-        Let an AI assistant such as Claude work on your courses: create courses, add and edit lecture material, upload PDFs and search
-        your notes. It connects to Studycall's MCP server with a key you create here.
+    <div class="mx-auto w-full max-w-3xl px-5 py-10 sm:px-8 sm:py-14">
+      <h1 class="text-[30px] font-semibold leading-tight tracking-tight">AI access</h1>
+      <p class="mt-1.5 max-w-2xl text-[16px] leading-relaxed text-muted">
+        Let an assistant such as Claude work on your courses: create courses, add and edit lecture material, upload PDFs and search
+        your notes, through Studycall's MCP server.
       </p>
 
-      <section class="mb-10">
-        <h2 class="text-lg font-bold mb-4">Create a key</h2>
-        <form onSubmit={create} class="flex gap-2 max-w-lg">
-          <Field label="Name" class="flex-1">
-            <input class={inputClass} placeholder="e.g. Claude Desktop" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
-          </Field>
-          <Button type="submit" class="self-end" disabled={busy()}>
+      <Show when={created()}>
+        <NoticeCard
+          class="mt-8"
+          icon={<KeyRound size={20} stroke-width={1.75} />}
+          title="Copy your new key"
+          description="It is shown only this once. Put it in your AI client now."
+          tone="attention"
+        >
+          <div class="w-full">
+            <CopyLine text={created()!} />
+          </div>
+        </NoticeCard>
+      </Show>
+
+      <Card class="mt-8 p-5">
+        <h2 class="text-[16px] font-semibold">Create a key</h2>
+        <form onSubmit={create} class="mt-3 flex flex-wrap gap-2">
+          <input
+            class={`${inputClass} min-w-0 flex-1`}
+            placeholder="Name it after the client, e.g. Claude Desktop"
+            value={name()}
+            onInput={(e) => setName(e.currentTarget.value)}
+            aria-label="Key name"
+          />
+          <Button type="submit" disabled={busy()}>
             Create key
           </Button>
         </form>
         <Show when={error()}>
-          <p class="text-sm text-margin mt-3">{error()}</p>
+          <p class="mt-3 text-[14px] text-red">{error()}</p>
         </Show>
-        <Show when={created()}>
-          <div class="mt-5 rounded-xl border border-ink bg-sheet p-4">
-            <p class="text-sm font-bold mb-2">Copy your key now. It is shown only once.</p>
-            <CopyLine text={created()!} />
-          </div>
-        </Show>
-      </section>
+      </Card>
 
-      <section class="mb-10">
-        <h2 class="text-lg font-bold mb-2">Connect a client</h2>
-        <p class="text-sm text-pencil mb-4">
-          The server speaks MCP over Streamable HTTP at <code class="font-mono">{mcpUrl}</code>, with the key as a bearer token.
+      <Card class="mt-4 p-5">
+        <h2 class="text-[16px] font-semibold">Connect a client</h2>
+        <p class="mt-1 text-[14px] text-muted">
+          MCP over Streamable HTTP at <code class="font-mono text-fg">{mcpUrl}</code>, with the key as a bearer token.
         </p>
-        <p class="text-sm font-medium mb-1.5">Claude Code</p>
+        <p class="mb-1.5 mt-4 text-[13px] text-muted">Claude Code</p>
         <CopyLine text={`claude mcp add --transport http studycall ${mcpUrl} --header "Authorization: Bearer ${keyOrPlaceholder()}"`} />
-        <p class="text-sm font-medium mt-5 mb-1.5">Any client with a JSON config</p>
+        <p class="mb-1.5 mt-4 text-[13px] text-muted">Clients with a JSON config</p>
         <CopyLine
           multiline
           text={JSON.stringify(
@@ -83,23 +92,24 @@ export default function SettingsPage() {
             2,
           )}
         />
-      </section>
+      </Card>
 
-      <section>
-        <h2 class="text-lg font-bold mb-4">Your keys</h2>
-        <ul class="rounded-xl border border-rule bg-sheet">
-          <For each={keys.data() ?? []} fallback={<li class="px-4 py-6 text-sm text-pencil">No keys yet.</li>}>
+      <Card class="mt-4 p-2">
+        <h2 class="px-3 pb-1 pt-3 text-[16px] font-semibold">Your keys</h2>
+        <ul>
+          <For each={keys.data() ?? []} fallback={<li class="px-3 py-4 text-[14px] text-muted">No keys yet.</li>}>
             {(k) => (
-              <li class="flex items-center gap-4 px-4 py-3 border-b border-rule-soft last:border-b-0">
+              <li class="flex items-center gap-3 rounded-2xl px-3 py-2.5 hover:bg-soft">
+                <Dot tone={k.revoked_at ? 'idle' : 'ready'} class="mx-1" />
                 <div class="min-w-0 flex-1">
-                  <span class="font-medium">{k.name}</span>
-                  <span class="ml-3 font-mono text-xs text-pencil">{k.prefix}…</span>
-                  <span class="block text-xs text-pencil mt-0.5">
+                  <span class="text-[15px] font-medium">{k.name}</span>
+                  <span class="ml-2 font-mono text-[12px] text-faint">{k.prefix}…</span>
+                  <span class="block text-[13px] text-muted">
                     {k.revoked_at ? `Revoked ${formatDate(k.revoked_at)}` : `Created ${formatDate(k.created_at)}`}
                   </span>
                 </div>
                 <Show when={!k.revoked_at}>
-                  <Button variant="quiet" size="sm" onClick={() => db.update('api_key', k.id, { revoked_at: new Date().toISOString() })}>
+                  <Button variant="soft" size="sm" onClick={() => db.update('api_key', k.id, { revoked_at: new Date().toISOString() })}>
                     Revoke
                   </Button>
                 </Show>
@@ -107,7 +117,7 @@ export default function SettingsPage() {
             )}
           </For>
         </ul>
-      </section>
+      </Card>
     </div>
   );
 }
@@ -115,13 +125,13 @@ export default function SettingsPage() {
 function CopyLine(props: { text: string; multiline?: boolean }) {
   const [copied, setCopied] = createSignal(false);
   return (
-    <div class="flex items-start gap-2 rounded-lg bg-rule-soft px-3 py-2">
-      <pre class={`flex-1 font-mono text-xs leading-relaxed overflow-x-auto ${props.multiline ? '' : 'whitespace-pre-wrap break-all'}`}>
+    <div class="flex items-start gap-2 rounded-2xl bg-soft px-3.5 py-2.5">
+      <pre class={`flex-1 overflow-x-auto font-mono text-[12px] leading-relaxed ${props.multiline ? '' : 'whitespace-pre-wrap break-all'}`}>
         {props.text}
       </pre>
       <button
         type="button"
-        class="shrink-0 p-1.5 rounded-md text-pencil hover:text-graphite hover:bg-sheet"
+        class="shrink-0 rounded-full p-1.5 text-muted hover:bg-surface hover:text-fg"
         aria-label="Copy"
         onClick={async () => {
           await navigator.clipboard.writeText(props.text);
@@ -129,8 +139,8 @@ function CopyLine(props: { text: string; multiline?: boolean }) {
           setTimeout(() => setCopied(false), 1500);
         }}
       >
-        <Show when={copied()} fallback={<Copy size={14} />}>
-          <span class="text-xs text-ok">Copied</span>
+        <Show when={copied()} fallback={<Copy size={14} stroke-width={1.75} />}>
+          <span class="text-[12px] text-green">Copied</span>
         </Show>
       </button>
     </div>
