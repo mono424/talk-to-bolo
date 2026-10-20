@@ -32,7 +32,7 @@ export function AuthScreen() {
     <div class="flex min-h-dvh items-center justify-center px-4 py-10">
       <div class="grid w-full max-w-4xl items-center gap-10 md:grid-cols-[1fr_minmax(0,24rem)]">
         <div class="hidden md:block">
-          <Logo class="h-9 w-9" />
+          <Logo class="h-10 w-12" />
           <h1 class="mt-6 text-[40px] font-semibold leading-[1.08] tracking-tight">Call your tutor about today’s lecture.</h1>
           <p class="mt-4 max-w-md text-[17px] leading-relaxed text-muted">
             Add slides and notes to a course, then talk it through. The tutor explains the material, answers your questions and quizzes
@@ -58,8 +58,8 @@ export function AuthScreen() {
 
         <Card class="p-6 sm:p-7">
           <div class="mb-6 flex items-center gap-3 md:hidden">
-            <Logo class="h-8 w-8" />
-            <span class="text-[17px] font-semibold">Studycall</span>
+            <Logo class="h-8 w-10" />
+            <span class="text-[17px] font-semibold">TalkToBolo</span>
           </div>
           <Segmented
             label="Account"

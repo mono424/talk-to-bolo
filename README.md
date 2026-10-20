@@ -1,4 +1,4 @@
-# Studycall
+# TalkToBolo
 
 Study by phone call. Add your lecture material to a course (PDF slides, notes,
 Markdown), then call an AI tutor in the browser: it walks you through the
@@ -86,6 +86,30 @@ set to `[REDACTED]` lets anyone sign valid session tokens. Delete those
 `WITH JWT ... KEY '[REDACTED]' WITH ISSUER KEY '[REDACTED]'` clauses (SurrealDB
 then generates a random key), as was done in the initial migration.
 
+## Landing page
+
+`apps/landing` is the Astro 7.4.1 marketing site, built as static HTML. It
+requires Node 22.22 or newer. From the repository root:
+
+```bash
+cp apps/landing/.env.example apps/landing/.env.local
+pnpm dev:landing
+pnpm --filter @studycall/landing type-check
+pnpm build:landing
+```
+
+Set `PUBLIC_APP_URL` in `apps/landing/.env.local` to the actual app origin
+before a production build. It falls back to `http://localhost:5180` for local
+development. The static build is written to `apps/landing/dist`.
+
+Landing page photo: [Sanket Mishra on Unsplash](https://unsplash.com/photos/a-girl-sitting-on-a-bench-using-a-laptop-vvE2GOnGudg).
+
+## Brand design
+
+The Bolo squirrel logo, construction grid, and design board are kept in
+[docs/brand](docs/brand/README.md). Canonical logo assets live in `assets/brand`;
+the landing page and web app use matching copies in their public directories.
+
 ## Deploy
 
 ### 1. Database
@@ -143,7 +167,7 @@ Worker's `APP_ORIGIN` (step 2).
 Create a key in the app under **AI access**, then for Claude Code:
 
 ```bash
-claude mcp add --transport http studycall https://studycall-api.<you>.workers.dev/mcp --header "Authorization: Bearer sc_..."
+claude mcp add --transport http talktobolo https://studycall-api.<you>.workers.dev/mcp --header "Authorization: Bearer sc_..."
 ```
 
 Tools: `list_courses`, `create_course`, `update_course`, `list_materials`,

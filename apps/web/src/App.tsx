@@ -39,7 +39,7 @@ export default function App() {
   return (
     <Sp00kyProvider
       config={dbConfig}
-      fallback={<div class="flex h-dvh items-center justify-center text-[15px] text-muted">Opening Studycall…</div>}
+      fallback={<div class="flex h-dvh items-center justify-center text-[15px] text-muted">Opening TalkToBolo…</div>}
       onError={(error) => console.error('Failed to start the local database', error)}
     >
       <AuthProvider>

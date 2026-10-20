@@ -40,7 +40,7 @@ export default function SettingsPage() {
       <h1 class="text-[30px] font-semibold leading-tight tracking-tight">AI access</h1>
       <p class="mt-1.5 max-w-2xl text-[16px] leading-relaxed text-muted">
         Let an assistant such as Claude work on your courses: create courses, add and edit lecture material, upload PDFs and search
-        your notes, through Studycall's MCP server.
+        your notes, through TalkToBolo's MCP server.
       </p>
 
       <Show when={created()}>
@@ -82,12 +82,12 @@ export default function SettingsPage() {
           MCP over Streamable HTTP at <code class="font-mono text-fg">{mcpUrl}</code>, with the key as a bearer token.
         </p>
         <p class="mb-1.5 mt-4 text-[13px] text-muted">Claude Code</p>
-        <CopyLine text={`claude mcp add --transport http studycall ${mcpUrl} --header "Authorization: Bearer ${keyOrPlaceholder()}"`} />
+        <CopyLine text={`claude mcp add --transport http talktobolo ${mcpUrl} --header "Authorization: Bearer ${keyOrPlaceholder()}"`} />
         <p class="mb-1.5 mt-4 text-[13px] text-muted">Clients with a JSON config</p>
         <CopyLine
           multiline
           text={JSON.stringify(
-            { mcpServers: { studycall: { type: 'http', url: mcpUrl, headers: { Authorization: `Bearer ${keyOrPlaceholder()}` } } } },
+            { mcpServers: { talktobolo: { type: 'http', url: mcpUrl, headers: { Authorization: `Bearer ${keyOrPlaceholder()}` } } } },
             null,
             2,
           )}

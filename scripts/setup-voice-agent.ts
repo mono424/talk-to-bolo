@@ -1,5 +1,5 @@
 /**
- * Creates (or updates) the ElevenLabs voice agent that Studycall calls run on.
+ * Creates (or updates) the ElevenLabs voice agent that TalkToBolo calls run on.
  *
  * The agent does speech-to-text, turn taking, interruptions and text-to-speech.
  * Its "brain" is a Custom LLM: the API Worker's OpenAI-compatible endpoint at
@@ -56,7 +56,7 @@ async function main() {
   });
 
   const config = {
-    name: 'Studycall tutor',
+    name: 'TalkToBolo tutor',
     conversation_config: {
       agent: {
         // Overridden per call by the Worker's first message for the mode.
@@ -72,7 +72,7 @@ async function main() {
         prompt: {
           // The Worker replaces this with the real tutor prompt, built from the
           // course in SurrealDB. Kept here only as a fallback description.
-          prompt: 'You are a friendly spoken study tutor.',
+          prompt: 'You are Bolo, the friendly spoken study tutor in TalkToBolo.',
           llm: 'custom-llm',
           // Claude takes no sampling parameters: leave temperature out.
           temperature: null,

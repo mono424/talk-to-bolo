@@ -9,14 +9,11 @@ const TABS = [
   { href: '/settings', label: 'AI access', icon: KeyRound, match: (p: string) => p.startsWith('/settings') },
 ];
 
-/** The Studycall mark: a voice, four bars of a waveform. */
+/** Bolo, the approved TalkToBolo mark. */
 export function Logo(props: { class?: string }) {
   return (
-    <svg viewBox="0 0 24 24" class={props.class ?? 'h-7 w-7'} fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
-      <path d="M4.5 9.5v5" />
-      <path d="M9.5 5v14" />
-      <path d="M14.5 8v8" />
-      <path d="M19.5 10.5v3" />
+    <svg viewBox="60 36 210 258" class={`shrink-0 ${props.class ?? 'h-8 w-10'}`} aria-hidden="true">
+      <image href="/studycall-logo.svg" x="60" y="36" width="210" height="258" />
     </svg>
   );
 }
@@ -37,7 +34,7 @@ export function TopBar(props: { onMenu: () => void }) {
       >
         <Menu size={20} stroke-width={1.75} />
       </button>
-      <A href="/" class="mr-3 inline-flex items-center text-fg" aria-label="Studycall home">
+      <A href="/" class="mr-3 inline-flex shrink-0 items-center text-fg" aria-label="TalkToBolo home">
         <Logo />
       </A>
 

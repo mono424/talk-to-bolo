@@ -43,7 +43,7 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
     verifier: {
       async verifyAccessToken(token: string) {
         const session = token.startsWith('sc_') ? await sessionForKey(env, token) : null;
-        if (!session) throw new OAuthError(OAuthErrorCode.InvalidToken, 'Unknown or revoked Studycall API key.');
+        if (!session) throw new OAuthError(OAuthErrorCode.InvalidToken, 'Unknown or revoked TalkToBolo API key.');
         return {
           token,
           clientId: 'studycall-api-key',
@@ -75,7 +75,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
   const userId = auth.extra?.userId as string;
   const user = Surreal.as(env, auth.extra?.dbToken as string);
   const system = Surreal.system(env);
-  const server = new McpServer({ name: 'studycall', version: '0.1.0' });
+  const server = new McpServer({ name: 'TalkToBolo', version: '0.1.0' });
 
   // Images in lecture markdown are `asset:<id>` inside the app. AI clients see
   // absolute URLs instead, and may write either form back.
