@@ -75,6 +75,10 @@ ELEVENLABS_API_KEY=... API_URL=https://<tunnel>.trycloudflare.com LLM_SHARED_SEC
 
 Put the printed agent id in `.dev.vars` as `ELEVENLABS_AGENT_ID`.
 
+If `spky dev` reports port 8787 in use, a `wrangler dev` from an earlier run
+is still alive (stopping `spky dev` does not always stop it):
+`lsof -ti tcp:8787 | xargs kill`.
+
 After a schema change: `pnpm generate`, then `spky migrate create <name> --path dev`.
 **Open the new migration and check for `'[REDACTED]'`** before applying it: the
 CLI copies access-method JWT keys from a redacted `INFO`, and a key literally
