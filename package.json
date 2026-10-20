@@ -1,0 +1,28 @@
+{
+  "name": "studycall",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Study by voice call: an AI tutor (ElevenLabs + Claude) over your course material in SurrealDB, synced with sp00ky.",
+  "scripts": {
+    "dev": "spky dev --path dev",
+    "dev:web": "pnpm --filter @studycall/web dev",
+    "dev:api": "pnpm --filter @studycall/api dev",
+    "generate": "spky generate",
+    "type-check": "pnpm -r type-check",
+    "setup:voice": "pnpm --filter @studycall/scripts setup:voice",
+    "deploy:api": "pnpm --filter @studycall/api deploy",
+    "deploy": "spky deploy"
+  },
+  "devDependencies": {
+    "@spooky-sync/cli": "0.0.1-canary.333"
+  },
+  "packageManager": "pnpm@10.20.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@swc/core",
+      "esbuild",
+      "workerd",
+      "@spooky-sync/cli"
+    ]
+  }
+}

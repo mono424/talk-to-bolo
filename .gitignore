@@ -1,0 +1,11 @@
+node_modules
+dist
+.wrangler
+.dev.vars
+.env.local
+.env*.local
+*.log
+.DS_Store
+schema/.sp00ky
+schema/.spooky
+.sp00ky

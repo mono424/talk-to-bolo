@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "studycall-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-15",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // server-schema.surql is imported as a string.
+  "rules": [{ "type": "Text", "globs": ["**/*.surql"], "fallthrough": true }],
+
+  // Embeddings for the lecture search index.
+  "ai": { "binding": "AI" },
+
+  // PDF/markdown processing: one durable workflow run per material.
+  "workflows": [
+    {
+      "name": "studycall-ingest",
+      "binding": "INGEST",
+      "class_name": "IngestMaterial"
+    }
+  ],
+
+  // PDF parsing and image extraction need more than the default 30 s of CPU
+  // per step. Requires the Workers Paid plan.
+  "limits": { "cpu_ms": 300000 },
+
+  "observability": { "enabled": true },
+
+  "vars": {
+    // The web app's origin, for CORS. Comma-separated for several.
+    "APP_ORIGIN": "http://localhost:5180",
+    "SURREAL_NS": "main",
+    "SURREAL_DB": "studycall",
+    "CLAUDE_MODEL": "claude-opus-5-5",
+    "CLAUDE_PDF_MODEL": "claude-opus-5-5",
+    "EMBEDDING_MODEL": "@cf/qwen/qwen3-embedding-0.6b"
+  }
+
+  // Secrets (wrangler secret put <NAME>, or .dev.vars locally):
+  //   SURREAL_URL          https://<instance>.surreal.cloud (no /rpc)
+  //   SURREAL_USER         database user the API acts as for server-only work
+  //   SURREAL_PASS
+  //   ANTHROPIC_API_KEY
+  //   ELEVENLABS_API_KEY
+  //   ELEVENLABS_AGENT_ID  printed by `pnpm setup:voice`
+  //   LLM_SHARED_SECRET    the key the ElevenLabs agent presents to /llm/v1
+}

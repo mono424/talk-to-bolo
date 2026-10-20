@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://sp00ky.cloud/schema/sp00ky.schema.json
+#
+# Local development: `pnpm dev` (spky dev --path dev). Same app as ../sp00ky.yml,
+# but SurrealDB runs locally in Docker (ws://localhost:8666) instead of on
+# SurrealDB Cloud, so nothing you do here touches production data.
+mode: singlenode
+slug: studycall
+surrealdb:
+  namespace: main
+  database: studycall
+schema: ../schema
+version:
+  dev: canary
+logLevel:
+  dev: info
+clientTypes:
+  - format: typescript
+    output: ../apps/web/src/schema.gen.ts
+apps:
+  web:
+    type: frontend
+    dev:
+      type: npm
+      script: dev
+      workdir: ../apps/web
+    env:
+      - dev:
+          VITE_DB_NS: main
+          VITE_DB_DB: studycall
+          VITE_DB_ENDPOINT: ws://localhost:8666/rpc
+          VITE_API_URL: http://localhost:8787
+  # The API Worker under `wrangler dev`. It reads apps/api/.dev.vars.
+  api:
+    type: backend
+    scope: devOnly
+    dev:
+      type: npm
+      script: dev
+      workdir: ../apps/api

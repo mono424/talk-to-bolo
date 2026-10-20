@@ -1,0 +1,26 @@
+{
+  "name": "@studycall/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "type-check": "tsc --noEmit",
+    "cf-typegen": "wrangler types"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@modelcontextprotocol/server": "^2.3.1",
+    "fast-png": "^8.0.0",
+    "hono": "^4.13.13",
+    "pdf-lib": "^1.17.1",
+    "unpdf": "^1.9.1",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261019.1",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.151.2"
+  }
+}
