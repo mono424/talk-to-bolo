@@ -77,7 +77,7 @@ async function main() {
           // Claude takes no sampling parameters: leave temperature out.
           temperature: null,
           custom_llm: {
-            url: `${apiUrl}/llm/v1`,
+            url: `${apiUrl}/llm/v1/chat/completions`,
             model_id: model,
             api_key: { secret_id: secret.secret_id },
             api_type: 'chat_completions',
@@ -100,8 +100,8 @@ async function main() {
         },
       },
       tts: {
-        // Multilingual and low latency: the tutor speaks the course language.
-        model_id: 'eleven_flash_v2_5',
+        // English requires v2; other course languages use the presets below.
+        model_id: 'eleven_flash_v2',
         voice_id: voiceId,
         stability: 0.5,
         similarity_boost: 0.8,
@@ -120,6 +120,12 @@ async function main() {
         // instead of going silent.
         soft_timeout_config: { timeout_seconds: 3, message: 'Hmm, let me think.' },
       },
+      language_presets: Object.fromEntries(
+        ['de', 'fr', 'es', 'it', 'nl', 'pt', 'pl', 'tr'].map((language) => [
+          language,
+          { overrides: { tts: { model_id: 'eleven_flash_v2_5' } } },
+        ]),
+      ),
       conversation: { max_duration_seconds: 3600 },
     },
     platform_settings: {
