@@ -1,6 +1,6 @@
 import { createSignal, For, Show } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { Copy, KeyRound } from 'lucide-solid';
+import { Check, Copy, KeyRound } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { API_URL, createApiKey } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -36,8 +36,8 @@ export default function SettingsPage() {
   };
 
   return (
-    <div class="mx-auto w-full max-w-3xl px-5 py-10 sm:px-8 sm:py-14">
-      <h1 class="text-[30px] font-semibold leading-tight tracking-tight">AI access</h1>
+    <div class="mx-auto w-full min-w-0 max-w-3xl px-4 py-7 sm:px-8 sm:py-14">
+      <h1 class="text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]">AI access</h1>
       <p class="mt-1.5 max-w-2xl text-[16px] leading-relaxed text-muted">
         Let an assistant such as Claude work on your courses: create courses, add and edit lecture material, upload PDFs and search
         your notes, through TalkToBolo's MCP server.
@@ -57,9 +57,9 @@ export default function SettingsPage() {
         </NoticeCard>
       </Show>
 
-      <Card class="mt-8 p-5">
+      <Card class="mt-6 p-4 sm:mt-8 sm:p-5">
         <h2 class="text-[16px] font-semibold">Create a key</h2>
-        <form onSubmit={create} class="mt-3 flex flex-wrap gap-2">
+        <form onSubmit={create} class="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
             class={`${inputClass} min-w-0 flex-1`}
             placeholder="Name it after the client, e.g. Claude Desktop"
@@ -72,14 +72,14 @@ export default function SettingsPage() {
           </Button>
         </form>
         <Show when={error()}>
-          <p class="mt-3 text-[14px] text-red">{error()}</p>
+          <p class="mt-3 break-words text-[14px] text-red" role="alert">{error()}</p>
         </Show>
       </Card>
 
-      <Card class="mt-4 p-5">
+      <Card class="mt-4 min-w-0 p-4 sm:p-5">
         <h2 class="text-[16px] font-semibold">Connect a client</h2>
         <p class="mt-1 text-[14px] text-muted">
-          MCP over Streamable HTTP at <code class="font-mono text-fg">{mcpUrl}</code>, with the key as a bearer token.
+          MCP over Streamable HTTP at <code class="break-all font-mono text-fg">{mcpUrl}</code>, with the key as a bearer token.
         </p>
         <p class="mb-1.5 mt-4 text-[13px] text-muted">Claude Code</p>
         <CopyLine text={`claude mcp add --transport http talktobolo ${mcpUrl} --header "Authorization: Bearer ${keyOrPlaceholder()}"`} />
@@ -99,17 +99,17 @@ export default function SettingsPage() {
         <ul>
           <For each={keys.data() ?? []} fallback={<li class="px-3 py-4 text-[14px] text-muted">No keys yet.</li>}>
             {(k) => (
-              <li class="flex items-center gap-3 rounded-2xl px-3 py-2.5 hover:bg-soft">
+              <li class="flex items-center gap-2 rounded-2xl px-2 py-2.5 hover:bg-soft sm:gap-3 sm:px-3">
                 <Dot tone={k.revoked_at ? 'idle' : 'ready'} class="mx-1" />
                 <div class="min-w-0 flex-1">
-                  <span class="text-[15px] font-medium">{k.name}</span>
-                  <span class="ml-2 font-mono text-[12px] text-faint">{k.prefix}…</span>
+                  <span class="text-[15px] font-medium [overflow-wrap:anywhere]">{k.name}</span>
+                  <span class="block font-mono text-[12px] text-faint sm:ml-2 sm:inline">{k.prefix}…</span>
                   <span class="block text-[13px] text-muted">
                     {k.revoked_at ? `Revoked ${formatDate(k.revoked_at)}` : `Created ${formatDate(k.created_at)}`}
                   </span>
                 </div>
                 <Show when={!k.revoked_at}>
-                  <Button variant="soft" size="sm" onClick={() => db.update('api_key', k.id, { revoked_at: new Date().toISOString() })}>
+                  <Button variant="soft" size="sm" class="shrink-0" onClick={() => db.update('api_key', k.id, { revoked_at: new Date().toISOString() })}>
                     Revoke
                   </Button>
                 </Show>
@@ -125,22 +125,23 @@ export default function SettingsPage() {
 function CopyLine(props: { text: string; multiline?: boolean }) {
   const [copied, setCopied] = createSignal(false);
   return (
-    <div class="flex items-start gap-2 rounded-2xl bg-soft px-3.5 py-2.5">
-      <pre class={`flex-1 overflow-x-auto font-mono text-[12px] leading-relaxed ${props.multiline ? '' : 'whitespace-pre-wrap break-all'}`}>
+    <div class="flex w-full min-w-0 items-start gap-2 rounded-2xl bg-soft p-2.5 sm:px-3.5">
+      <pre class={`min-w-0 flex-1 self-center overflow-x-auto font-mono text-[12px] leading-relaxed ${props.multiline ? '' : 'whitespace-pre-wrap break-all'}`}>
         {props.text}
       </pre>
       <button
         type="button"
-        class="shrink-0 rounded-full p-1.5 text-muted hover:bg-surface hover:text-fg"
-        aria-label="Copy"
+        class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface hover:text-fg sm:h-9 sm:w-9"
+        aria-label={copied() ? 'Copied' : 'Copy to clipboard'}
+        title={copied() ? 'Copied' : 'Copy to clipboard'}
         onClick={async () => {
           await navigator.clipboard.writeText(props.text);
           setCopied(true);
           setTimeout(() => setCopied(false), 1500);
         }}
       >
-        <Show when={copied()} fallback={<Copy size={14} stroke-width={1.75} />}>
-          <span class="text-[12px] text-green">Copied</span>
+        <Show when={copied()} fallback={<Copy size={16} stroke-width={1.75} />}>
+          <Check size={17} stroke-width={1.75} class="text-green" />
         </Show>
       </button>
     </div>

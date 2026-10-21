@@ -23,8 +23,8 @@ export default function Home() {
   const firstName = () => auth.user()?.name?.split(' ')[0];
 
   return (
-    <div class="mx-auto w-full max-w-4xl px-5 py-10 sm:px-8 sm:py-14">
-      <h1 class="text-[30px] font-semibold leading-tight tracking-tight">
+    <div class="mx-auto w-full max-w-4xl px-4 py-7 sm:px-8 sm:py-14">
+      <h1 class="break-words text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]">
         {greeting()}
         <Show when={firstName()}>, {firstName()}</Show>
       </h1>
@@ -64,8 +64,8 @@ export default function Home() {
         <div class="grid gap-3 sm:grid-cols-2">
           <For each={courses.data() ?? []}>
             {(c) => (
-              <A href={`/courses/${idKey(c.id)}`} class="block">
-                <Card class="h-full p-5 transition-colors hover:border-line-strong">
+              <A href={`/courses/${idKey(c.id)}`} class="block min-w-0">
+                <Card class="h-full min-w-0 p-5 transition-colors hover:border-line-strong">
                   <Folder size={22} stroke-width={1.6} style={{ color: courseColor(c.color) }} fill={courseColor(c.color)} fill-opacity="0.18" />
                   <h3 class="mt-4 truncate text-[16px] font-semibold">{c.title}</h3>
                   <p class="mt-1 line-clamp-2 text-[14px] text-muted">{c.description || 'Lecture material and calls'}</p>
@@ -113,9 +113,10 @@ function CallComposer(props: { class?: string }) {
 
   return (
     <Card class={`p-3 ${props.class ?? ''}`}>
-      <p class="px-3 pb-6 pt-3 text-[18px] text-fg">{sentence()}</p>
-      <div class="flex flex-wrap items-center gap-2">
+      <p class="break-words px-2 pb-5 pt-2 text-[17px] text-fg sm:px-3 sm:pb-6 sm:pt-3 sm:text-[18px]">{sentence()}</p>
+      <div class="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <PillSelect
+          class="w-full sm:w-auto"
           label="Course"
           icon={<Folder size={16} stroke-width={1.75} />}
           value={courseId()}
@@ -123,6 +124,7 @@ function CallComposer(props: { class?: string }) {
           options={(courses.data() ?? []).map((c) => ({ value: c.id, label: c.title }))}
         />
         <PillSelect
+          class="w-full sm:w-auto"
           label="Lecture"
           icon={<FileText size={16} stroke-width={1.75} />}
           value={materialKey()}
@@ -136,9 +138,10 @@ function CallComposer(props: { class?: string }) {
           disabled={ready().length === 0}
           aria-label="Start call"
           title={ready().length === 0 ? 'Add material that is ready first' : 'Start call'}
-          class="ml-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-solid text-solid-fg transition-colors hover:bg-solid-hover disabled:opacity-30"
+          class="inline-flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-solid text-[14px] font-medium text-solid-fg transition-colors hover:bg-solid-hover disabled:opacity-30 sm:ml-auto sm:w-11"
         >
           <PhoneCall size={18} stroke-width={1.9} />
+          <span class="sm:sr-only">Start call</span>
         </button>
       </div>
       <Show when={course() && ready().length === 0}>
@@ -160,14 +163,15 @@ export function PillSelect(props: {
   value: string;
   options: { value: string; label: string }[];
   onChange: (v: string) => void;
+  class?: string;
 }) {
   return (
-    <label class="relative inline-flex h-10 max-w-60 items-center gap-2 rounded-full border border-line bg-surface pl-3.5 pr-8 text-[14px] text-fg hover:bg-soft">
+    <label class={`relative inline-flex h-11 min-w-0 max-w-full items-center gap-2 rounded-full border border-line bg-surface pl-3.5 pr-8 text-[14px] text-fg hover:bg-soft sm:h-10 sm:max-w-60 ${props.class ?? ''}`}>
       <span class="shrink-0 text-muted">{props.icon}</span>
       <span class="truncate">{props.options.find((o) => o.value === props.value)?.label ?? props.label}</span>
       <ChevronDown size={15} class="pointer-events-none absolute right-3 text-muted" />
       <select
-        class="absolute inset-0 cursor-pointer opacity-0"
+        class="absolute inset-0 w-full cursor-pointer text-[16px] opacity-0"
         aria-label={props.label}
         value={props.value}
         onChange={(e) => props.onChange(e.currentTarget.value)}

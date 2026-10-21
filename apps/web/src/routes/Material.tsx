@@ -56,15 +56,15 @@ export default function MaterialPage() {
   return (
     <Show when={material.data()} fallback={<div class="p-10 text-muted">{material.isLoading() ? '' : 'Material not found.'}</div>}>
       {(m) => (
-        <div class="min-h-full">
+        <div class="min-h-full min-w-0">
           <div class="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-line bg-surface/85 px-4 py-3 backdrop-blur sm:px-6">
-            <A href={`/courses/${params.courseKey}`} class={`${buttonClass('ghost', 'sm')} -ml-1 text-muted`}>
-              <ArrowLeft size={16} stroke-width={1.75} /> {course.data()?.title ?? 'Course'}
+            <A href={`/courses/${params.courseKey}`} class={`${buttonClass('ghost', 'sm')} -ml-1 min-w-0 max-w-full flex-1 text-muted sm:flex-none sm:max-w-72`}>
+              <ArrowLeft size={16} stroke-width={1.75} class="shrink-0" /> <span class="truncate">{course.data()?.title ?? 'Course'}</span>
             </A>
-            <span class="ml-1">
+            <span class="ml-1 min-w-0 max-w-full">
               <StatusText status={m().status} detail={m().status_detail} />
             </span>
-            <div class="ml-auto flex gap-2">
+            <div class="ml-auto flex w-full gap-2 [&>*]:flex-1 sm:w-auto sm:[&>*]:flex-none">
               <Show
                 when={editing()}
                 fallback={
@@ -100,16 +100,16 @@ export default function MaterialPage() {
           <Show
             when={editing()}
             fallback={
-              <article class="mx-auto w-full max-w-3xl px-5 py-10 sm:px-8">
-                <h1 class="text-[30px] font-semibold leading-tight tracking-tight">{m().title}</h1>
+              <article class="mx-auto w-full min-w-0 max-w-3xl px-4 py-7 sm:px-8 sm:py-10">
+                <h1 class="break-words text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]">{m().title}</h1>
                 <Show when={meta()}>
-                  <p class="mt-1.5 text-[14px] text-muted">{meta()}</p>
+                  <p class="mt-1.5 break-words text-[14px] text-muted">{meta()}</p>
                 </Show>
                 <div class="mt-8">
                   <Show
                     when={m().content.trim()}
                     fallback={
-                      <p class="text-muted">
+                      <p class="break-words text-muted">
                         {m().status === 'failed'
                           ? `Processing failed: ${m().error ?? 'unknown error'}. Upload the file again to retry.`
                           : 'The PDF is being converted. The text appears here when it is done.'}
@@ -122,10 +122,10 @@ export default function MaterialPage() {
               </article>
             }
           >
-            <div class="mx-auto w-full max-w-4xl space-y-3 px-5 py-8 sm:px-8">
+            <div class="mx-auto w-full min-w-0 max-w-4xl space-y-3 px-4 py-6 sm:px-8 sm:py-8">
               <input class={`${inputClass} text-[18px] font-semibold`} value={title()} onInput={(e) => setTitle(e.currentTarget.value)} aria-label="Title" />
               <textarea
-                class={`${inputClass} min-h-[70vh] font-mono text-[13px] leading-relaxed`}
+                class={`${inputClass} min-h-[65dvh] resize-y font-mono text-[16px] leading-relaxed sm:min-h-[70vh] sm:text-[13px]`}
                 value={draft()}
                 onInput={(e) => setDraft(e.currentTarget.value)}
                 aria-label="Content (Markdown)"

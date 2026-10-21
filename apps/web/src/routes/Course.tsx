@@ -87,7 +87,7 @@ export default function CoursePage() {
     <Show when={course.data()} fallback={<div class="p-10 text-muted">{course.isLoading() ? '' : 'Course not found.'}</div>}>
       {(c) => (
         <div
-          class="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 sm:py-10"
+          class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8 sm:py-10"
           onDragOver={(e) => {
             e.preventDefault();
             setDragging(true);
@@ -99,7 +99,7 @@ export default function CoursePage() {
             if (e.dataTransfer?.files.length) void addFiles(e.dataTransfer.files);
           }}
         >
-          <header class="mb-8 flex items-start gap-4">
+          <header class="mb-6 flex items-start gap-3 sm:mb-8 sm:gap-4">
             <span
               class="mt-1.5 h-3 w-3 shrink-0 rounded-full"
               style={{ background: courseColor(c().color) }}
@@ -108,7 +108,7 @@ export default function CoursePage() {
             <div class="min-w-0 flex-1">
               <EditableTitle value={c().title} onSave={(title) => db.update('course', c().id, { title })} />
               <Show when={c().description}>
-                <p class="mt-1.5 max-w-2xl text-[16px] text-muted">{c().description}</p>
+                <p class="mt-1.5 max-w-2xl break-words text-[16px] text-muted">{c().description}</p>
               </Show>
             </div>
           </header>
@@ -117,8 +117,8 @@ export default function CoursePage() {
             <div class="min-w-0 space-y-6">
               {/* Materials */}
               <Card class={dragging() ? 'ring-2 ring-blue/40' : ''}>
-                <div class="flex flex-wrap items-center gap-2 px-5 pb-3 pt-5">
-                  <h2 class="mr-auto text-[16px] font-semibold">Lecture material</h2>
+                <div class="flex flex-wrap items-center gap-2 px-4 pb-3 pt-4 sm:px-5 sm:pt-5">
+                  <h2 class="mr-auto w-full text-[16px] font-semibold sm:w-auto">Lecture material</h2>
                   <label class={`${buttonClass('soft', 'sm')} cursor-pointer`}>
                     <Upload size={15} stroke-width={1.75} /> Upload
                     <input
@@ -138,7 +138,7 @@ export default function CoursePage() {
                 </div>
 
                 <Show when={notice()}>
-                  <p class="mx-5 mb-3 rounded-xl bg-red-soft px-3.5 py-2.5 text-[14px] text-red">{notice()}</p>
+                  <p class="mx-4 mb-3 break-words rounded-xl bg-red-soft px-3.5 py-2.5 text-[14px] text-red sm:mx-5">{notice()}</p>
                 </Show>
 
                 <Show when={writing()}>
@@ -155,14 +155,14 @@ export default function CoursePage() {
                   <For
                     each={materials.data() ?? []}
                     fallback={
-                      <li class="mx-3 mb-3 rounded-2xl border border-dashed border-line-strong px-6 py-12 text-center">
+                      <li class="mx-2 mb-2 rounded-2xl border border-dashed border-line-strong px-4 py-9 text-center sm:mx-3 sm:mb-3 sm:px-6 sm:py-12">
                         <p class="text-[15px] font-medium">Drop lecture files here</p>
                         <p class="mt-1 text-[14px] text-muted">PDF slides and scripts, Markdown or text notes</p>
                       </li>
                     }
                   >
                     {(m) => (
-                      <li class="group flex items-center gap-3 rounded-2xl px-3 py-2.5 hover:bg-soft">
+                      <li class="group flex items-center gap-2.5 rounded-2xl px-2 py-3 hover:bg-soft sm:gap-3 sm:px-3 sm:py-2.5">
                         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-soft text-muted group-hover:bg-surface">
                           {m.kind === 'pdf' ? <FileType2 size={18} stroke-width={1.6} /> : <FileText size={18} stroke-width={1.6} />}
                         </span>
@@ -174,7 +174,7 @@ export default function CoursePage() {
                               <span class="text-[13px] text-faint">{m.page_count} pages</span>
                             </Show>
                             <Show when={m.status === 'failed' && m.error}>
-                              <span class="max-w-md truncate text-[13px] text-red" title={m.error ?? ''}>
+                              <span class="min-w-0 max-w-full truncate text-[13px] text-red sm:max-w-md" title={m.error ?? ''}>
                                 {m.error}
                               </span>
                             </Show>
@@ -183,7 +183,7 @@ export default function CoursePage() {
                         <IconButton
                           label={`Delete ${m.title}`}
                           size="sm"
-                          class="opacity-0 group-hover:opacity-100 focus:opacity-100"
+                          class="shrink-0 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
                           onClick={() => removeMaterial(m.id, m.title)}
                         >
                           <Trash2 size={16} stroke-width={1.75} />
@@ -202,12 +202,12 @@ export default function CoursePage() {
                     <For each={calls.data() ?? []}>
                       {(call) => (
                         <li>
-                          <A href={`/calls/${idKey(call.id)}`} class="flex items-center gap-3 rounded-2xl px-3 py-2.5 hover:bg-soft">
-                            <Dot tone={call.status === 'ended' ? 'idle' : 'running'} class="mx-1" />
+                          <A href={`/calls/${idKey(call.id)}`} class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 rounded-2xl px-3 py-3 hover:bg-soft sm:flex sm:gap-3 sm:py-2.5">
+                            <Dot tone={call.status === 'ended' ? 'idle' : 'running'} class="row-span-2 mx-1" />
                             <span class="min-w-0 flex-1 truncate text-[15px]">
                               {modeLabel(call.mode)}: {titleOf(call.material)}
                             </span>
-                            <span class="shrink-0 text-[13px] text-muted">{formatDate(call.started_at, true)}</span>
+                            <span class="col-start-2 shrink-0 text-[13px] text-muted">{formatDate(call.started_at, true)}</span>
                           </A>
                         </li>
                       )}
@@ -218,17 +218,18 @@ export default function CoursePage() {
             </div>
 
             {/* Call card and course settings */}
-            <aside class="space-y-6">
-              <Card class="p-5">
+            <aside class="min-w-0 space-y-6">
+              <Card class="p-4 sm:p-5">
                 <div class="flex items-center gap-3">
                   <PhoneCall size={20} stroke-width={1.75} class="text-muted" />
                   <h2 class="flex-1 text-[16px] font-semibold">Call the tutor</h2>
                   <Dot tone={ready().length ? 'ready' : 'idle'} />
                 </div>
-                <p class="mt-1.5 pl-8 text-[15px] leading-relaxed text-muted">{MODES.find((m) => m.value === mode())?.hint}</p>
-                <div class="mt-4 space-y-3 pl-8">
+                <p class="mt-2 text-[15px] leading-relaxed text-muted sm:mt-1.5 sm:pl-8">{MODES.find((m) => m.value === mode())?.hint}</p>
+                <div class="mt-4 space-y-3 sm:pl-8">
                   <Segmented label="Kind of call" value={mode()} onChange={setMode} options={MODES.map((m) => ({ value: m.value, label: m.label }))} />
                   <PillSelect
+                    class="w-full sm:w-auto"
                     label="About"
                     icon={<FileText size={16} stroke-width={1.75} />}
                     value={scope()}
@@ -236,8 +237,8 @@ export default function CoursePage() {
                     options={[{ value: '', label: 'The whole course' }, ...ready().map((m) => ({ value: idKey(m.id), label: m.title }))]}
                   />
                 </div>
-                <div class="mt-5 flex items-center gap-2 pl-8">
-                  <Button disabled={ready().length === 0} onClick={startCall}>
+                <div class="mt-5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:pl-8">
+                  <Button class="sm:shrink-0" disabled={ready().length === 0} onClick={startCall}>
                     Start call
                   </Button>
                   <Show when={ready().length === 0}>
@@ -261,13 +262,13 @@ function EditableTitle(props: { value: string; onSave: (v: string) => void }) {
     <Show
       when={editing()}
       fallback={
-        <h1 class="cursor-text text-[30px] font-semibold leading-tight tracking-tight" onClick={() => setEditing(true)} title="Click to rename">
+        <h1 class="cursor-text break-words text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]" onClick={() => setEditing(true)} title="Click to rename">
           {props.value}
         </h1>
       }
     >
       <input
-        class="w-full max-w-2xl rounded-xl bg-soft px-2 -mx-2 text-[30px] font-semibold leading-tight tracking-tight outline-none"
+        class="-mx-2 w-full min-w-0 max-w-2xl rounded-xl bg-soft px-2 text-[28px] font-semibold leading-tight tracking-tight outline-none sm:text-[30px]"
         value={props.value}
         aria-label="Course name"
         ref={(el) => queueMicrotask(() => el.select())}
@@ -290,7 +291,7 @@ function TextMaterialForm(props: { onSave: (title: string, content: string) => v
   const [content, setContent] = createSignal('');
   return (
     <form
-      class="mx-5 mb-4 space-y-3 rounded-2xl bg-soft p-3"
+      class="mx-4 mb-4 space-y-3 rounded-2xl bg-soft p-3 sm:mx-5"
       onSubmit={(e) => {
         e.preventDefault();
         props.onSave(title().trim(), content());
@@ -298,14 +299,14 @@ function TextMaterialForm(props: { onSave: (title: string, content: string) => v
     >
       <input class={inputClass} placeholder="Title, e.g. Lecture 4 notes" value={title()} onInput={(e) => setTitle(e.currentTarget.value)} aria-label="Title" required />
       <textarea
-        class={`${inputClass} min-h-56 font-mono text-[13px] leading-relaxed`}
+        class={`${inputClass} min-h-56 resize-y font-mono text-[16px] leading-relaxed sm:text-[13px]`}
         placeholder="Paste or write your notes. Markdown works: # headings, lists, $math$."
         value={content()}
         onInput={(e) => setContent(e.currentTarget.value)}
         aria-label="Content"
         required
       />
-      <div class="flex justify-end gap-2">
+      <div class="flex flex-wrap justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={props.onCancel}>
           Cancel
         </Button>
@@ -340,7 +341,7 @@ function CourseSettings(props: { course: CourseRow }) {
           </Field>
           <Field label="Notes for the tutor" hint="Applied to every call in this course.">
             <textarea
-              class={`${inputClass} min-h-24 text-[14px]`}
+              class={`${inputClass} min-h-24 resize-y text-[16px] sm:text-[14px]`}
               placeholder="e.g. The exam is oral. Push me on proofs."
               value={props.course.tutor_notes ?? ''}
               onChange={(e) => save({ tutor_notes: e.currentTarget.value.trim() || undefined })}
@@ -348,14 +349,14 @@ function CourseSettings(props: { course: CourseRow }) {
           </Field>
           <Field label="Description">
             <textarea
-              class={`${inputClass} min-h-16 text-[14px]`}
+              class={`${inputClass} min-h-16 resize-y text-[16px] sm:text-[14px]`}
               value={props.course.description ?? ''}
               onChange={(e) => save({ description: e.currentTarget.value.trim() || undefined })}
             />
           </Field>
           <div>
             <span class="mb-1.5 block text-[13px] text-muted">Color</span>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-1">
               <For each={Object.keys(COURSE_COLORS) as CourseColor[]}>
                 {(key) => (
                   <button
@@ -363,9 +364,10 @@ function CourseSettings(props: { course: CourseRow }) {
                     aria-label={key}
                     aria-pressed={props.course.color === key}
                     onClick={() => save({ color: key })}
-                    class={`h-7 w-7 rounded-full ring-offset-2 ring-offset-surface ${props.course.color === key ? 'ring-2 ring-fg' : ''}`}
-                    style={{ background: COURSE_COLORS[key] }}
-                  />
+                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+                  >
+                    <span class={`h-7 w-7 rounded-full ring-offset-2 ring-offset-surface ${props.course.color === key ? 'ring-2 ring-fg' : ''}`} style={{ background: COURSE_COLORS[key] }} />
+                  </button>
                 )}
               </For>
             </div>

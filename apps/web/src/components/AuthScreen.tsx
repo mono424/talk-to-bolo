@@ -29,8 +29,8 @@ export function AuthScreen() {
   };
 
   return (
-    <div class="flex min-h-dvh items-center justify-center px-4 py-10">
-      <div class="grid w-full max-w-4xl items-center gap-10 md:grid-cols-[1fr_minmax(0,24rem)]">
+    <div class="auth-viewport flex min-h-dvh items-center justify-center">
+      <div class="grid w-full min-w-0 max-w-4xl items-center gap-10 md:grid-cols-[1fr_minmax(0,24rem)]">
         <div class="hidden md:block">
           <Logo class="h-10 w-12" />
           <h1 class="mt-6 text-[40px] font-semibold leading-[1.08] tracking-tight">Call your tutor about today’s lecture.</h1>
@@ -56,7 +56,7 @@ export function AuthScreen() {
           </Card>
         </div>
 
-        <Card class="p-6 sm:p-7">
+        <Card class="min-w-0 p-5 sm:p-7">
           <div class="mb-6 flex items-center gap-3 md:hidden">
             <Logo class="h-8 w-10" />
             <span class="text-[17px] font-semibold">TalkToBolo</span>
@@ -77,7 +77,7 @@ export function AuthScreen() {
               </Field>
             </Show>
             <Field label="Email">
-              <input class={inputClass} type="email" value={email()} onInput={(e) => setEmail(e.currentTarget.value)} required autocomplete="email" />
+              <input class={inputClass} type="email" value={email()} onInput={(e) => setEmail(e.currentTarget.value)} required autocomplete="email" autocapitalize="none" spellcheck={false} />
             </Field>
             <Field label="Password">
               <input

@@ -17,8 +17,8 @@ const VARIANTS = {
 } as const;
 
 const SIZES = {
-  sm: 'h-8 px-3.5 text-[13px] gap-1.5',
-  md: 'h-10 px-4.5 text-[15px] gap-2',
+  sm: 'h-11 px-3.5 text-[13px] gap-1.5 md:h-8',
+  md: 'h-11 px-4.5 text-[15px] gap-2 md:h-10',
   lg: 'h-12 px-6 text-base gap-2.5',
 } as const;
 
@@ -34,13 +34,13 @@ export function Button(props: ButtonProps) {
 /** Round icon-only button. */
 export function IconButton(props: JSX.ButtonHTMLAttributes<HTMLButtonElement> & { label: string; size?: 'sm' | 'md' | 'lg' }) {
   const [local, rest] = splitProps(props, ['label', 'size', 'class', 'type']);
-  const size = { sm: 'h-8 w-8', md: 'h-10 w-10', lg: 'h-14 w-14' }[local.size ?? 'md'];
+  const size = { sm: 'h-11 w-11 md:h-8 md:w-8', md: 'h-11 w-11 md:h-10 md:w-10', lg: 'h-14 w-14' }[local.size ?? 'md'];
   return (
     <button
       type={local.type ?? 'button'}
       aria-label={local.label}
       title={local.label}
-      class={`inline-flex items-center justify-center rounded-full text-muted hover:text-fg hover:bg-soft transition-colors ${size} ${local.class ?? ''}`}
+      class={`inline-flex shrink-0 items-center justify-center rounded-full text-muted hover:text-fg hover:bg-soft transition-colors ${size} ${local.class ?? ''}`}
       {...rest}
     />
   );
@@ -70,7 +70,7 @@ export function NoticeCard(props: {
   class?: string;
 }) {
   return (
-    <Card class={`p-5 ${props.class ?? ''}`}>
+    <Card class={`p-4 sm:p-5 ${props.class ?? ''}`}>
       <div class="flex items-start gap-3">
         <span class="mt-0.5 shrink-0 text-muted">{props.icon}</span>
         <div class="min-w-0 flex-1">
@@ -84,7 +84,7 @@ export function NoticeCard(props: {
             <p class="mt-1.5 text-[15px] leading-relaxed text-muted line-clamp-2">{props.description}</p>
           </Show>
           <Show when={props.children}>
-            <div class="mt-4 flex flex-wrap items-center gap-2">{props.children}</div>
+            <div class="mt-4 flex flex-wrap items-center gap-2 [&>*]:max-w-full">{props.children}</div>
           </Show>
         </div>
       </div>
@@ -154,7 +154,7 @@ export function Field(props: { label: string; hint?: string; children: JSX.Eleme
 }
 
 export const inputClass =
-  'w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-[15px] placeholder:text-faint transition-colors focus:border-line-strong focus:outline-none focus:ring-4 focus:ring-soft';
+  'form-input w-full min-w-0 rounded-xl border border-line bg-surface px-3.5 py-2.5 placeholder:text-faint transition-colors focus:border-line-strong focus:outline-none focus:ring-4 focus:ring-soft';
 
 /** Segmented control: light gray track, white selected pill. */
 export function Segmented<T extends string>(props: {
@@ -164,14 +164,14 @@ export function Segmented<T extends string>(props: {
   label: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={props.label} class="inline-flex rounded-full bg-soft p-1">
+    <div role="radiogroup" aria-label={props.label} class="inline-flex min-w-0 max-w-full rounded-full bg-soft p-1">
       {props.options.map((o) => (
         <button
           type="button"
           role="radio"
           aria-checked={props.value === o.value}
           onClick={() => props.onChange(o.value)}
-          class={`h-8 rounded-full px-3.5 text-[14px] transition-colors ${
+          class={`min-h-11 min-w-0 flex-auto whitespace-nowrap rounded-full px-3 text-[14px] transition-colors md:min-h-8 md:flex-none md:px-3.5 ${
             props.value === o.value ? 'bg-surface font-medium text-fg shadow-[0_1px_2px_rgb(0_0_0/0.08)]' : 'text-muted hover:text-fg'
           }`}
         >

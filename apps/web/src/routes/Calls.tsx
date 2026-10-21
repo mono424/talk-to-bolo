@@ -15,11 +15,11 @@ export default function CallsPage() {
   const calls = useQuery(() => (auth.userId() ? qRecentCalls(db, auth.userId()!, 100) : null));
 
   return (
-    <div class="mx-auto w-full max-w-3xl px-5 py-10 sm:px-8 sm:py-14">
-      <h1 class="text-[30px] font-semibold leading-tight tracking-tight">Calls</h1>
-      <p class="mt-1.5 text-[16px] text-muted">Transcripts and recaps of your past calls.</p>
+    <div class="mx-auto w-full min-w-0 max-w-3xl px-4 py-6 sm:px-8 sm:py-14">
+      <h1 class="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">Calls</h1>
+      <p class="mt-1.5 text-[15px] leading-relaxed text-muted sm:text-[16px]">Transcripts and recaps of your past calls.</p>
 
-      <Card class="mt-8 p-2">
+      <Card class="mt-6 p-1.5 sm:mt-8 sm:p-2">
         <ul>
           <For
             each={calls.data() ?? []}
@@ -31,10 +31,10 @@ export default function CallsPage() {
           >
             {(call) => (
               <li>
-                <A href={`/calls/${idKey(call.id)}`} class="flex items-center gap-3 rounded-2xl px-3 py-3 hover:bg-soft">
-                  <Dot tone={call.status === 'ended' ? 'idle' : 'running'} class="mx-1" />
+                <A href={`/calls/${idKey(call.id)}`} class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 rounded-2xl px-3 py-3 hover:bg-soft sm:flex sm:gap-3">
+                  <Dot tone={call.status === 'ended' ? 'idle' : 'running'} class="row-span-2 mx-0.5 sm:mx-1" />
                   <span class="min-w-0 flex-1">
-                    <span class="block truncate text-[15px] font-medium">
+                    <span class="line-clamp-2 text-[15px] font-medium [overflow-wrap:anywhere] sm:block sm:truncate">
                       {modeLabel(call.mode)}: {call.material?.title ?? 'Whole course'}
                     </span>
                     <span class="block truncate text-[13px] text-muted">
@@ -42,7 +42,7 @@ export default function CallsPage() {
                       <Show when={call.recap}>, recap ready</Show>
                     </span>
                   </span>
-                  <span class="shrink-0 text-[13px] text-muted">{formatDate(call.started_at, true)}</span>
+                  <span class="col-start-2 shrink-0 text-[12px] text-muted sm:text-[13px]">{formatDate(call.started_at, true)}</span>
                 </A>
               </li>
             )}

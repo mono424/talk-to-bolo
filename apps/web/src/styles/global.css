@@ -86,6 +86,38 @@ body {
   letter-spacing: -0.005em;
 }
 
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; min-width: 320px; }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button, a { touch-action: manipulation; }
+button, a, input, select, textarea { scroll-margin-block: 1rem; }
+
+/* Leave room for the home indicator and landscape camera cutouts. */
+@layer components {
+  /* Sixteen-pixel inputs avoid focus zoom on iOS; title styles can override. */
+  .form-input { font-size: 16px; }
+  @media (min-width: 640px) {
+    .form-input { font-size: 15px; }
+  }
+  .auth-viewport {
+    padding: max(1.5rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1.5rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  }
+  .app-viewport {
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+  @media (min-width: 768px) {
+    .app-viewport {
+      padding-top: max(0.75rem, env(safe-area-inset-top));
+      padding-right: max(0.75rem, env(safe-area-inset-right));
+      padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+      padding-left: max(0.75rem, env(safe-area-inset-left));
+    }
+  }
+}
+
 :focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
@@ -103,6 +135,8 @@ body {
   font-size: 1rem;
   line-height: 1.7;
   max-width: 70ch;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .lecture h1,
 .lecture h2,
@@ -141,6 +175,8 @@ body {
   padding: 1em;
   border-radius: 14px;
   overflow-x: auto;
+  max-width: 100%;
+  overflow-wrap: normal;
 }
 .lecture pre code { background: none; padding: 0; }
 .lecture blockquote {
@@ -155,7 +191,7 @@ body {
   border: 1px solid var(--line);
   background: #fff;
 }
-.lecture table { border-collapse: collapse; font-size: 0.9375rem; }
+.lecture table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.9375rem; }
 .lecture th,
 .lecture td { border: 1px solid var(--line); padding: 0.45em 0.75em; text-align: left; }
 .lecture th { background: var(--soft); font-weight: 600; }
@@ -167,6 +203,12 @@ body {
   50% { opacity: 0.45; transform: scale(0.8); }
 }
 .dot-breathe { animation: breathe 1.6s ease-in-out infinite; }
+
+/* Keep the hang-up control in view on short landscape phones. */
+@media (max-height: 600px) and (max-width: 1023px) {
+  .call-presence { flex-direction: row; flex-wrap: wrap; gap: 12px; padding: 16px; }
+  .call-presence .call-orb { width: 80px; height: 80px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,

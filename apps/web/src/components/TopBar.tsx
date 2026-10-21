@@ -1,6 +1,6 @@
 import { A } from '@solidjs/router';
 import { createSignal, Show } from 'solid-js';
-import { KeyRound, LogOut, Menu } from 'lucide-solid';
+import { KeyRound, LogOut, Menu, X } from 'lucide-solid';
 import { useAuth } from '../lib/auth';
 
 /** Bolo, the approved TalkToBolo mark. */
@@ -12,7 +12,7 @@ export function Logo(props: { class?: string }) {
   );
 }
 
-export function TopBar(props: { onMenu: () => void }) {
+export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
   const auth = useAuth();
   const [menu, setMenu] = createSignal(false);
   const initial = () => auth.user()?.name?.trim().charAt(0).toUpperCase() || '?';
@@ -21,11 +21,13 @@ export function TopBar(props: { onMenu: () => void }) {
     <header class="flex h-16 shrink-0 items-center gap-2 px-3 sm:px-5">
       <button
         type="button"
-        class="inline-flex h-10 w-10 items-center justify-center rounded-full text-muted hover:bg-soft hover:text-fg md:hidden"
-        aria-label="Open the sidebar"
+        class="inline-flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-soft hover:text-fg md:hidden"
+        aria-label={props.menuOpen ? 'Close navigation' : 'Open navigation'}
+        aria-expanded={props.menuOpen}
+        aria-controls="app-navigation"
         onClick={props.onMenu}
       >
-        <Menu size={20} stroke-width={1.75} />
+        {props.menuOpen ? <X size={20} stroke-width={1.75} /> : <Menu size={20} stroke-width={1.75} />}
       </button>
       <A href="/" class="mr-3 inline-flex shrink-0 items-center text-fg" aria-label="TalkToBolo home">
         <Logo />
@@ -35,7 +37,8 @@ export function TopBar(props: { onMenu: () => void }) {
         <button
           type="button"
           onClick={() => setMenu(!menu())}
-          class="inline-flex h-10 items-center gap-2.5 rounded-full bg-soft pl-1 pr-3.5 text-[14px] text-fg hover:bg-hover"
+          class="inline-flex h-11 min-w-11 items-center justify-center gap-2.5 rounded-full bg-soft px-1 text-[14px] text-fg hover:bg-hover md:h-10 sm:pr-3.5"
+          aria-label="Account menu"
           aria-haspopup="menu"
           aria-expanded={menu()}
         >
@@ -51,7 +54,7 @@ export function TopBar(props: { onMenu: () => void }) {
             <A
               href="/settings"
               role="menuitem"
-              class="flex h-10 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft"
+              class="flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10"
               onClick={() => setMenu(false)}
             >
               <KeyRound size={17} stroke-width={1.75} class="text-muted" /> AI access
@@ -59,7 +62,7 @@ export function TopBar(props: { onMenu: () => void }) {
             <button
               type="button"
               role="menuitem"
-              class="flex h-10 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft"
+              class="flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10"
               onClick={() => auth.signOut()}
             >
               <LogOut size={17} stroke-width={1.75} class="text-muted" /> Sign out

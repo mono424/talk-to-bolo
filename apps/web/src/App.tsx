@@ -22,12 +22,12 @@ function Layout(props: RouteSectionProps) {
 
   return (
     <Show when={auth.userId()} fallback={<AuthScreen />}>
-      <div class="h-dvh md:p-3">
+      <div class="app-viewport h-dvh">
         <div class="flex h-full flex-col overflow-hidden bg-surface md:rounded-[22px] md:border md:border-line md:shadow-frame">
-          <TopBar onMenu={() => setMenuOpen(!menuOpen())} />
+          <TopBar menuOpen={menuOpen()} onMenu={() => setMenuOpen(!menuOpen())} />
           <div class="relative flex min-h-0 flex-1">
             <Sidebar open={menuOpen()} onClose={() => setMenuOpen(false)} />
-            <main class="scroll-quiet min-w-0 flex-1 overflow-y-auto">{props.children}</main>
+            <main class="scroll-quiet min-w-0 flex-1 overflow-y-auto overscroll-contain">{props.children}</main>
           </div>
         </div>
       </div>

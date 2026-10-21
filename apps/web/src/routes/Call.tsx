@@ -53,7 +53,9 @@ export default function CallPage() {
 
   // Keep the newest line in view.
   let transcriptEnd: HTMLDivElement | undefined;
-  createEffect(on(() => turns.data()?.length, () => transcriptEnd?.scrollIntoView({ behavior: 'smooth', block: 'end' })));
+  createEffect(on(() => turns.data()?.length, (length) => {
+    if (!isPast() && live() && length) transcriptEnd?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }));
 
   const lastTutorSeq = createMemo(() => [...(turns.data() ?? [])].reverse().find((t) => t.role === 'tutor')?.seq);
   const recapHtml = createMemo(() => (record.data()?.recap ? renderMarkdown(record.data()!.recap!) : ''));
@@ -71,25 +73,26 @@ export default function CallPage() {
   };
 
   return (
-    <div class="flex min-h-full flex-col">
-      <div class="flex items-center gap-2 border-b border-line px-4 py-3 sm:px-6">
-        <Show when={!live()} fallback={<span class="px-2 text-[15px] font-medium">{course.data()?.title}</span>}>
-          <A href={courseKey() ? `/courses/${courseKey()}` : '/'} class={`${buttonClass('ghost', 'sm')} -ml-1 text-muted`}>
-            <ArrowLeft size={16} stroke-width={1.75} /> {course.data()?.title ?? 'Course'}
+    <div class="flex min-h-full min-w-0 flex-col">
+      <div class="flex min-w-0 flex-col items-start gap-1 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-6">
+        <Show when={!live()} fallback={<span class="max-w-full truncate px-2 text-[15px] font-medium">{course.data()?.title}</span>}>
+          <A href={courseKey() ? `/courses/${courseKey()}` : '/'} class={`${buttonClass('ghost', 'sm')} -ml-1 max-w-full text-muted`}>
+            <ArrowLeft size={16} stroke-width={1.75} class="shrink-0" />
+            <span class="truncate">{course.data()?.title ?? 'Course'}</span>
           </A>
         </Show>
-        <span class="ml-auto truncate text-[14px] text-muted">
+        <span class="min-w-0 max-w-full px-2 text-[13px] leading-relaxed text-muted [overflow-wrap:anywhere] sm:ml-auto sm:truncate sm:px-0 sm:text-[14px]">
           {modeLabel(mode())}: {topic()}
           <Show when={isPast() && record.data()?.started_at}>, {formatDate(record.data()!.started_at, true)}</Show>
         </span>
       </div>
 
-      <div class="grid flex-1 lg:grid-cols-[minmax(20rem,28rem)_1fr]">
+      <div class="grid min-w-0 flex-1 lg:grid-cols-[minmax(20rem,28rem)_minmax(0,1fr)]">
         {/* The call */}
-        <section class="flex flex-col items-center justify-center gap-7 border-b border-line px-6 py-14 lg:border-b-0 lg:border-r" aria-live="polite">
+        <section class={`flex min-w-0 flex-col items-center justify-center gap-5 px-5 py-8 sm:gap-7 sm:px-6 sm:py-12 lg:py-14 ${live() ? 'call-presence sticky top-0 z-10 self-start bg-surface lg:static lg:self-stretch' : ''}`} aria-live="polite">
           <Orb phase={isPast() ? 'ended' : call.phase()} speaking={call.speaking()} level={call.level()} />
 
-          <div class="text-center">
+          <div class="max-w-full text-center [overflow-wrap:anywhere]">
             <p class={`text-[17px] font-medium ${call.phase() === 'error' ? 'text-red' : ''}`}>{status()}</p>
             <Show when={!live()}>
               <p class="mt-1 text-[15px] text-muted">
@@ -98,7 +101,7 @@ export default function CallPage() {
             </Show>
           </div>
 
-          <div class="flex items-center gap-3">
+          <div class="flex flex-wrap items-center justify-center gap-3">
             <Switch>
               <Match when={live()}>
                 <IconButton
@@ -134,10 +137,10 @@ export default function CallPage() {
         </section>
 
         {/* Recap and transcript */}
-        <section class="scroll-quiet min-h-[50vh] overflow-y-auto bg-canvas/50 px-5 py-8 sm:px-8" aria-label="Transcript">
-          <div class="mx-auto max-w-2xl">
+        <section class="scroll-quiet min-h-64 min-w-0 overflow-y-auto bg-canvas/50 px-4 py-6 sm:min-h-[50vh] sm:px-8 sm:py-8" aria-label="Transcript">
+          <div class="mx-auto min-w-0 max-w-2xl">
             <Show when={recapHtml()}>
-              <Card class="mb-8 p-6">
+              <Card class="mb-6 min-w-0 p-4 sm:mb-8 sm:p-6">
                 <div class="mb-3 flex items-center gap-2 text-[13px] text-muted">
                   <Dot tone="ready" /> Recap
                 </div>
@@ -159,7 +162,7 @@ export default function CallPage() {
                   return (
                     <li class={`flex ${t.role === 'student' ? 'justify-end' : 'justify-start'}`}>
                       <p
-                        class={`max-w-[85%] rounded-[20px] px-4 py-2.5 text-[15px] leading-relaxed ${
+                        class={`min-w-0 max-w-[92%] rounded-[20px] px-4 py-2.5 text-[15px] leading-relaxed [overflow-wrap:anywhere] sm:max-w-[85%] ${
                           t.role === 'student'
                             ? 'rounded-br-md bg-solid text-solid-fg'
                             : `rounded-bl-md border bg-surface ${current() ? 'border-blue/50 shadow-card' : 'border-line'}`
@@ -190,7 +193,7 @@ function Orb(props: { phase: string; speaking: boolean; level: number }) {
   const active = () => props.phase === 'live';
   const scale = () => (active() ? 1 + Math.min(props.level, 1) * 0.4 : 1);
   return (
-    <div class="relative flex h-52 w-52 items-center justify-center" aria-hidden="true">
+    <div class="call-orb relative flex h-44 w-44 shrink-0 items-center justify-center sm:h-52 sm:w-52" aria-hidden="true">
       <div
         class="absolute inset-4 rounded-full transition-[transform,background-color] duration-150 ease-out"
         classList={{

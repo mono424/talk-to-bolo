@@ -87,6 +87,70 @@ h1 { font-size: clamp(46px, 5vw, 70px); line-height: 1.12; letter-spacing: -3.9p
 @media (max-width: 380px) {
   .header { padding-left: 11px; padding-right: 9px; }.header .wordmark { font-size: clamp(16px, 5vw, 18px); gap: 6px; }.header .brand-mark { width: 24px; height: 21px; }.nav-actions { gap: 2px; }.nav-actions .button { font-size: 9px; padding: 0 10px; }.hero { padding-left: 12px; padding-right: 12px; }.hero-actions { gap: 3px; }.hero-actions .button { font-size: 9px; padding: 0 12px; }.hero-description { font-size: 11px; }.desktop-break { display: none; }.material-stack, .voice-card { width: calc(100% - 24px); }.material-card { padding: 10px; }.material-card h2 { font-size: 17px; }.hero-triptych > .material-panel, .hero-triptych > .call-panel { height: 280px; }.panel-caption { font-size: 5px; }.voice-card h2 { font-size: 11px; }.tutor-quote { font-size: 6px; }.waveform { gap: 1.5px; }.material-ready { font-size: 4.5px; }.section-container { margin-left: 20px; margin-right: 20px; }.chat-bubble { font-size: 11px; padding-left: 15px; padding-right: 15px; }.conversation { padding-left: 18px; padding-right: 18px; }
 }
+/* Keep reading copy and interactive controls comfortable on phones. */
+@media (max-width: 760px) {
+  .menu-toggle { display: grid; place-items: center; min-width: 44px; min-height: 44px; }
+  .nav-actions .button { min-height: 44px; }
+  .hero-actions { flex-wrap: wrap; gap: 8px; }
+  .hero-actions .button { min-height: 48px; font-size: 12px; }
+  .hero-description, .section-heading p, .step p, .partner-copy > p,
+  .faq-heading p, .faq-item p { font-size: 14px; line-height: 1.8; }
+  .desktop-break { display: none; }
+  .eyebrow, .hero-note, .triptych-footnote { font-size: 10px; }
+  .section-label, .step-detail { font-size: 10px; }
+  .step-content { min-width: 0; }
+  .step h3 { font-size: 17px; }
+  .step-detail { flex-wrap: wrap; }
+  .faq-item summary { min-height: 56px; font-size: 14px; line-height: 1.5; }
+  .faq-plus { flex-shrink: 0; }
+  .text-link { min-height: 44px; font-size: 14px; }
+  .closing-section .button { min-height: 48px; font-size: 14px; }
+  .closing-section > p, .footer p, .footer > span { font-size: 11px; line-height: 1.7; }
+  .demo-dialog { overflow-y: auto; overscroll-behavior: contain; padding: 20px 16px; }
+  .dialog-close { flex-shrink: 0; width: 44px; height: 44px; }
+  .demo-intro, .demo-message p { font-size: 14px; }
+  .demo-tabs button { min-height: 44px; font-size: 12px; padding: 8px; }
+  .demo-message { min-width: 0; overflow-wrap: anywhere; }
+  .demo-footer .button { min-height: 44px; }
+  .demo-footer > span { font-size: 10px; }
+}
+@media (max-width: 480px) {
+  .header { margin: 0 8px; padding: 0 8px; }
+  .header .wordmark { font-size: 18px; gap: 6px; }
+  .header .brand-mark { width: 26px; height: 24px; }
+  .nav-actions { gap: 2px; }
+  .nav-actions .button { padding: 0 12px; font-size: 11px; }
+  .nav-actions .button svg { display: none; }
+  .hero-description { text-wrap: pretty; }
+  .hero-triptych { grid-template-columns: minmax(0, 1fr); }
+  .hero-triptych > .material-panel, .hero-triptych > .call-panel { height: 350px; }
+  .material-stack, .voice-card { width: 235px; max-width: calc(100% - 36px); }
+  .panel-kicker { top: 20px; left: 20px; font-size: 9px; }
+  .panel-caption { font-size: 9px; bottom: 20px; }
+  .material-card { padding: 20px; }
+  .material-card h2 { font-size: 25px; }
+  .material-card > p { font-size: 11px; }
+  .file-row { gap: 8px; padding: 11px 0; }
+  .file-row strong { font-size: 10px; }
+  .file-row div > span { font-size: 8px; }
+  .tag, .material-ready { font-size: 8px; }
+  .voice-card { padding: 18px; }
+  .voice-card-top { font-size: 9px; }
+  .demo-label { font-size: 8px; }
+  .voice-card h2 { font-size: 20px; }
+  .voice-card > p:not(.tutor-quote) { font-size: 10px; }
+  .tutor-quote { font-size: 11px; }
+  .waveform { height: 55px; }
+  .chat-bubble { overflow-wrap: anywhere; }
+  .chat-bubble br { display: none; }
+  .partner-art { min-height: 420px; }
+}
+@media (max-width: 350px) {
+  .header .wordmark { font-size: 16px; }
+  .nav-actions .button { font-size: 10px; padding: 0 10px; }
+  .hero-actions { flex-direction: column; }
+  .hero-actions .button { width: 100%; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *:before, *:after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }

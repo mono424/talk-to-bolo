@@ -1,5 +1,5 @@
 import { A, useLocation, useNavigate } from '@solidjs/router';
-import { createMemo, createSignal, For, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
 import { ChevronsDown, ChevronsUp, Folder, House, PhoneCall, Plus } from 'lucide-solid';
 import type { schema } from '../schema.gen';
@@ -32,6 +32,15 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
   const [adding, setAdding] = createSignal(false);
   const [title, setTitle] = createSignal('');
 
+  createEffect(() => {
+    if (!props.open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') props.onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    onCleanup(() => document.removeEventListener('keydown', closeOnEscape));
+  });
+
   // Failed first, then what is still running.
   const attentionItems = createMemo(() =>
     [...(attention.data() ?? [])].sort((a, b) => Number(b.status === 'failed') - Number(a.status === 'failed')),
@@ -53,11 +62,12 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
   return (
     <>
       <Show when={props.open}>
-        <div class="absolute inset-0 z-20 bg-black/20 md:hidden" onClick={props.onClose} />
+        <button type="button" aria-label="Close navigation" tabindex="-1" class="absolute inset-0 z-20 bg-black/30 md:hidden" onClick={props.onClose} />
       </Show>
       <aside
-        class={`scroll-quiet absolute inset-y-0 left-0 z-30 w-[288px] shrink-0 overflow-y-auto bg-surface px-3 py-4 transition-transform md:static md:translate-x-0 ${
-          props.open ? 'translate-x-0' : '-translate-x-full'
+        id="app-navigation"
+        class={`scroll-quiet absolute inset-y-0 left-0 z-30 w-[288px] max-w-[calc(100%-3rem)] shrink-0 overflow-y-auto overscroll-contain rounded-r-2xl bg-surface px-3 py-4 shadow-card transition-[transform,visibility] md:visible md:static md:max-w-none md:translate-x-0 md:rounded-none md:shadow-none ${
+          props.open ? 'visible translate-x-0' : 'invisible -translate-x-full'
         }`}
         aria-label="Navigation"
       >
@@ -79,7 +89,7 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
             <form onSubmit={create} class="flex h-11 items-center gap-3 rounded-2xl bg-soft px-3">
               <Plus size={19} stroke-width={1.6} class="shrink-0 text-muted" />
               <input
-                class="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-faint"
+                class="min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-faint md:text-[15px]"
                 placeholder="Course name"
                 value={title()}
                 onInput={(e) => setTitle(e.currentTarget.value)}
