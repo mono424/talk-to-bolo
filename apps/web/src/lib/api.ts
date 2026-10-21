@@ -7,7 +7,7 @@ import type { Db } from './query';
  */
 export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8787').replace(/\/+$/, '');
 
-export const assetUrl = (id: string) => `${API_URL}/assets/${encodeURIComponent(id)}`;
+export const assetUrl = (id: string) => `${API_URL}/material-assets/${encodeURIComponent(id)}`;
 
 export class ApiError extends Error {
   constructor(

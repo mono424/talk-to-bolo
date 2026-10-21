@@ -3,22 +3,17 @@
 # Studycall on Sp00ky Cloud's free plan (platform: Cloudflare):
 #   - the SSP sync node runs as a Cloudflare Worker,
 #   - the web app is published as a static SPA on Workers Static Assets,
-#   - SurrealDB is external (SurrealDB Cloud), reached by both.
+#   - SurrealDB is the shared free database (`talktobolo/main`).
 # The free plan runs no backends, so the API (apps/api: voice calls, PDF
 # processing, search, MCP) is our own Cloudflare Worker, deployed with
 # wrangler. See README.md.
 mode: singlenode
-slug: studycall
+slug: talktobolo
+cloudApi: https://api-stg.sp00ky.cloud
 surrealdb:
-  hosting: external
-  # Your SurrealDB Cloud instance (Surrealist > Connect). The web app connects
-  # to it directly, the SSP Worker over HTTP.
-  endpoint: wss://YOUR-INSTANCE.aws-euw1.surreal.cloud
-  namespace: studycall
+  hosting: cloud
+  namespace: talktobolo
   database: main
-  username: studycall
-  password:
-    vault: DB_PASSWORD
 schema: ./schema
 version:
   cloud: canary
