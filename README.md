@@ -13,6 +13,7 @@
 </p>
 
 <p align="center">
+  <a href="https://mono424.github.io/talk-to-bolo/">Visit the site</a> ·
   <a href="#meet-bolo">Meet Bolo</a> ·
   <a href="#getting-started">Getting started</a> ·
   <a href="docs/setup.md">Setup &amp; deployment</a> ·

@@ -113,8 +113,30 @@ pnpm build:landing
 ```
 
 Set `PUBLIC_APP_URL` in `apps/landing/.env.local` to the actual app origin
-before a production build. It falls back to `http://localhost:5180` for local
-development. The static build is written to `apps/landing/dist`.
+before a production build. Development falls back to `http://localhost:5180`.
+Production builds without an app URL offer the interactive sample conversation
+and hide login links. The static build is written to `apps/landing/dist`.
+
+### GitHub Pages
+
+The landing page is published at <https://mono424.github.io/talk-to-bolo/>.
+The [`Deploy landing page` workflow](../.github/workflows/deploy-landing.yml)
+checks, builds, and deploys it when landing-page code or build configuration
+changes on `main`. It can also be run manually from GitHub Actions.
+
+GitHub Pages is configured to publish from **GitHub Actions**. The workflow
+supplies `SITE_URL` and `BASE_PATH` from the Pages configuration, so logos,
+photos, fonts, and scripts work under the `/talk-to-bolo/` project path.
+
+When the web app is available, set the repository Actions variable
+`PUBLIC_APP_URL` to its HTTPS URL, then rerun the workflow. That enables the
+Get started and Log in links on the published landing page.
+
+To build the same project-path layout locally:
+
+```bash
+SITE_URL=https://mono424.github.io BASE_PATH=/talk-to-bolo PUBLIC_APP_URL= pnpm build:landing
+```
 
 Landing page photo: [Sanket Mishra on Unsplash](https://unsplash.com/photos/a-girl-sitting-on-a-bench-using-a-laptop-vvE2GOnGudg).
 

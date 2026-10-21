@@ -5,7 +5,9 @@ import '../styles/global.css';
 import Icon from '../components/Icon.astro';
 import Logo from '../components/Logo.astro';
 
-const appUrl = import.meta.env.PUBLIC_APP_URL || 'http://localhost:5180';
+const appUrl = import.meta.env.PUBLIC_APP_URL?.trim() || (import.meta.env.DEV ? 'http://localhost:5180' : null);
+const baseUrl = import.meta.env.BASE_URL;
+const canonicalUrl = new URL(baseUrl, Astro.site);
 const waveform = [12, 22, 16, 33, 47, 27, 19, 40, 57, 34, 22, 48, 64, 39, 22, 35, 51, 29, 16, 26, 44, 32, 20, 13, 27, 39, 23, 15, 30, 19, 12];
 const faqs = [
   { question: 'What is TalkToBolo?', answer: 'TalkToBolo is an AI tutor you talk to in your browser. Add your course materials, start a voice call, and work through what you are learning out loud. You can ask questions, get explanations, or have your tutor quiz you.' },
@@ -25,7 +27,9 @@ const faqs = [
     <meta property="og:title" content="TalkToBolo | Talk it through. Make it click." />
     <meta property="og:description" content="Your notes. Your questions. Your AI study partner. Turn course material into a conversation with TalkToBolo." />
     <meta property="og:type" content="website" />
-    <link rel="icon" type="image/svg+xml" href="/studycall-logo-small.svg" />
+    <meta property="og:url" content={canonicalUrl.href} />
+    <link rel="canonical" href={canonicalUrl.href} />
+    <link rel="icon" type="image/svg+xml" href={`${baseUrl}studycall-logo-small.svg`} />
     <title>TalkToBolo | Talk it through. Make it click.</title>
   </head>
   <body>
@@ -42,15 +46,17 @@ const faqs = [
           <a href="#questions">Questions</a>
         </nav>
         <div class="nav-actions">
-          <a class="sign-in" href={appUrl}>Log in <Icon name="arrow" size={15} /></a>
-          <a class="button button-dark button-small" href={appUrl}>Get started <Icon name="arrow" size={15} /></a>
+          {appUrl && <a class="sign-in" href={appUrl}>Log in <Icon name="arrow" size={15} /></a>}
+          {appUrl
+            ? <a class="button button-dark button-small" href={appUrl}>Get started <Icon name="arrow" size={15} /></a>
+            : <button class="button button-dark button-small" data-open-demo>Try a demo <Icon name="arrow" size={15} /></button>}
           <button class="menu-toggle" aria-label="Open navigation" aria-expanded="false" aria-controls="mobile-nav"><Icon name="menu" /></button>
         </div>
         <nav id="mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden>
           <a href="#how-it-works">How it works <Icon name="arrow" size={16} /></a>
           <a href="#your-study-partner">Why TalkToBolo <Icon name="arrow" size={16} /></a>
           <a href="#questions">Questions <Icon name="arrow" size={16} /></a>
-          <a href={appUrl}>Log in <Icon name="arrow" size={16} /></a>
+          {appUrl && <a href={appUrl}>Log in <Icon name="arrow" size={16} /></a>}
         </nav>
       </header>
 
@@ -61,7 +67,9 @@ const faqs = [
             <h1 id="hero-title">Talk it through.<br /><span>Make it click.</span></h1>
             <p class="hero-description">Turn your lecture slides and notes into a conversation.<br class="desktop-break" /> Meet the AI study partner that listens, explains, and asks back.</p>
             <div class="hero-actions">
-              <a class="button button-dark" href={appUrl}>Find your aha moment <Icon name="arrow" size={18} /></a>
+              {appUrl
+                ? <a class="button button-dark" href={appUrl}>Find your aha moment <Icon name="arrow" size={18} /></a>
+                : <button class="button button-dark" data-open-demo>Try a conversation <Icon name="arrow" size={18} /></button>}
               <button class="button button-quiet" data-open-demo><span class="play-icon"><Icon name="play" size={13} /></span> See how it works</button>
             </div>
             <p class="hero-note"><Icon name="headphones" size={14} /> Your material. Your pace. Just press call.</p>
@@ -69,7 +77,7 @@ const faqs = [
 
           <div class="hero-triptych" aria-label="From your notes to a conversation">
             <div class="photo-panel">
-              <img src="/images/study-anywhere.jpg" alt="A student wearing headphones, studying on a laptop in a sunny park" width="1000" height="667" fetchpriority="high" />
+              <img src={`${baseUrl}images/study-anywhere.jpg`} alt="A student wearing headphones, studying on a laptop in a sunny park" width="1000" height="667" fetchpriority="high" />
               <div class="photo-topline"><Logo class="small-orbit" /> A fresh way to study.</div>
               <div class="photo-bottom"><span>Big ideas.<br />Anywhere you are.</span><span class="circle-arrow"><Icon name="arrow" size={22} /></span></div>
             </div>
@@ -134,7 +142,7 @@ const faqs = [
           <div class="faq-list">{faqs.map((faq) => <details class="faq-item"><summary>{faq.question}<span class="faq-plus"><Icon name="plus" size={18} /></span></summary><p>{faq.answer}</p></details>)}</div>
         </section>
 
-        <section class="closing-section" aria-labelledby="closing-title"><Logo class="closing-orbit" /><span class="section-label">YOUR NEXT AHA MOMENT IS ONE CALL AWAY</span><h2 id="closing-title">Goodbye, blank stare.<br /><span>Hello, TalkToBolo.</span></h2><a href={appUrl} class="button button-dark">Let’s talk it through <Icon name="arrow" size={18} /></a><p>Your notes. Your questions. Your study partner.</p></section>
+        <section class="closing-section" aria-labelledby="closing-title"><Logo class="closing-orbit" /><span class="section-label">YOUR NEXT AHA MOMENT IS ONE CALL AWAY</span><h2 id="closing-title">Goodbye, blank stare.<br /><span>Hello, TalkToBolo.</span></h2>{appUrl ? <a href={appUrl} class="button button-dark">Let’s talk it through <Icon name="arrow" size={18} /></a> : <button class="button button-dark" data-open-demo>Try a conversation <Icon name="arrow" size={18} /></button>}<p>Your notes. Your questions. Your study partner.</p></section>
       </main>
 
       <footer class="footer section-container"><a href="#" class="wordmark" aria-label="TalkToBolo home"><Logo />TalkToBolo</a><p>A little less stuck. A little more you’ve got this.</p><span>© {new Date().getFullYear()} TalkToBolo</span></footer>
@@ -145,7 +153,7 @@ const faqs = [
       <h2 id="demo-title">How do you like to learn?</h2><p class="demo-intro">Explore a sample session about memory and learning.<br />Choose a mode to see the conversation.</p>
       <div class="demo-tabs" role="tablist" aria-label="Study mode"><button id="tab-explain" role="tab" aria-controls="demo-conversation" aria-selected="true" data-mode="explain">Explain it</button><button id="tab-quiz" role="tab" aria-controls="demo-conversation" aria-selected="false" tabindex="-1" data-mode="quiz">Quiz me</button><button id="tab-qa" role="tab" aria-controls="demo-conversation" aria-selected="false" tabindex="-1" data-mode="qa">I ask</button></div>
       <div id="demo-conversation" class="demo-conversation" role="tabpanel" aria-labelledby="tab-explain" tabindex="0" aria-live="polite"></div>
-      <div class="demo-footer"><span>Illustrative preview · No microphone needed</span><a href={appUrl} class="button button-dark button-small">Try your own material <Icon name="arrow" size={15} /></a></div>
+      <div class="demo-footer"><span>Illustrative preview · No microphone needed</span>{appUrl && <a href={appUrl} class="button button-dark button-small">Try your own material <Icon name="arrow" size={15} /></a>}</div>
     </dialog>
 
     <script>
