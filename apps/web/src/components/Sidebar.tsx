@@ -1,7 +1,7 @@
 import { A, useLocation, useNavigate } from '@solidjs/router';
 import { createMemo, createSignal, For, Show } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { ChevronsDown, ChevronsUp, Folder, House, Plus } from 'lucide-solid';
+import { ChevronsDown, ChevronsUp, Folder, House, PhoneCall, Plus } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { idKey, newId } from '../lib/ids';
@@ -56,7 +56,7 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
         <div class="absolute inset-0 z-20 bg-black/20 md:hidden" onClick={props.onClose} />
       </Show>
       <aside
-        class={`scroll-quiet absolute inset-y-0 left-0 z-30 w-[288px] shrink-0 overflow-y-auto border-r border-line bg-surface px-3 py-4 transition-transform md:static md:translate-x-0 ${
+        class={`scroll-quiet absolute inset-y-0 left-0 z-30 w-[288px] shrink-0 overflow-y-auto bg-surface px-3 py-4 transition-transform md:static md:translate-x-0 ${
           props.open ? 'translate-x-0' : '-translate-x-full'
         }`}
         aria-label="Navigation"
@@ -64,6 +64,9 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
         <nav class="space-y-0.5">
           <A href="/" class={navClass(location.pathname === '/')} end>
             <House size={19} stroke-width={1.6} class="text-muted" /> Home
+          </A>
+          <A href="/calls" class={navClass(location.pathname === '/calls' || location.pathname.startsWith('/calls/'))}>
+            <PhoneCall size={19} stroke-width={1.6} class="shrink-0 text-muted" /> Calls
           </A>
           <Show
             when={adding()}
@@ -130,7 +133,7 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
               {(c) => (
                 <li>
                   <A href={`/courses/${idKey(c.id)}`} class={navClass(location.pathname.startsWith(`/courses/${idKey(c.id)}`))}>
-                    <Folder size={19} stroke-width={1.6} style={{ color: courseColor(c.color) }} fill={courseColor(c.color)} fill-opacity="0.18" />
+                    <Folder size={19} stroke-width={1.6} class="shrink-0" style={{ color: courseColor(c.color) }} fill={courseColor(c.color)} fill-opacity="0.18" />
                     <span class="truncate">{c.title}</span>
                   </A>
                 </li>
