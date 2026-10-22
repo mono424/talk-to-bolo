@@ -120,8 +120,10 @@ apps:
           - ELEVENLABS_API_KEY
           - ELEVENLABS_AGENT_ID
           - LLM_SHARED_SECRET
-          - AGENT_MEMORY_URL
-          - AGENT_MEMORY_API_KEY
+          # Agent Memory (the course knowledge graph) is off until the vault's
+          # AGENT_MEMORY_URL is the full Context URL, ending /api/v1/<context
+          # id>: it holds only the host, and with it set every ingestion fails.
+          # Then list AGENT_MEMORY_URL and AGENT_MEMORY_API_KEY here again.
           # The namespace login of the shared free database (user `owner`,
           # `spky project credentials`).
           - SURREAL_PASS

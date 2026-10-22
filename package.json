@@ -14,11 +14,10 @@
     "setup:voice": "pnpm --filter @studycall/scripts setup:voice",
     "backfill:pages": "pnpm --filter @studycall/scripts backfill:pages",
     "deploy:api": "pnpm --filter @studycall/api deploy",
-    "deploy:api:staging": "pnpm --filter @studycall/api exec wrangler deploy --config wrangler.staging.jsonc",
     "deploy": "spky deploy"
   },
   "devDependencies": {
-    "@spooky-sync/cli": "0.0.1-canary.336"
+    "@spooky-sync/cli": "0.0.1-canary.344"
   },
   "packageManager": "pnpm@10.20.0",
   "pnpm": {
