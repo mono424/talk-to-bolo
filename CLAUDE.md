@@ -24,7 +24,10 @@ Use a comma, period, colon or a plain hyphen.
 ## Web app (`apps/web`)
 
 Every read is a named live query in `src/lib/query.ts`, registered with
-`useQuery`. No one-shot remote reads from the client. Calls to the API Worker
+`useQuery`. No one-shot remote reads from the client. A live query must never
+switch in place (another id while the hook stays mounted): sp00ky canary.333's
+`useQuery` then writes into rows core caches for the previous query. Remount
+per id instead (`perParam` in `App.tsx`, or a keyed `Show`). Calls to the API Worker
 go through `src/lib/api.ts` with the user's SurrealDB token. After a local
 write the API must read, `await whenSynced(db)` first.
 

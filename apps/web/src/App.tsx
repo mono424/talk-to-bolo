@@ -1,5 +1,5 @@
-import { Route, Router, useLocation, type RouteSectionProps } from '@solidjs/router';
-import { createEffect, createSignal, on, Show } from 'solid-js';
+import { Route, Router, useLocation, useParams, type RouteSectionProps } from '@solidjs/router';
+import { type Component, createEffect, createSignal, on, Show } from 'solid-js';
 import { Sp00kyProvider } from '@spooky-sync/client-solid';
 import { dbConfig } from './db';
 import { AuthProvider, useAuth } from './lib/auth';
@@ -54,6 +54,21 @@ function Layout(props: RouteSectionProps) {
   );
 }
 
+/**
+ * A page mounted afresh for each value of a URL param, so none of its live
+ * queries switches in place: sp00ky's useQuery (canary.333) writes the new
+ * query's rows into the rows core still caches for the previous one, and a
+ * course or lecture seen before then showed another one's details.
+ */
+const perParam = (name: string, Page: Component) => () => {
+  const params = useParams();
+  return (
+    <Show when={params[name]} keyed>
+      {(_key) => <Page />}
+    </Show>
+  );
+};
+
 export default function App() {
   return (
     <Sp00kyProvider
@@ -64,11 +79,12 @@ export default function App() {
       <AuthProvider>
         <Router root={Layout}>
           <Route path="/" component={Home} />
-          <Route path="/courses/:courseKey" component={CoursePage} />
-          <Route path="/courses/:courseKey/materials/:materialKey" component={MaterialPage} />
+          <Route path="/courses/:courseKey" component={perParam('courseKey', CoursePage)} />
+          <Route path="/courses/:courseKey/materials/:materialKey" component={perParam('materialKey', MaterialPage)} />
           <Route path="/courses/:courseKey/call" component={CallPage} />
           <Route path="/calls" component={CallsPage} />
-          <Route path="/calls/:callKey" component={CallPage} />
+          {/* A live call keeps its page: it is on the course route above, never remounted. */}
+          <Route path="/calls/:callKey" component={perParam('callKey', CallPage)} />
           <Route path="/settings" component={SettingsPage} />
           <Route path="/connect" component={ConnectPage} />
         </Router>

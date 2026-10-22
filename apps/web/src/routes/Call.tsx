@@ -4,11 +4,12 @@ import { useDb, useQuery } from '@spooky-sync/client-solid';
 import { ArrowDown, ArrowLeft, FileText, Mic, MicOff, PhoneCall, PhoneOff } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { materialPath, pageLabel, type CallMode } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { freshCall, useTutorCall } from '../lib/call';
 import { idKey } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { modeLabel } from '../lib/modes';
-import { firstRow, qCall, qCourse, qMaterial, qTurnSources, qTurns } from '../lib/query';
+import { firstRow, qCall, qMaterial, qTurnSources, qTurns, useCourse } from '../lib/query';
 import { Button, buttonClass, Dot, formatDate, IconButton } from '../components/ui';
 
 /** How close to the newest line still counts as reading along. */
@@ -34,6 +35,7 @@ function CallScreen() {
   const params = useParams();
   const [search] = useSearchParams();
   const db = useDb<typeof schema>();
+  const auth = useAuth();
   const navigate = useNavigate();
   const call = useTutorCall(db);
 
@@ -72,7 +74,7 @@ function CallScreen() {
     params.callKey ? (record.data()?.material ? idKey(record.data()!.material) : '') : String(search.material ?? '');
   const mode = () => ((params.callKey ? record.data()?.mode : search.mode) ?? 'explain') as CallMode;
 
-  const course = firstRow(useQuery(() => (courseKey() ? qCourse(db, `course:${courseKey()}`) : null)));
+  const course = useCourse(db, auth.userId, () => (courseKey() ? `course:${courseKey()}` : null));
   const material = firstRow(useQuery(() => (materialKey() ? qMaterial(db, `material:${materialKey()}`) : null)));
 
   const isPast = () => !!params.callKey;

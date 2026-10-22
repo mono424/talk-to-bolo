@@ -7,7 +7,7 @@ import { useAuth } from '../lib/auth';
 import { ApiError, reindexMaterial, uploadPdf } from '../lib/api';
 import { idKey, newId, whenSynced } from '../lib/ids';
 import { COURSE_COLORS, courseColor, LANGUAGES, type CourseColor } from '../lib/palette';
-import { firstRow, qCourse, qMaterialsPage, qReadyMaterials } from '../lib/query';
+import { qMaterialsPage, qReadyMaterials, useCourse } from '../lib/query';
 import { Button, Field, IconButton, inputClass, StatusText } from '../components/ui';
 import { scrollParent, VirtualList } from '../components/VirtualList';
 import { CourseSearch } from '../components/CourseSearch';
@@ -19,7 +19,7 @@ export default function CoursePage() {
   const navigate = useNavigate();
   const courseId = () => `course:${params.courseKey}`;
 
-  const course = firstRow(useQuery(() => qCourse(db, courseId())));
+  const course = useCourse(db, auth.userId, courseId);
   const readyMaterials = useQuery(() => qReadyMaterials(db, courseId()));
 
   const [writing, setWriting] = createSignal(false);

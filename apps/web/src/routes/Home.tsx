@@ -81,78 +81,89 @@ export default function Home() {
 }
 
 /** The home screen's call starter: course, lecture, mode, call. */
+const NO_COURSE = '-';
+
 function CallComposer(props: { class?: string }) {
   const db = useDb<typeof schema>();
   const auth = useAuth();
   const navigate = useNavigate();
   const courses = useQuery(() => (auth.userId() ? qCourses(db, auth.userId()!) : null));
   const [courseId, setCourseId] = createSignal('');
-  const [materialKey, setMaterialKey] = createSignal('');
   const [mode, setMode] = createSignal<CallMode>('explain');
 
   createEffect(() => {
     const list = courses.data() ?? [];
     if (list.length && !list.some((c) => c.id === courseId())) setCourseId(list[0].id);
   });
-  const materials = useQuery(() => (courseId() ? qMaterials(db, courseId()) : null));
-  const ready = createMemo(() => (materials.data() ?? []).filter((m) => m.status === 'ready'));
-  createEffect(() => {
-    if (materialKey() && !ready().some((m) => idKey(m.id) === materialKey())) setMaterialKey('');
-  });
 
-  const course = () => (courses.data() ?? []).find((c) => c.id === courseId());
-  const topic = () => ready().find((m) => idKey(m.id) === materialKey())?.title ?? course()?.title ?? '';
-  const sentence = () =>
-    ({ explain: `Walk me through ${topic()}`, quiz: `Quiz me on ${topic()}`, qa: `I have questions about ${topic()}` })[mode()];
-
-  const call = () => {
-    const q = new URLSearchParams({ mode: mode() });
-    if (materialKey()) q.set('material', materialKey());
-    navigate(`/courses/${idKey(courseId())}/call?${q}`);
-  };
-
+  // Afresh per course, so the material query never switches in place (see perParam in App.tsx).
   return (
-    <Card class={`p-3 ${props.class ?? ''}`}>
-      <p class="break-words px-2 pb-5 pt-2 text-[17px] text-fg sm:px-3 sm:pb-6 sm:pt-3 sm:text-[18px]">{sentence()}</p>
-      <div class="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <PillSelect
-          class="w-full sm:w-auto"
-          label="Course"
-          icon={<Folder size={16} stroke-width={1.75} />}
-          value={courseId()}
-          onChange={setCourseId}
-          options={(courses.data() ?? []).map((c) => ({ value: c.id, label: c.title }))}
-        />
-        <PillSelect
-          class="w-full sm:w-auto"
-          label="Lecture"
-          icon={<FileText size={16} stroke-width={1.75} />}
-          value={materialKey()}
-          onChange={setMaterialKey}
-          options={[{ value: '', label: 'Whole course' }, ...ready().map((m) => ({ value: idKey(m.id), label: m.title }))]}
-        />
-        <Segmented label="Kind of call" value={mode()} onChange={setMode} options={MODES.map((m) => ({ value: m.value, label: m.label }))} />
-        <button
-          type="button"
-          onClick={call}
-          disabled={ready().length === 0}
-          aria-label="Start call"
-          title={ready().length === 0 ? 'Add material that is ready first' : 'Start call'}
-          class="inline-flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-solid text-[14px] font-medium text-solid-fg transition-colors hover:bg-solid-hover disabled:opacity-30 sm:ml-auto sm:w-11"
-        >
-          <PhoneCall size={18} stroke-width={1.9} />
-          <span class="sm:sr-only">Start call</span>
-        </button>
-      </div>
-      <Show when={course() && ready().length === 0}>
-        <p class="px-3 pt-3 text-[13px] text-muted">
-          {course()?.title} has no material ready yet.{' '}
-          <A href={`/courses/${idKey(courseId())}`} class="text-fg underline underline-offset-2">
-            Add some
-          </A>
-        </p>
-      </Show>
-    </Card>
+    <Show when={courseId() || NO_COURSE} keyed>
+      {(key) => {
+        const id = key === NO_COURSE ? '' : key;
+        const [materialKey, setMaterialKey] = createSignal('');
+        const materials = useQuery(() => (id ? qMaterials(db, id) : null));
+        const ready = createMemo(() => (materials.data() ?? []).filter((m) => m.status === 'ready'));
+        createEffect(() => {
+          if (materialKey() && !ready().some((m) => idKey(m.id) === materialKey())) setMaterialKey('');
+        });
+
+        const course = () => (courses.data() ?? []).find((c) => c.id === courseId());
+        const topic = () => ready().find((m) => idKey(m.id) === materialKey())?.title ?? course()?.title ?? '';
+        const sentence = () =>
+          ({ explain: `Walk me through ${topic()}`, quiz: `Quiz me on ${topic()}`, qa: `I have questions about ${topic()}` })[mode()];
+
+        const call = () => {
+          const q = new URLSearchParams({ mode: mode() });
+          if (materialKey()) q.set('material', materialKey());
+          navigate(`/courses/${idKey(courseId())}/call?${q}`);
+        };
+
+        return (
+          <Card class={`p-3 ${props.class ?? ''}`}>
+            <p class="break-words px-2 pb-5 pt-2 text-[17px] text-fg sm:px-3 sm:pb-6 sm:pt-3 sm:text-[18px]">{sentence()}</p>
+            <div class="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <PillSelect
+                class="w-full sm:w-auto"
+                label="Course"
+                icon={<Folder size={16} stroke-width={1.75} />}
+                value={courseId()}
+                onChange={setCourseId}
+                options={(courses.data() ?? []).map((c) => ({ value: c.id, label: c.title }))}
+              />
+              <PillSelect
+                class="w-full sm:w-auto"
+                label="Lecture"
+                icon={<FileText size={16} stroke-width={1.75} />}
+                value={materialKey()}
+                onChange={setMaterialKey}
+                options={[{ value: '', label: 'Whole course' }, ...ready().map((m) => ({ value: idKey(m.id), label: m.title }))]}
+              />
+              <Segmented label="Kind of call" value={mode()} onChange={setMode} options={MODES.map((m) => ({ value: m.value, label: m.label }))} />
+              <button
+                type="button"
+                onClick={call}
+                disabled={ready().length === 0}
+                aria-label="Start call"
+                title={ready().length === 0 ? 'Add material that is ready first' : 'Start call'}
+                class="inline-flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-solid text-[14px] font-medium text-solid-fg transition-colors hover:bg-solid-hover disabled:opacity-30 sm:ml-auto sm:w-11"
+              >
+                <PhoneCall size={18} stroke-width={1.9} />
+                <span class="sm:sr-only">Start call</span>
+              </button>
+            </div>
+            <Show when={course() && ready().length === 0}>
+              <p class="px-3 pt-3 text-[13px] text-muted">
+                {course()?.title} has no material ready yet.{' '}
+                <A href={`/courses/${idKey(courseId())}`} class="text-fg underline underline-offset-2">
+                  Add some
+                </A>
+              </p>
+            </Show>
+          </Card>
+        );
+      }}
+    </Show>
   );
 }
 

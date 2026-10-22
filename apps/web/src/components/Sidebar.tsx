@@ -7,7 +7,7 @@ import { useAuth } from '../lib/auth';
 import { idKey, newId } from '../lib/ids';
 import { modeLabel } from '../lib/modes';
 import { COURSE_COLORS, courseColor, type CourseColor } from '../lib/palette';
-import { firstRow, qAttention, qCall, qCallHistory, qCourse, qCourses, qMaterialsPage, qRecentCalls } from '../lib/query';
+import { firstRow, qAttention, qCall, qCallHistory, qCourses, qMaterialsPage, qRecentCalls, useCourse } from '../lib/query';
 import { freshCall } from '../lib/call';
 import { Dot, materialTone, SectionLabel } from './ui';
 import { SideSlot } from './HeaderSlot';
@@ -85,7 +85,19 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
         }`}
         aria-label="Navigation"
       >
-        <Show when={!onCall() && !onMaterial()} fallback={onCall() ? <CallNav /> : <MaterialNav />}>
+        <Show
+          when={!onCall() && !onMaterial()}
+          fallback={
+            onCall() ? (
+              // Afresh per call, so its queries never switch in place (see perParam in App.tsx).
+              <Show when={location.pathname} keyed>
+                {(_path) => <CallNav />}
+              </Show>
+            ) : (
+              <MaterialNav />
+            )
+          }
+        >
           <nav class="space-y-0.5">
             <A href="/" class={navClass(location.pathname === '/')} end>
               <House size={19} stroke-width={1.6} class="text-muted" /> Home
@@ -270,6 +282,7 @@ const shortWhen = (v: unknown) => {
 /** The sidebar on a call: back to the course, then its calls, newest first. */
 function CallNav() {
   const db = useDb<typeof schema>();
+  const auth = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -277,7 +290,7 @@ function CallNav() {
   const past = firstRow(useQuery(() => (pastKey() ? qCall(db, `call:${pastKey()}`) : null)));
   const courseKey = () =>
     location.pathname.match(/^\/courses\/([^/]+)\/call/)?.[1] ?? (past.data()?.course ? idKey(past.data()!.course) : '');
-  const course = firstRow(useQuery(() => (courseKey() ? qCourse(db, `course:${courseKey()}`) : null)));
+  const course = useCourse(db, auth.userId, () => (courseKey() ? `course:${courseKey()}` : null));
   const history = useQuery(() => (courseKey() ? qCallHistory(db, `course:${courseKey()}`) : null));
 
   // Same mode and lecture as the call on screen.
@@ -358,11 +371,12 @@ function CallNav() {
 /** The sidebar on a lecture: back to the course, then all of its material. */
 function MaterialNav() {
   const db = useDb<typeof schema>();
+  const auth = useAuth();
   const location = useLocation();
   const keys = () => location.pathname.match(MATERIAL_PATH);
   const courseKey = createMemo(() => keys()?.[1] ?? '');
   const materialKey = () => keys()?.[2] ?? '';
-  const course = firstRow(useQuery(() => (courseKey() ? qCourse(db, `course:${courseKey()}`) : null)));
+  const course = useCourse(db, auth.userId, () => (courseKey() ? `course:${courseKey()}` : null));
 
   return (
     <div class="flex h-full min-h-0 flex-col">

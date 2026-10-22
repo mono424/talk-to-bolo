@@ -1,4 +1,4 @@
-import type { SyncedDb } from '@spooky-sync/client-solid';
+import { type SyncedDb, useQuery } from '@spooky-sync/client-solid';
 import type { schema } from '../schema.gen';
 
 /**
@@ -9,22 +9,38 @@ import type { schema } from '../schema.gen';
 export type Db = SyncedDb<typeof schema>;
 
 /**
- * The row of a by-id query, which stays a plain list rather than `.one()`:
- * sp00ky (canary.333) leaves a `.one()` (LIMIT 1) view stale when a page comes
- * back to an id it showed before, so switching courses kept the old course.
- * Wrap the `useQuery` of a by-id query: `firstRow(useQuery(() => qCourse(db, id)))`.
+ * The row of a by-id query, kept a plain list rather than `.one()`. sp00ky's
+ * useQuery (canary.333) writes a switched query's rows into the rows core
+ * still caches for the previous one, and a `.one()` query then showed the
+ * record seen before. Pages also remount per id (`perParam` in App.tsx).
+ * Both can go once the sp00ky fix ships.
+ * Wrap the `useQuery` of a by-id query: `firstRow(useQuery(() => qMaterial(db, id)))`.
  */
-export function firstRow<Q extends { data: () => readonly unknown[] | null | undefined }>(result: Q) {
-  type Row = NonNullable<ReturnType<Q['data']>>[number];
-  return { ...result, data: (): Row | undefined => result.data()?.[0] };
+export function firstRow<Q extends { data: () => readonly unknown[] | null | undefined }>(result: Q): Omit<Q, 'data'> & { data: () => RowOf<Q> | undefined } {
+  return { ...result, data: () => result.data()?.[0] as RowOf<Q> | undefined };
 }
+type RowOf<Q> = Q extends { data: () => infer D } ? (NonNullable<D> extends readonly (infer R)[] ? R : never) : never;
 
 export const qMe = (db: Db, userId: string) => db.query('user').where({ id: userId }).build();
 
 export const qCourses = (db: Db, userId: string) =>
   db.query('course').where({ owner: userId }).orderBy('created_at', 'asc').build();
 
-export const qCourse = (db: Db, courseId: string) => db.query('course').where({ id: courseId }).build();
+/**
+ * One course, picked from the user's course list (the sidebar's live query)
+ * rather than a by-id query that the sidebar and the page shared: one of them
+ * switching courses wrote into the other's rows (see firstRow).
+ */
+export function useCourse(db: Db, userId: () => string | null | undefined, courseId: () => string | null | undefined) {
+  const courses = useQuery(() => (userId() ? qCourses(db, userId()!) : null));
+  return {
+    data: () => {
+      const id = courseId();
+      return id ? courses.data()?.find((c) => String(c.id) === id) : undefined;
+    },
+    isLoading: () => courses.isLoading(),
+  };
+}
 
 export const qMaterials = (db: Db, courseId: string) =>
   db.query('material').where({ course: courseId }).orderBy('created_at', 'asc').build();
