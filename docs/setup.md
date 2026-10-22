@@ -112,8 +112,9 @@ Keep the API Worker and web app pointed at the same pair for each environment.
 | Staging | `talktobolo` | `main` | [`sp00ky.yml`](../sp00ky.yml) |
 
 The checked-in [`apps/api/wrangler.jsonc`](../apps/api/wrangler.jsonc) defaults
-to the local pair. Update its `SURREAL_NS`, `SURREAL_DB`, and `APP_ORIGIN` before
-deploying the API to production.
+to the local pair. Update its `SPKY_DB_NS`, `SPKY_DB_NAME`, and `APP_ORIGIN` before
+deploying the API with wrangler. On sp00ky's Worker backend the platform sets
+`SPKY_DB_*` itself.
 
 ### Start the local stack
 
@@ -127,9 +128,12 @@ pnpm dev                                            # spky dev --path dev
 
 `pnpm dev` starts a local SurrealDB (`:8666`), the sp00ky sync node (`:8667`),
 the web app (http://localhost:5180) and the API Worker under `wrangler dev`
-(`:8787`). In `.dev.vars`, use `SURREAL_URL=http://localhost:8666`,
-`SURREAL_USER=root`, `SURREAL_PASS=root`, `SURREAL_NS=main`,
-`SURREAL_DB=studycall`, `APP_ORIGIN=http://localhost:5180`. The local sync
+(`:8787`). In `.dev.vars`, use `SPKY_DB_URL=http://localhost:8666`,
+`SPKY_DB_USER=root`, `SPKY_DB_PASS=root` (namespace `main` and database
+`studycall` come from `wrangler.jsonc`) and `APP_ORIGIN=http://localhost:5180`.
+An older `.dev.vars` with `SURREAL_URL`, `SURREAL_USER`, `SURREAL_PASS`,
+`SURREAL_NS` and `SURREAL_DB` still works: the API reads `SURREAL_*` for
+whatever `SPKY_DB_*` leaves unset. The local sync
 node runs the `job` outbox against `wrangler dev` too, with the `JOB_TOKEN` from
 `apps/api/wrangler.jsonc`.
 
@@ -241,9 +245,13 @@ the deploy bundles `apps/api/src/index.ts`, and the sync node runs it as a
 Dynamic Worker with Workers AI and the `INGEST` Workflow.
 
 Its environment is the vault keys listed under `apps.api.env` plus the plain
-values there. The database login is the free plan's namespace user `owner`
-(`pnpm exec spky project credentials`), so `SURREAL_AUTH_NS` is the namespace
-and the password is the vault's `SURREAL_PASS`. Set a missing key with
+values there, and the database env sp00ky adds to every Worker backend:
+`SPKY_DB_URL`, `SPKY_DB_NS` and `SPKY_DB_NAME`, and on the shared free database
+the project's namespace login `owner` (`SPKY_DB_USER`, `SPKY_DB_PASS`,
+`SPKY_DB_LEVEL=namespace`). On your own database sp00ky sets only the
+coordinates: put the login in the vault as `SURREAL_USER` and `SURREAL_PASS`
+(plus `SURREAL_AUTH_NS` / `SURREAL_AUTH_DB` for a namespace or database user)
+and list them under `apps.api.env`. Set a missing key with
 `pnpm exec spky env set <NAME>`, then deploy:
 
 ```bash
@@ -278,13 +286,14 @@ pnpm exec spky env set DB_PASSWORD
 ### 2. API Worker (Cloudflare)
 
 In `apps/api/wrangler.jsonc`, set `vars.APP_ORIGIN` to the production web app's
-URL and `SURREAL_NS` / `SURREAL_DB` to `studycall` / `main`. Then configure the
-secrets and deploy:
+URL and `SPKY_DB_NS` / `SPKY_DB_NAME` to `studycall` / `main`. Then configure the
+secrets (add `SPKY_DB_LEVEL` = `namespace` or `database` for a user defined
+there) and deploy:
 
 ```bash
-pnpm --filter @studycall/api exec wrangler secret put SURREAL_URL          # https://YOUR-INSTANCE.surreal.cloud
-pnpm --filter @studycall/api exec wrangler secret put SURREAL_USER
-pnpm --filter @studycall/api exec wrangler secret put SURREAL_PASS
+pnpm --filter @studycall/api exec wrangler secret put SPKY_DB_URL          # https://YOUR-INSTANCE.surreal.cloud
+pnpm --filter @studycall/api exec wrangler secret put SPKY_DB_USER
+pnpm --filter @studycall/api exec wrangler secret put SPKY_DB_PASS
 pnpm --filter @studycall/api exec wrangler secret put ANTHROPIC_API_KEY
 pnpm --filter @studycall/api exec wrangler secret put ELEVENLABS_API_KEY
 pnpm --filter @studycall/api exec wrangler secret put LLM_SHARED_SECRET    # openssl rand -base64 32

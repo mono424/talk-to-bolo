@@ -25,13 +25,13 @@ test('the job outbox only takes jobs about the student\'s own records', {
 }, async () => {
   const namespace = `bolo_jobs_${crypto.randomUUID().replaceAll('-', '')}`;
   const env = {
-    SURREAL_URL: 'http://127.0.0.1:8666', SURREAL_NS: namespace, SURREAL_DB: 'main',
-    SURREAL_USER: 'root', SURREAL_PASS: 'root',
+    SPKY_DB_URL: 'http://127.0.0.1:8666', SPKY_DB_NS: namespace, SPKY_DB_NAME: 'main',
+    SPKY_DB_USER: 'root', SPKY_DB_PASS: 'root',
   } as Env;
   const root = Surreal.system(env);
   const schema = (file: string) => readFileSync(new URL(`../../../schema/src/${file}`, import.meta.url), 'utf8');
   const signup = async (email: string) => {
-    const res = await fetch(`${env.SURREAL_URL}/signup`, {
+    const res = await fetch(`${env.SPKY_DB_URL}/signup`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify({ ns: namespace, db: 'main', ac: 'account', email, name: 'Student', password: 'pw-123456' }),

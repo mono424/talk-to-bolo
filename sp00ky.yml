@@ -122,16 +122,12 @@ apps:
           # AGENT_MEMORY_URL is the full Context URL, ending /api/v1/<context
           # id>: it holds only the host, and with it set every ingestion fails.
           # Then list AGENT_MEMORY_URL and AGENT_MEMORY_API_KEY here again.
-          # The namespace login of the shared free database (user `owner`,
-          # `spky project credentials`).
-          - SURREAL_PASS
+      # The database is not configured here: sp00ky sets SPKY_DB_URL,
+      # SPKY_DB_NS and SPKY_DB_NAME on the Worker backend, and on the shared
+      # free database its namespace login (SPKY_DB_USER, SPKY_DB_PASS,
+      # SPKY_DB_LEVEL=namespace).
       - APP_ORIGIN: https://talktobolo.stg.spky.cloud
         API_ORIGIN: https://talktobolo.stg.spky.cloud
-        SURREAL_URL: https://surreal-free.stg.spky.cloud
-        SURREAL_NS: talktobolo
-        SURREAL_DB: main
-        SURREAL_USER: owner
-        SURREAL_AUTH_NS: talktobolo
         CLAUDE_MODEL: claude-opus-5-5
         CLAUDE_PDF_MODEL: claude-opus-5-5
         EMBEDDING_MODEL: "@cf/qwen/qwen3-embedding-0.6b"

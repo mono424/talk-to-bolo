@@ -29,8 +29,10 @@
   "vars": {
     // The web app's origin, for CORS. Comma-separated for several.
     "APP_ORIGIN": "http://localhost:5180,https://talktobolo.stg.spky.cloud",
-    "SURREAL_NS": "main",
-    "SURREAL_DB": "studycall",
+    // The local database (dev/sp00ky.yml); sp00ky sets SPKY_DB_* itself on
+    // its Worker backend.
+    "SPKY_DB_NS": "main",
+    "SPKY_DB_NAME": "studycall",
     "CLAUDE_MODEL": "claude-opus-5-5",
     "CLAUDE_PDF_MODEL": "claude-opus-5-5",
     "EMBEDDING_MODEL": "@cf/qwen/qwen3-embedding-0.6b",
@@ -40,9 +42,12 @@
   }
 
   // Secrets (wrangler secret put <NAME>, or .dev.vars locally):
-  //   SURREAL_URL          https://<instance>.surreal.cloud (no /rpc)
-  //   SURREAL_USER         database user the API acts as for server-only work
-  //   SURREAL_PASS
+  //   SPKY_DB_URL          https://<instance>.surreal.cloud (no /rpc)
+  //   SPKY_DB_USER         database user the API acts as for server-only work
+  //   SPKY_DB_PASS
+  //   SPKY_DB_LEVEL        `namespace` or `database` for a non-root user
+  //   (SURREAL_URL, SURREAL_NS, SURREAL_DB, SURREAL_USER, SURREAL_PASS and
+  //   SURREAL_AUTH_NS still work for whatever SPKY_DB_* leaves unset.)
   //   ANTHROPIC_API_KEY
   //   ELEVENLABS_API_KEY
   //   ELEVENLABS_AGENT_ID  printed by `pnpm setup:voice`

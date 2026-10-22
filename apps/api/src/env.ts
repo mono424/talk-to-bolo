@@ -7,11 +7,28 @@ export interface Env {
   APP_ORIGIN: string;
   /** Public API origin used for OAuth issuer and MCP audience, when proxied. */
   API_ORIGIN?: string;
-  SURREAL_URL: string;
-  SURREAL_NS: string;
-  SURREAL_DB: string;
-  SURREAL_USER: string;
-  SURREAL_PASS: string;
+  /**
+   * SurrealDB, set by sp00ky on a Worker backend (and by `spky dev`): the
+   * https base URL (no /rpc), namespace and database. On the shared free
+   * database also the project's namespace owner, with SPKY_DB_LEVEL=namespace.
+   */
+  SPKY_DB_URL?: string;
+  SPKY_DB_NS?: string;
+  SPKY_DB_NAME?: string;
+  SPKY_DB_USER?: string;
+  SPKY_DB_PASS?: string;
+  /** `namespace` or `database`: where SPKY_DB_USER is defined. Unset: root. */
+  SPKY_DB_LEVEL?: string;
+  /**
+   * Fallback for any SPKY_DB_* that is unset (see `dbConfig`): an older
+   * .dev.vars, a Worker deployed with wrangler, or the login of a project's
+   * own database, kept in the vault.
+   */
+  SURREAL_URL?: string;
+  SURREAL_NS?: string;
+  SURREAL_DB?: string;
+  SURREAL_USER?: string;
+  SURREAL_PASS?: string;
   SURREAL_AUTH_NS?: string;
   SURREAL_AUTH_DB?: string;
 

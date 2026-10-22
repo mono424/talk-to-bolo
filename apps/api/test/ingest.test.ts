@@ -23,8 +23,8 @@ test('ingestion replays a committed embed step without losing chunk timestamps',
   const namespace = `bolo_ingest_${crypto.randomUUID().replaceAll('-', '')}`;
   const vector = Array.from({ length: 1024 }, (_, index) => index === 0 ? 1 : 0);
   const env = {
-    SURREAL_URL: 'http://127.0.0.1:8666', SURREAL_NS: namespace, SURREAL_DB: 'main',
-    SURREAL_USER: 'root', SURREAL_PASS: 'root', EMBEDDING_MODEL: 'test',
+    SPKY_DB_URL: 'http://127.0.0.1:8666', SPKY_DB_NS: namespace, SPKY_DB_NAME: 'main',
+    SPKY_DB_USER: 'root', SPKY_DB_PASS: 'root', EMBEDDING_MODEL: 'test',
     AI: { run: async (_model: string, input: { text: string[] }) => ({ data: input.text.map(() => vector) }) },
   } as unknown as Env;
   const db = Surreal.system(env);
