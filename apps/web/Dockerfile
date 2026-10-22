@@ -9,6 +9,7 @@ COPY apps/web/package.json apps/web/
 COPY apps/api/package.json apps/api/
 COPY scripts/package.json scripts/
 RUN pnpm install --frozen-lockfile --filter @studycall/web...
+COPY shared shared
 COPY apps/web apps/web
 RUN pnpm --filter @studycall/web build
 
