@@ -82,8 +82,9 @@ export async function endCall(env: Env, userId: string, rawCallId: string, conve
     { id: callId, owner: userId },
   );
   if (!call) throw new NotFound('Call not found.');
-  // Ending twice (a retry, a second tab) must not pay for a second recap.
-  if (call.status === 'ended') return { recap: call.recap ?? null };
+  // Ending twice must not pay for a second recap. A retried job whose first
+  // attempt was cut off before the recap was saved still writes it.
+  if (call.status === 'ended' && call.recap) return { recap: call.recap };
   await db.query(
     `UPDATE type::record($id) SET status = 'ended', ended_at = ended_at ?? time::now(),
        conversation_id = conversation_id ?? $conv`,

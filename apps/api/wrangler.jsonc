@@ -33,7 +33,10 @@
     "SURREAL_DB": "studycall",
     "CLAUDE_MODEL": "claude-opus-5-5",
     "CLAUDE_PDF_MODEL": "claude-opus-5-5",
-    "EMBEDDING_MODEL": "@cf/qwen/qwen3-embedding-0.6b"
+    "EMBEDDING_MODEL": "@cf/qwen/qwen3-embedding-0.6b",
+    // The local sync node's job runner sends it on /jobs/* (dev/sp00ky.yml
+    // `apps.api.auth.token`). Not a secret: /jobs/* is never public.
+    "JOB_TOKEN": "local-dev-jobs"
   }
 
   // Secrets (wrangler secret put <NAME>, or .dev.vars locally):

@@ -55,6 +55,10 @@ export const qReadyMaterials = (db: Db, courseId: string) =>
 
 export const qMaterial = (db: Db, materialId: string) => db.query('material').where({ id: materialId }).build();
 
+/** A material's latest jobs on one outbox path (jobs.ts), newest first. */
+export const qMaterialJobs = (db: Db, materialId: string, path: string) =>
+  db.query('job').where({ assigned_to: materialId, path }).orderBy('created_at', 'desc').limit(5).build();
+
 /** A course's calls with their lecture: the sidebar's history on a call. */
 export const qCallHistory = (db: Db, courseId: string) =>
   db.query('call').where({ course: courseId }).related('material').orderBy('started_at', 'desc').limit(30).build();

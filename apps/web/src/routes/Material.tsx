@@ -3,11 +3,11 @@ import { createEffect, createMemo, createSignal, Show, type JSX } from 'solid-js
 import { useDb, useQuery } from '@spooky-sync/client-solid';
 import { Pencil, PhoneCall } from 'lucide-solid';
 import type { schema } from '../schema.gen';
-import { reindexMaterial, setLectureProgress } from '../lib/api';
+import { PROGRESS_JOB, reindexMaterial, saveLectureProgress } from '../lib/jobs';
 import { chunkMarkdown, chunkPages } from '../../../../shared/lecture';
-import { whenSynced } from '../lib/ids';
+import { idString, whenSynced } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
-import { firstRow, qMaterial } from '../lib/query';
+import { firstRow, qMaterial, qMaterialJobs } from '../lib/query';
 import { Button, inputClass, StatusText } from '../components/ui';
 import { HeaderActions, SideActions } from '../components/HeaderSlot';
 import { LecturePlace } from '../components/LecturePlace';
@@ -19,6 +19,8 @@ export default function MaterialPage() {
   const [search] = useSearchParams();
   const db = useDb<typeof schema>();
   const material = firstRow(useQuery(() => qMaterial(db, `material:${params.materialKey}`)));
+  // The latest progress saves, to see whether the one just sent failed.
+  const progressJobs = useQuery(() => qMaterialJobs(db, `material:${params.materialKey}`, PROGRESS_JOB));
   // A PDF shows the original; its text is derived from it, for the tutor and search.
   const isPdf = () => material.data()?.kind === 'pdf';
   // ?page=N from a citation link.
@@ -29,7 +31,8 @@ export default function MaterialPage() {
   const [title, setTitle] = createSignal('');
   const [saving, setSaving] = createSignal(false);
   const [progressThrough, setProgressThrough] = createSignal<number | null>(null);
-  const [progressSaving, setProgressSaving] = createSignal(false);
+  // The job saving the place, until it succeeds or fails.
+  const [progressJob, setProgressJob] = createSignal<string | null>(null);
   const [progressError, setProgressError] = createSignal<string | null>(null);
 
   const html = createMemo(() => renderMarkdown(material.data()?.content ?? ''));
@@ -43,25 +46,31 @@ export default function MaterialPage() {
     progressVersion();
     setProgressThrough(null);
     setProgressError(null);
+    setProgressJob(null);
   });
   const selectedThrough = () => progressThrough() ?? material.data()?.learned_through ?? -1;
+  createEffect(() => {
+    const id = progressJob();
+    const job = id ? progressJobs.data()?.find((j) => idString(j.id) === id) : undefined;
+    if (job?.status === 'success') setProgressJob(null);
+    if (job?.status === 'failed') {
+      setProgressJob(null);
+      setProgressThrough(null);
+      setProgressError('Progress could not be saved. Reload the lecture and try again.');
+    }
+  });
 
   // Shown until the saved place syncs back; a failed save falls back to it.
   const saveProgress = async (through: number) => {
     const m = material.data();
     if (!m) return;
     setProgressThrough(through);
-    setProgressSaving(true);
     setProgressError(null);
     try {
-      await setLectureProgress(db, m.id, { through, rev: m.index_rev });
+      setProgressJob(await saveLectureProgress(db, m.id, { through, rev: m.index_rev }));
     } catch (err) {
-      if (material.data()?.id === m.id) {
-        setProgressThrough(null);
-        setProgressError(err instanceof Error ? err.message : 'Progress could not be saved. Try again.');
-      }
-    } finally {
-      setProgressSaving(false);
+      setProgressThrough(null);
+      setProgressError(err instanceof Error ? err.message : 'Progress could not be saved. Try again.');
     }
   };
 
@@ -103,7 +112,7 @@ export default function MaterialPage() {
         sections={sections()}
         pages={sectionPages()}
         value={selectedThrough()}
-        saving={progressSaving()}
+        saving={progressJob() !== null}
         disabled={sections().length !== material.data()?.chunk_count}
         error={progressError()}
         onChange={saveProgress}

@@ -4,7 +4,8 @@ import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/cl
 import { FileText, FileType2, Folder, PenLine, PhoneCall, Plus, Settings2, Trash2, Upload, X } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
-import { ApiError, reindexMaterial, uploadPdf } from '../lib/api';
+import { ApiError, uploadPdf } from '../lib/api';
+import { reindexMaterial } from '../lib/jobs';
 import { idKey, newId, whenSynced } from '../lib/ids';
 import { COURSE_COLORS, courseColor, LANGUAGES, type CourseColor } from '../lib/palette';
 import { qMaterialsPage, qReadyMaterials, useCourse } from '../lib/query';

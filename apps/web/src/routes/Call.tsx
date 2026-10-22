@@ -161,7 +161,7 @@ function CallScreen() {
       idle: 'Ready when you are',
       connecting: 'Calling your tutor…',
       live: call.speaking() ? 'Tutor is speaking' : call.muted() ? 'You are muted' : 'Listening',
-      ending: 'Hanging up and writing your recap…',
+      ending: 'Hanging up…',
       ended: 'Call ended',
       error: call.error() ?? 'The call could not start',
     }[call.phase()];

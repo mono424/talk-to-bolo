@@ -27,6 +27,9 @@ export interface Env {
   ELEVENLABS_API_KEY: string;
   ELEVENLABS_AGENT_ID: string;
   LLM_SHARED_SECRET: string;
+
+  /** sp00ky's job runner presents this (sp00ky.yml `apps.api.auth.token`) on /jobs/*. */
+  JOB_TOKEN?: string;
 }
 
 /** Identity of the signed-in user behind a request. */

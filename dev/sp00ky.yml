@@ -38,10 +38,25 @@ apps:
           VITE_DB_DB: studycall
           VITE_DB_ENDPOINT: ws://localhost:8666/rpc
           VITE_API_URL: http://localhost:8787
-  # The API Worker under `wrangler dev`. It reads apps/api/.dev.vars.
+  # The API Worker under `wrangler dev`. It reads apps/api/.dev.vars. The
+  # local sync node (in Docker) runs the `job` outbox against it, as the cloud
+  # one does against the Worker backend (../sp00ky.yml).
   api:
     type: backend
-    scope: devOnly
+    spec: ../apps/api/openapi.yml
+    baseUrl: http://localhost:8787
+    method:
+      type: outbox
+      table: job
+      schema: ../schema/src/outbox/api.surql
+      concurrency: 4
+    auth:
+      type: token
+      # apps/api/wrangler.jsonc `JOB_TOKEN`.
+      token: local-dev-jobs
+    deploy:
+      # Job requests time out after 10 s by default; a call recap takes longer.
+      timeout: 120
     dev:
       type: npm
       script: dev

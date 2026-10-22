@@ -2,11 +2,11 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './env';
 import { requireUser } from './auth';
-import { endCall, startCall } from './calls';
+import { startCall } from './calls';
 import { handleChatCompletions } from './llm';
 import { handleMcp } from './mcp';
 import { approveOAuthConsent, getOAuthConsent, handleOAuth } from './oauth';
-import { setLectureProgress } from './progress';
+import { jobs } from './jobs';
 import {
   createApiKey,
   ensureServerSchema,
@@ -14,7 +14,6 @@ import {
   getOwnedMaterial,
   markFailed,
   searchCourse,
-  startIngest,
   storePdfAndIngest,
   readLimited,
   MAX_PDF_BYTES,
@@ -72,12 +71,6 @@ app.post('/api/oauth/approve', async (c) => {
 app.post('/api/calls', async (c) => {
   const body = await c.req.json<{ courseId?: string; materialId?: string | null; mode?: string }>();
   return c.json(await startCall(c.env, c.var.caller.userId, body));
-});
-
-app.post('/api/calls/:id/end', async (c) => {
-  const body = await c.req.json<{ conversationId?: string | null }>().catch(() => ({}) as { conversationId?: string | null });
-  const { recap } = await endCall(c.env, c.var.caller.userId, c.req.param('id'), body.conversationId ?? null);
-  return c.json({ ok: true, recap });
 });
 
 // ElevenLabs' Custom LLM endpoint (configured as <origin>/llm/v1).
@@ -139,18 +132,6 @@ app.get('/api/materials/:id/pdf', async (c) => {
   });
 });
 
-app.post('/api/materials/:id/index', async (c) => {
-  const material = await getOwnedMaterial(c.env, c.var.caller.userId, c.req.param('id'));
-  if (material.kind === 'pdf' && !material.content.trim()) throw new BadRequest('Upload the PDF first.');
-  await startIngest(c.env, material.id);
-  return c.json({ ok: true });
-});
-
-app.post('/api/materials/:id/progress', async (c) => {
-  const body = await c.req.json<{ through?: unknown; rev?: unknown }>();
-  return c.json(await setLectureProgress(c.env, c.var.caller.userId, c.req.param('id'), body));
-});
-
 app.post('/api/courses/:id/search', async (c) => {
   const { userId } = c.var.caller;
   const course = await getOwnedCourse(c.env, userId, c.req.param('id'));
@@ -198,5 +179,10 @@ app.on('GET', ['/assets/:id', '/material-assets/:id'], async (c) => {
 // ── MCP ───────────────────────────────────────────────────────────────────
 
 app.all('/mcp', (c) => handleMcp(c.req.raw, c.env));
+
+// ── Jobs ──────────────────────────────────────────────────────────────────
+
+// Indexing, lecture progress and call recaps run as sp00ky jobs (jobs.ts).
+app.route('/jobs', jobs);
 
 export default app;

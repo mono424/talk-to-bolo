@@ -14,9 +14,12 @@ access. Workspace packages and deployment resources use the internal
    │                              ▲                  │
    │  /api/* (Bearer: SurrealDB   │ system + user    │  POST /llm/v1/chat/completions
    │   session token)             │ queries          │  (OpenAI-compatible SSE)
+   │  job rows ──► SSP ──► /jobs/* │                  │
    ▼                              │                  ▼
- API Worker (apps/api, Cloudflare) ───────────────────────────────────────
-   /api/calls        start/end a call, ElevenLabs conversation token, recap
+ API (apps/api, a sp00ky Worker backend) ─────────────────────────────────
+   /api/calls        start a call, ElevenLabs conversation token
+   /jobs/*           jobs from the `job` outbox: re-index, lecture progress,
+                     end a call and write its recap (apps/api/openapi.yml)
    /llm/v1/...       tutor prompt from SurrealDB + hybrid search -> Claude stream
    /api/materials    PDF upload -> `materials` bucket (kept) -> Workflow: images
                      (unpdf) -> Markdown (Claude) -> chunks with page numbers
@@ -33,9 +36,10 @@ access. Workspace packages and deployment resources use the internal
 | `apps/api/src/server-schema.surql` | Server-only tables (search chunks with embeddings and page numbers, extracted images, PDF parts) and their HNSW/full-text indexes. Applied by the Worker; see the comment at the top. |
 | [`schema/buckets/materials.surql`](../schema/buckets/materials.surql) | The `materials` bucket: uploaded PDFs (in parts of at most 1 MiB) and the images extracted from them. Listed under `buckets:` in both sp00ky configs. |
 | [`apps/web`](../apps/web) | SolidJS app. Every read is a named live query in `src/lib/query.ts`. |
-| [`apps/api`](../apps/api) | Cloudflare Worker (Hono): calls, LLM bridge, ingest Workflow, search, assets, MCP. |
+| [`apps/api`](../apps/api) | Cloudflare Worker (Hono): calls, LLM bridge, ingest Workflow, search, assets, MCP. On Sp00ky Cloud it is the `api` Worker backend; `openapi.yml` lists its jobs. |
+| [`schema/src/outbox/api.surql`](../schema/src/outbox/api.surql) | The `job` outbox: the web app writes a row, the sync node calls the API with its payload. |
 | `scripts/setup-voice-agent.ts` | Creates or updates the ElevenLabs agent. |
-| `sp00ky.yml` / `dev/sp00ky.yml` | Production (free plan, external SurrealDB) / local development. |
+| `sp00ky.yml` / `dev/sp00ky.yml` | Staging (free plan, shared SurrealDB, the API as a Worker backend) / local development. |
 
 ## Accounts you need
 
@@ -50,7 +54,7 @@ access. Workspace packages and deployment resources use the internal
 
 Set `AGENT_MEMORY_URL` to your Context's full data-plane base URL, for example
 `https://YOUR-CONTEXT-HOST/api/v1/YOUR-CONTEXT-ID`, and store its key as
-`AGENT_MEMORY_API_KEY` in `.dev.vars` or Worker secrets. Use a dedicated Context
+`AGENT_MEMORY_API_KEY` in `.dev.vars` or the vault (`spky env set`). Use a dedicated Context
 per environment. The Worker key needs `scope:create`, `memory:write`, and
 `memory:read` for the `talktobolo/*` subtree. Never expose it to the browser.
 See [SurrealDB's Context setup](https://surrealdb.com/docs/agent-memory/quickstarts/surrealdb-cloud)
@@ -125,7 +129,9 @@ pnpm dev                                            # spky dev --path dev
 the web app (http://localhost:5180) and the API Worker under `wrangler dev`
 (`:8787`). In `.dev.vars`, use `SURREAL_URL=http://localhost:8666`,
 `SURREAL_USER=root`, `SURREAL_PASS=root`, `SURREAL_NS=main`,
-`SURREAL_DB=studycall`, `APP_ORIGIN=http://localhost:5180`.
+`SURREAL_DB=studycall`, `APP_ORIGIN=http://localhost:5180`. The local sync
+node runs the `job` outbox against `wrangler dev` too, with the `JOB_TOKEN` from
+`apps/api/wrangler.jsonc`.
 
 Voice calls need ElevenLabs to reach your LLM endpoint, so expose the local
 Worker and point a dev agent at it:
@@ -229,26 +235,29 @@ Landing page photo: [Sanket Mishra on Unsplash](https://unsplash.com/photos/a-gi
 
 ### Current staging app
 
-The app is deployed at <https://talktobolo.stg.spky.cloud/>. Its API uses
-[`wrangler.staging.jsonc`](../apps/api/wrangler.staging.jsonc) and the existing
-database-scoped service user in `talktobolo/main`. The API's encrypted Worker
-secrets hold the service credentials. `SURREAL_AUTH_NS` and `SURREAL_AUTH_DB`
-tell SurrealDB where that system user is defined; these differ from the
-namespace/database headers that select a query's target.
+The app is deployed at <https://talktobolo.stg.spky.cloud/>, by `spky deploy`
+alone. The API is the `api` Worker backend in [`sp00ky.yml`](../sp00ky.yml):
+the deploy bundles `apps/api/src/index.ts`, and the sync node runs it as a
+Dynamic Worker with Workers AI and the `INGEST` Workflow.
+
+Its environment is the vault keys listed under `apps.api.env` plus the plain
+values there. The database login is the free plan's namespace user `owner`
+(`pnpm exec spky project credentials`), so `SURREAL_AUTH_NS` is the namespace
+and the password is the vault's `SURREAL_PASS`. Set a missing key with
+`pnpm exec spky env set <NAME>`, then deploy:
 
 ```bash
-pnpm deploy:api:staging
-pnpm exec spky deploy --only web --yes
+pnpm exec spky deploy --yes
 ```
 
-The staging Worker routes the app's API, MCP, OAuth discovery, token endpoints,
-voice endpoint and material images before its SPA fallback. Frontend assets
-continue to use `/assets/`. Verify `/health` returns JSON and unauthenticated
+Background work runs as jobs: the web app writes a row to the `job` outbox and
+the sync node POSTs its payload to the path in
+[`apps/api/openapi.yml`](../apps/api/openapi.yml) (re-indexing, lecture
+progress, ending a call and writing its recap), retrying failures. Only the
+paths under `worker.expose` are public: starting a call, search, PDF upload
+and download, the OAuth consent calls, OAuth, MCP, the voice LLM and lecture
+images. Frontend assets continue to use `/assets/`. Verify unauthenticated
 `/mcp` returns an OAuth `401` challenge after deployment.
-
-Anthropic, ElevenLabs and Agent Memory credentials are separate from account
-linking. Configure those real provider secrets on this staging Worker to enable
-voice tutoring, model-based document processing and durable Agent Memory.
 
 ### 1. Database
 

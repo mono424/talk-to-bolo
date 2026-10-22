@@ -203,12 +203,71 @@ export const schema = {
       primaryKey: ['id'] as const
     },
     /**
+     * `job` table.
+     *
+     * Relationships:
+     * - `assigned_to` → `material` (one)
+     *
+     * @example
+     * const rows = useQuery(() => db.query('job').orderBy('id', 'asc').limit(20).build());
+     */
+    {
+      name: 'job' as const,
+      columns: {
+        /**
+         * `id` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        id: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `assigned_to?` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        assigned_to: { type: 'string' as const, recordId: true, optional: true },
+        assignee: { type: 'string' as const, optional: true },
+        /**
+         * `created_at` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        created_at: { type: 'string' as const, dateTime: true, optional: false },
+        delay: { type: 'number' as const, optional: true },
+        errors: { type: 'string' as const, array: true, optional: false },
+        'errors[*]': { type: 'string' as const, optional: false },
+        lease_epoch: { type: 'number' as const, optional: true },
+        /**
+         * `lease_until?` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        lease_until: { type: 'string' as const, dateTime: true, optional: true },
+        max_retries: { type: 'number' as const, optional: false },
+        path: { type: 'string' as const, optional: false },
+        payload: { type: 'string' as const, optional: false },
+        result: { type: 'string' as const, optional: false },
+        retries: { type: 'number' as const, optional: false },
+        retry_strategy: { type: 'string' as const, optional: false },
+        status: { type: 'string' as const, optional: false },
+        timeout: { type: 'number' as const, optional: true },
+        /**
+         * `updated_at` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        updated_at: { type: 'string' as const, dateTime: true, optional: false },
+      },
+      primaryKey: ['id'] as const
+    },
+    /**
      * `material` table.
      *
      * Relationships:
      * - `course` → `course` (one)
      * - `owner` → `user` (one)
      * - `calls` → `call` (many)
+     * - `jobs` → `job` (many)
      * - `turn_sources` → `turn_source` (many)
      *
      * @example
@@ -271,6 +330,7 @@ export const schema = {
          */
         updated_at: { type: 'string' as const, dateTime: true, optional: true },
         calls: { type: 'string' as const, array: true, optional: true },
+        jobs: { type: 'string' as const, array: true, optional: true },
         turn_sources: { type: 'string' as const, array: true, optional: true },
       },
       primaryKey: ['id'] as const
@@ -441,6 +501,12 @@ export const schema = {
       cardinality: 'many' as const
     },
     {
+      from: 'job' as const,
+      field: 'assigned_to' as const,
+      to: 'material' as const,
+      cardinality: 'one' as const
+    },
+    {
       from: 'material' as const,
       field: 'course' as const,
       to: 'course' as const,
@@ -456,6 +522,12 @@ export const schema = {
       from: 'material' as const,
       field: 'calls' as const,
       to: 'call' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'material' as const,
+      field: 'jobs' as const,
+      to: 'job' as const,
       cardinality: 'many' as const
     },
     {
@@ -529,6 +601,47 @@ export const schema = {
     },
   ],
   backends: {
+    "api": {
+      outboxTable: 'job' as const,
+      routes: {
+        "/jobs/calls/end": {
+          args: {
+            "conversationId": {
+              type: 'string' as const,
+              optional: true as const
+            },
+            "id": {
+              type: 'string' as const,
+              optional: false as const
+            },
+          }
+        },
+        "/jobs/materials/index": {
+          args: {
+            "id": {
+              type: 'string' as const,
+              optional: false as const
+            },
+          }
+        },
+        "/jobs/materials/progress": {
+          args: {
+            "id": {
+              type: 'string' as const,
+              optional: false as const
+            },
+            "rev": {
+              type: 'number' as const,
+              optional: false as const
+            },
+            "through": {
+              type: 'number' as const,
+              optional: false as const
+            },
+          }
+        },
+      }
+    },
   },
   policy: {
     queryAllowlist: 'off' as const,
@@ -753,6 +866,93 @@ DEFINE FIELD OVERWRITE revoked_at ON TABLE api_key TYPE option<datetime>;
 -- Its lookup index lives in apps/api/src/server-schema.surql: sp00ky refuses an
 -- index on a field clients cannot read.
 
+
+-- Backend Schema: api
+-- ##################################################################
+-- API OUTBOX TABLE
+--
+-- Background work for the API backend (sp00ky.yml \`apps.api\`, paths in
+-- apps/api/openapi.yml): the web app creates a row, sp00ky's job runner POSTs
+-- its payload to the backend and records the outcome here. Shape from
+-- \`spky api add\`; only the permissions and \`assigned_to\` are talktobolo's.
+-- ##################################################################
+
+-- A student may create a job only about their own material or call, and only
+-- with that same record as \`payload.id\`: the backend never sees who created a
+-- job, so it treats the owner of \`payload.id\` as the caller. \`payload\` is an
+-- object (the web app writes rows itself, not through \`db.run\`, which would
+-- store it as a JSON string the rule cannot read). Nobody but the platform
+-- (as root) changes a job after creating it.
+DEFINE TABLE job SCHEMAFULL
+PERMISSIONS FOR select, create, update, delete WHERE true;
+
+-- The material or call this job belongs to, used by the permissions above.
+-- OPTIONAL on purpose: a server-side schedule (\`schedules:\` in sp00ky.yml)
+-- spawns system-initiated jobs that belong to no single record, so the
+-- scheduler creates rows without it. Such rows are invisible to clients.
+DEFINE FIELD assigned_to ON TABLE job TYPE option<record<material | call>> PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
+
+DEFINE FIELD path ON TABLE job TYPE option<string> PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
+
+DEFINE FIELD payload ON TABLE job TYPE any PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
+
+DEFINE FIELD retries ON TABLE job TYPE option<int> DEFAULT ALWAYS 0 PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
+
+DEFINE FIELD max_retries ON TABLE job TYPE option<int> DEFAULT ALWAYS 3;
+
+DEFINE FIELD retry_strategy ON TABLE job TYPE option<string> DEFAULT ALWAYS "linear" ASSERT $value IN ["linear", "exponential"] PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
+
+DEFINE FIELD status ON TABLE job TYPE option<string> DEFAULT ALWAYS "pending" ASSERT $value IN ["pending", "processing", "success", "failed"] PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
+
+DEFINE FIELD errors ON TABLE job TYPE option<array<object>> DEFAULT ALWAYS [] PERMISSIONS FOR create WHERE true FOR select, update WHERE false;
+
+-- The element must be FLEXIBLE or a SCHEMAFULL table rejects the runner's
+-- \`{ code, reason }\` entries as unknown fields (\`errors[0].code\`).
+-- OVERWRITE because SurrealDB 3.1 defines the element (\`errors.*\`, without
+-- FLEXIBLE) by itself the moment \`errors\` is declared \`array<object>\`.
+DEFINE FIELD OVERWRITE errors[*] ON TABLE job TYPE option<object FLEXIBLE>;
+
+-- Set on create, and thereafter only when a writer sets it explicitly (every
+-- platform write does). The recovery sweeps' staleness clocks read it, so it
+-- must NOT be \`VALUE time::now()\`.
+DEFINE FIELD updated_at ON TABLE job TYPE option<datetime> DEFAULT ALWAYS time::now() PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
+
+-- \`DEFAULT\`, deliberately NOT \`VALUE\`: a \`VALUE\` field is recomputed on every
+-- UPDATE, which would slide the \`created_at + delay\` due clause forward.
+DEFINE FIELD created_at ON TABLE job TYPE option<datetime> DEFAULT time::now() PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
+
+-- Platform claim marker: the SSP stamps the owning instance when it picks up
+-- or recovers a job. Written by the platform as root, never by clients.
+DEFINE FIELD assignee ON TABLE job TYPE option<string> PERMISSIONS FOR select WHERE true FOR create, update WHERE false;
+
+-- Lease expiry for the attempt holding this row, and the fencing token that
+-- attempt presents to write its outcome. Reclaim keys off \`lease_until\`;
+-- \`lease_epoch\` is bumped on every claim and reclaim so a reclaimed attempt
+-- cannot overwrite the new one. Platform-written (root).
+DEFINE FIELD lease_until ON TABLE job TYPE option<datetime> PERMISSIONS FOR select WHERE true FOR create, update WHERE false;
+
+DEFINE FIELD lease_epoch ON TABLE job TYPE option<int> PERMISSIONS FOR select WHERE true FOR create, update WHERE false;
+
+-- The backend's response body on success, stored by the job runner.
+DEFINE FIELD result ON TABLE job TYPE any PERMISSIONS FOR select WHERE true FOR create, update WHERE false;
+
+-- Per-job HTTP timeout in SECONDS, overriding the backend default. It also
+-- sizes the reclaim lease, so never write milliseconds here.
+DEFINE FIELD timeout ON TABLE job TYPE option<int> PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
+
+-- One-shot delay in ms: the job becomes due at \`created_at + delay\`.
+DEFINE FIELD delay ON TABLE job TYPE option<int> PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
+
+-- ── Indexes ────────────────────────────────────────────────────────────────
+--
+-- \`(status, created_at)\` serves the dispatcher's drain, the retention prune and
+-- the queue counts; \`updated_at\` the prune's ageing and the Jobs page.
+-- \`assigned_to\` serves the lecture page's live query of its latest jobs.
+-- \`IF NOT EXISTS\`, never \`OVERWRITE\`: that would rebuild them on every deploy.
+DEFINE INDEX IF NOT EXISTS idx_job_dispatch ON TABLE job COLUMNS status, created_at;
+DEFINE INDEX IF NOT EXISTS idx_job_activity ON TABLE job COLUMNS updated_at;
+DEFINE INDEX IF NOT EXISTS idx_job_assigned ON TABLE job COLUMNS assigned_to;
+
 -- ==================================================
 -- SPOOKY INCANTATION
 -- The Registry of active Live Queries (Incantations).
@@ -899,6 +1099,7 @@ DEFINE FIELD _00_rv ON TABLE api_key TYPE int DEFAULT 0 PERMISSIONS FOR select, 
 DEFINE FIELD _00_rv ON TABLE call TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE call_turn TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE course TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
+DEFINE FIELD _00_rv ON TABLE job TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE material TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE turn_source TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE user TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
@@ -959,6 +1160,20 @@ THEN {
 
 -- Table: course Client Deletion
 DEFINE EVENT OVERWRITE _00_course_client_delete ON TABLE course
+WHEN $event = "DELETE"
+THEN {
+    -- No-op for now.
+};
+
+-- Table: job Client Mutation
+DEFINE EVENT OVERWRITE _00_job_client_mutation ON TABLE job
+WHEN $before != $after AND $event != "DELETE"
+THEN {
+    -- No-op for now. Client mutation sync logic moved to DBSP.
+};
+
+-- Table: job Client Deletion
+DEFINE EVENT OVERWRITE _00_job_client_delete ON TABLE job
 WHEN $event = "DELETE"
 THEN {
     -- No-op for now.

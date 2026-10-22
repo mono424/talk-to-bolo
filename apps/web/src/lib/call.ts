@@ -1,6 +1,7 @@
 import { Conversation, type VoiceConversation } from '@elevenlabs/client';
 import { createSignal, onCleanup } from 'solid-js';
-import { endCall, startCall, type CallMode } from './api';
+import { startCall, type CallMode } from './api';
+import { endCall } from './jobs';
 import type { Db } from './query';
 
 export type CallPhase = 'idle' | 'connecting' | 'live' | 'ending' | 'ended' | 'error';

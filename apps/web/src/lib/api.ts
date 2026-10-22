@@ -3,9 +3,10 @@ import { newId } from './ids';
 import { dbConfig } from '../db';
 
 /**
- * The API Worker (apps/api): voice calls, PDF processing, search, assets.
- * Every call carries the user's SurrealDB token; the Worker checks it against
- * the database before doing anything.
+ * The API's public routes (apps/api, `expose` in sp00ky.yml): starting calls,
+ * PDF upload and download, search, assets. Every call carries the user's
+ * SurrealDB token; the API checks it against the database before doing
+ * anything. Background work goes through the job outbox instead (jobs.ts).
  */
 // Production serves API, MCP and extracted images under the app's own origin.
 // An explicit override supports deployments with a separate API Worker.
@@ -66,12 +67,6 @@ export interface StartedCall {
 
 export const startCall = (db: Db, input: { courseId: string; materialId?: string | null; mode: CallMode }) =>
   api<StartedCall>(db, '/api/calls', { method: 'POST', body: JSON.stringify(input) });
-
-export const endCall = (db: Db, callId: string, conversationId?: string | null) =>
-  api<{ ok: true; recap: string | null }>(db, `/api/calls/${encodeURIComponent(callId)}/end`, {
-    method: 'POST',
-    body: JSON.stringify({ conversationId: conversationId ?? null }),
-  });
 
 /** Uploads a PDF for a material that already exists; processing starts at once. */
 export const uploadPdf = (db: Db, materialId: string, file: File) =>
@@ -152,17 +147,6 @@ export function fetchPdf(db: Db, materialId: string, size: number | null | undef
   while (pdfCache.size > 3) pdfCache.delete(pdfCache.keys().next().value!);
   return load;
 }
-
-/** (Re)builds the search index of a text or markdown material after an edit. */
-export const reindexMaterial = (db: Db, materialId: string) =>
-  api<{ ok: true }>(db, `/api/materials/${encodeURIComponent(materialId)}/index`, { method: 'POST' });
-
-/** Marks the last reached lecture section without claiming it is understood. */
-export const setLectureProgress = (db: Db, materialId: string, input: { through: number; rev: number }) =>
-  api<{ through: number }>(db, `/api/materials/${encodeURIComponent(materialId)}/progress`, {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
 
 export interface SearchHit {
   material: string;

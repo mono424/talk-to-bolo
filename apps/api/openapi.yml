@@ -1,0 +1,109 @@
+openapi: 3.1.0
+info:
+  version: 1.0.0
+  title: talktobolo-api
+  description: >-
+    Jobs of the API backend (sp00ky.yml `apps.api`). The web app writes a row
+    to the `job` outbox (schema/src/outbox/api.surql) with `path` set to one of
+    these paths, `assigned_to` set to the material or call, and the request
+    body below as `payload`. sp00ky's job runner POSTs the payload here with
+    the backend's token. Every payload's `id` is the row's `assigned_to`: the
+    outbox permission refuses anything else. These paths are not public.
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+  parameters: {}
+paths:
+  /jobs/materials/index:
+    post:
+      summary: (Re)build a material's search index from its current text.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  example: material:k3f2a...
+              required:
+                - id
+      responses:
+        '200':
+          description: Indexing started (a Workflow run per material revision).
+        '400':
+          description: The material has no text to index yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The material no longer exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /jobs/materials/progress:
+    post:
+      summary: Record the last lecture section the student reached.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  example: material:k3f2a...
+                through:
+                  type: integer
+                  description: Zero-based section index, or -1 for not started.
+                rev:
+                  type: integer
+                  description: The material's `index_rev` the section index refers to.
+              required:
+                - id
+                - through
+                - rev
+      responses:
+        '200':
+          description: Saved.
+        '400':
+          description: The lecture changed or is not ready, or the section is out of range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /jobs/calls/end:
+    post:
+      summary: End a call and write its recap.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  example: call:k9c1e...
+                conversationId:
+                  type: string
+                  description: The ElevenLabs conversation id, when the call connected.
+              required:
+                - id
+      responses:
+        '200':
+          description: The call is ended; the recap, if any, is on the call row.
+        '404':
+          description: The call no longer exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+webhooks: {}

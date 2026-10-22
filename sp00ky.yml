@@ -4,11 +4,11 @@
 #   - the SSP sync node runs as a Cloudflare Durable Object,
 #   - the web app is published as a static SPA on Workers Static Assets,
 #   - SurrealDB is the shared free database (namespace `talktobolo`), reached
-#     by both. For your own SurrealDB Cloud instance instead, use
+#     by all three. For your own SurrealDB Cloud instance instead, use
 #     `hosting: external` with `endpoint`, `username` and `password`.
-# The free plan runs no backends, so the API (apps/api: voice calls, PDF
-# processing, search, MCP) is our own Cloudflare Worker, deployed with
-# wrangler. See README.md.
+#   - the API (apps/api: voice calls, PDF processing, search, MCP) is a sp00ky
+#     Worker backend: `spky deploy` bundles it and the sync node runs it as a
+#     Dynamic Worker. See docs/setup.md.
 mode: singlenode
 slug: talktobolo
 # Staging control plane (the only one provisioned).
@@ -53,6 +53,84 @@ apps:
       static:
         build: pnpm --filter @studycall/web build
         dir: apps/web/dist
-  # The API (apps/api) is not listed here: the free plan runs no backends, so
-  # it is our own Cloudflare Worker, deployed with `pnpm deploy:api`. Local
-  # development (dev/sp00ky.yml) starts it under `wrangler dev`.
+  # The API (apps/api, a Hono app). Like any sp00ky backend it runs jobs: the
+  # web app writes a row to the `job` outbox and the sync node calls the path
+  # in openapi.yml with its payload. On Cloudflare it is a Worker backend:
+  # `spky deploy` bundles `worker.entry` and the sync node loads it as a
+  # Dynamic Worker. Local development (dev/sp00ky.yml) runs it under
+  # `wrangler dev` with apps/api/wrangler.jsonc.
+  api:
+    type: backend
+    spec: ./apps/api/openapi.yml
+    method:
+      type: outbox
+      table: job
+      schema: ./schema/src/outbox/api.surql
+      # A call recap takes Claude a while; indexing and progress jobs should
+      # not queue behind it.
+      concurrency: 4
+    deploy:
+      # Job requests time out after 10 s by default; a call recap takes longer.
+      timeout: 120
+    auth:
+      type: token
+      # The job runner sends it on every job and the API checks it (JOB_TOKEN
+      # below). Not a secret: job paths are never public, `expose` is.
+      token: &jobToken 8aa90389bd84c6dc0cd7237d680f293d
+    worker:
+      entry: ./apps/api/src/index.ts
+      compatibilityDate: "2026-10-15"
+      compatibilityFlags: [nodejs_compat]
+      # server-schema.surql is imported as a string.
+      textModules: ["**/*.surql"]
+      # PDF parsing and image extraction need more than the default 30 s of
+      # CPU per Workflow step.
+      cpuMs: 300000
+      # Embeddings for the lecture search index.
+      ai: AI
+      # PDF/markdown processing: one durable Workflow run per material.
+      workflows:
+        - binding: INGEST
+          class: IngestMaterial
+      # Routes served publicly on talktobolo.stg.spky.cloud. Everything else,
+      # the job paths included, is reachable only through jobs.
+      expose:
+        # Starting a call: the browser needs the voice token back at once.
+        - /api/calls
+        # Course search: results shown as the student types.
+        - /api/courses/*
+        # PDF upload (the file is the request body) and the viewer's download.
+        - /api/materials/*
+        # The consent page of an AI client connection, and its redirect.
+        - /api/oauth/*
+        # OAuth for AI clients: discovery, registration, authorize, token.
+        - /oauth/*
+        - /.well-known/oauth*
+        # The MCP server AI clients call.
+        - /mcp
+        # ElevenLabs' Custom LLM endpoint; replies stream.
+        - /llm/*
+        # Images inside lectures: <img> cannot send the session token.
+        - /material-assets/*
+    env:
+      - vault:
+          - ANTHROPIC_API_KEY
+          - ELEVENLABS_API_KEY
+          - ELEVENLABS_AGENT_ID
+          - LLM_SHARED_SECRET
+          - AGENT_MEMORY_URL
+          - AGENT_MEMORY_API_KEY
+          # The namespace login of the shared free database (user `owner`,
+          # `spky project credentials`).
+          - SURREAL_PASS
+      - APP_ORIGIN: https://talktobolo.stg.spky.cloud
+        API_ORIGIN: https://talktobolo.stg.spky.cloud
+        SURREAL_URL: https://surreal-free.stg.spky.cloud
+        SURREAL_NS: talktobolo
+        SURREAL_DB: main
+        SURREAL_USER: owner
+        SURREAL_AUTH_NS: talktobolo
+        CLAUDE_MODEL: claude-opus-5-5
+        CLAUDE_PDF_MODEL: claude-opus-5-5
+        EMBEDDING_MODEL: "@cf/qwen/qwen3-embedding-0.6b"
+        JOB_TOKEN: *jobToken
