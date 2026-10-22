@@ -204,10 +204,29 @@ button, a, input, select, textarea { scroll-margin-block: 1rem; }
 }
 .dot-breathe { animation: breathe 1.6s ease-in-out infinite; }
 
-/* Keep the hang-up control in view on short landscape phones. */
+/*
+ * The call transcript fades out at an edge with more to scroll to. The fade
+ * sizes are typed so they animate when an edge appears.
+ */
+@property --fade-top {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --fade-bottom {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 0px;
+}
+.transcript-fade {
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent);
+  transition: --fade-top 400ms ease-out, --fade-bottom 400ms ease-out;
+}
+
+/* Keep the hang-up control and some transcript in view on short landscape phones. */
 @media (max-height: 600px) and (max-width: 1023px) {
-  .call-presence { flex-direction: row; flex-wrap: wrap; gap: 12px; padding: 16px; }
-  .call-presence .call-orb { width: 80px; height: 80px; }
+  .call-presence { flex-direction: row; flex-wrap: wrap; gap: 12px 20px; padding: 4px 16px 12px; }
+  .call-presence .call-orb { width: 72px; height: 72px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
