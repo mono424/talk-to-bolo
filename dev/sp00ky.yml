@@ -12,6 +12,12 @@ schema: ../schema
 # PDFs and the images extracted from them (see ../sp00ky.yml).
 buckets:
   - ../schema/buckets/materials.surql
+# The bucket uses a file backend (file:/buckets/materials). Setting sizeGB makes
+# `spky dev` mount .sp00ky/bucket_data at /buckets in the SurrealDB container and
+# allowlist it; without it, DEFINE BUCKET fails with "File access denied".
+deployment:
+  storage:
+    sizeGB: 1
 version:
   dev: canary
 logLevel:
