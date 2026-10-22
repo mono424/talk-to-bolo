@@ -10,10 +10,15 @@
 
 -- ##################################################################
 -- ACCESS
+--
+-- `IF NOT EXISTS`, not OVERWRITE: `spky deploy` applies this whole schema on
+-- every deploy, and redefining a record access without `WITH JWT` mints a new
+-- signing key, which signs every user out. To change an access on purpose,
+-- redefine it with OVERWRITE in a migration (that signs everyone out once).
 -- ##################################################################
 
 -- Email + password accounts for the web app.
-DEFINE ACCESS OVERWRITE account ON DATABASE TYPE RECORD
+DEFINE ACCESS IF NOT EXISTS account ON DATABASE TYPE RECORD
   SIGNUP {
     RETURN CREATE ONLY user SET
       email    = string::lowercase($email),
@@ -30,7 +35,7 @@ DEFINE ACCESS OVERWRITE account ON DATABASE TYPE RECORD
 -- AI clients (the MCP server) sign in with a personal API key the user created
 -- in Settings. The session they get IS the key's owner, so every permission
 -- below applies to them unchanged. Only the key's SHA-256 is stored.
-DEFINE ACCESS OVERWRITE agent ON DATABASE TYPE RECORD
+DEFINE ACCESS IF NOT EXISTS agent ON DATABASE TYPE RECORD
   SIGNIN (
     SELECT * FROM user WHERE id = (
       SELECT VALUE owner FROM api_key WHERE key_hash = crypto::sha256($key) AND revoked_at = NONE LIMIT 1

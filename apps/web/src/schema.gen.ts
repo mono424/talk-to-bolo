@@ -667,6 +667,11 @@ export const SURQL_SCHEMA = `-- ################################################
 
 -- ##################################################################
 -- ACCESS
+--
+-- \`IF NOT EXISTS\`, not OVERWRITE: \`spky deploy\` applies this whole schema on
+-- every deploy, and redefining a record access without \`WITH JWT\` mints a new
+-- signing key, which signs every user out. To change an access on purpose,
+-- redefine it with OVERWRITE in a migration (that signs everyone out once).
 -- ##################################################################
 
 -- Email + password accounts for the web app.
