@@ -2,9 +2,10 @@
  * Creates (or updates) the ElevenLabs voice agent that TalkToBolo calls run on.
  *
  * The agent does speech-to-text, turn taking, interruptions and text-to-speech.
- * Its "brain" is a Custom LLM: the API Worker's OpenAI-compatible endpoint at
- * `<API_URL>/llm/v1/chat/completions`, which builds the tutor prompt from the
- * course in SurrealDB, retrieves lecture context and streams Claude's answer.
+ * Its "brain" is a Custom LLM: the API Worker's OpenAI-compatible endpoint
+ * under `<API_URL>/llm/v1` (ElevenLabs posts to `/chat/completions` there),
+ * which builds the tutor prompt from the course in SurrealDB, retrieves
+ * lecture context and streams Claude's answer.
  *
  * Usage (from the repo root):
  *   ELEVENLABS_API_KEY=... API_URL=https://talktobolo.stg.spky.cloud \
@@ -77,7 +78,8 @@ async function main() {
           // Claude takes no sampling parameters: leave temperature out.
           temperature: null,
           custom_llm: {
-            url: `${apiUrl}/llm/v1/chat/completions`,
+            // A base URL: ElevenLabs appends /chat/completions itself.
+            url: `${apiUrl}/llm/v1`,
             model_id: model,
             api_key: { secret_id: secret.secret_id },
             api_type: 'chat_completions',
