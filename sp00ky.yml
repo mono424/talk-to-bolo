@@ -71,7 +71,9 @@ apps:
       concurrency: 4
     deploy:
       # Job requests time out after 10 s by default; a call recap takes longer.
-      timeout: 120
+      # Kept under the ~70 s after which an idle sync node Durable Object may
+      # be evicted mid-call (a cut-off job is retried).
+      timeout: 60
     auth:
       type: token
       # The job runner sends it on every job and the API checks it (JOB_TOKEN
