@@ -235,7 +235,6 @@ export const schema = {
         created_at: { type: 'string' as const, dateTime: true, optional: false },
         delay: { type: 'number' as const, optional: true },
         errors: { type: 'string' as const, array: true, optional: false },
-        'errors[*]': { type: 'string' as const, optional: false },
         lease_epoch: { type: 'number' as const, optional: true },
         /**
          * `lease_until?` — string
