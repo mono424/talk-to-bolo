@@ -15,7 +15,7 @@ export default function CallsPage() {
   const calls = useQuery(() => (auth.userId() ? qRecentCalls(db, auth.userId()!, 100) : null));
 
   return (
-    <div class="mx-auto w-full min-w-0 max-w-3xl px-4 py-6 sm:px-8 sm:py-14">
+    <div class="mx-auto w-full min-w-0 max-w-3xl px-4 pb-6 pt-6 sm:px-8 sm:pb-14 sm:pt-5">
       <h1 class="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">Calls</h1>
       <p class="mt-1.5 text-[15px] leading-relaxed text-muted sm:text-[16px]">Transcripts and recaps of your past calls.</p>
 

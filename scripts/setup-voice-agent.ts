@@ -7,7 +7,7 @@
  * course in SurrealDB, retrieves lecture context and streams Claude's answer.
  *
  * Usage (from the repo root):
- *   ELEVENLABS_API_KEY=... API_URL=https://studycall-api.<you>.workers.dev \
+ *   ELEVENLABS_API_KEY=... API_URL=https://talktobolo.stg.spky.cloud \
  *   LLM_SHARED_SECRET=... pnpm setup:voice
  *
  * Re-run with ELEVENLABS_AGENT_ID=... to update the existing agent in place.

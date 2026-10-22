@@ -28,7 +28,7 @@
 
   "vars": {
     // The web app's origin, for CORS. Comma-separated for several.
-    "APP_ORIGIN": "http://localhost:5180",
+    "APP_ORIGIN": "http://localhost:5180,https://talktobolo.stg.spky.cloud",
     "SURREAL_NS": "main",
     "SURREAL_DB": "studycall",
     "CLAUDE_MODEL": "claude-opus-5-5",
@@ -44,4 +44,6 @@
   //   ELEVENLABS_API_KEY
   //   ELEVENLABS_AGENT_ID  printed by `pnpm setup:voice`
   //   LLM_SHARED_SECRET    the key the ElevenLabs agent presents to /llm/v1
+  //   AGENT_MEMORY_URL     Context data-plane base, ending /api/v1/{context_id}
+  //   AGENT_MEMORY_API_KEY server key with scoped memory read/write and scope:create
 }

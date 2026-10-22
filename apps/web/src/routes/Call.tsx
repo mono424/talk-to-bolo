@@ -1,14 +1,14 @@
-import { A, useNavigate, useParams, useSearchParams } from '@solidjs/router';
+import { A, useLocation, useNavigate, useParams, useSearchParams } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { ArrowDown, ArrowLeft, Mic, MicOff, PhoneCall, PhoneOff } from 'lucide-solid';
+import { ArrowDown, ArrowLeft, FileText, Mic, MicOff, PhoneCall, PhoneOff } from 'lucide-solid';
 import type { schema } from '../schema.gen';
-import type { CallMode } from '../lib/api';
-import { useTutorCall } from '../lib/call';
+import { materialPath, pageLabel, type CallMode } from '../lib/api';
+import { freshCall, useTutorCall } from '../lib/call';
 import { idKey } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { modeLabel } from '../lib/modes';
-import { qCall, qCourse, qMaterial, qTurns } from '../lib/query';
+import { firstRow, qCall, qCourse, qMaterial, qTurnSources, qTurns } from '../lib/query';
 import { Button, buttonClass, Dot, formatDate, IconButton } from '../components/ui';
 
 /** How close to the newest line still counts as reading along. */
@@ -20,6 +20,17 @@ const FOLLOW_SLACK = 48;
  * live query: the API writes each turn as the call runs.
  */
 export default function CallPage() {
+  const location = useLocation();
+  // The router keeps this page across navigations to the same route; a new
+  // call (see freshCall) starts it over.
+  return (
+    <Show when={{ visit: location.state }} keyed>
+      <CallScreen />
+    </Show>
+  );
+}
+
+function CallScreen() {
   const params = useParams();
   const [search] = useSearchParams();
   const db = useDb<typeof schema>();
@@ -28,13 +39,32 @@ export default function CallPage() {
 
   // A past call by URL, or the one started on this page.
   const callId = () => (params.callKey ? `call:${params.callKey}` : call.callId());
-  const record = useQuery(() => {
-    const id = callId();
-    return id ? qCall(db, id) : null;
-  });
+  const record = firstRow(
+    useQuery(() => {
+      const id = callId();
+      return id ? qCall(db, id) : null;
+    }),
+  );
   const turns = useQuery(() => {
     const id = callId();
     return id ? qTurns(db, id) : null;
+  });
+  const cited = useQuery(() => {
+    const id = callId();
+    return id ? qTurnSources(db, id) : null;
+  });
+  // Each tutor turn's citations, one link per material and page.
+  const sourcesBySeq = createMemo(() => {
+    const out = new Map<number, { key: string; href: string; title: string; where: string | null }[]>();
+    for (const s of cited.data() ?? []) {
+      const where = pageLabel(s.page, s.page_end) ?? s.heading ?? null;
+      const key = `${s.material}:${where ?? ''}`;
+      const list = out.get(s.seq) ?? [];
+      if (list.some((l) => l.key === key)) continue;
+      list.push({ key, href: materialPath(`course:${courseKey()}`, s.material, s.page), title: s.title, where });
+      out.set(s.seq, list);
+    }
+    return out;
   });
 
   const courseKey = () => params.courseKey ?? (record.data()?.course ? idKey(record.data()!.course) : '');
@@ -42,8 +72,8 @@ export default function CallPage() {
     params.callKey ? (record.data()?.material ? idKey(record.data()!.material) : '') : String(search.material ?? '');
   const mode = () => ((params.callKey ? record.data()?.mode : search.mode) ?? 'explain') as CallMode;
 
-  const course = useQuery(() => (courseKey() ? qCourse(db, `course:${courseKey()}`) : null));
-  const material = useQuery(() => (materialKey() ? qMaterial(db, `material:${materialKey()}`) : null));
+  const course = firstRow(useQuery(() => (courseKey() ? qCourse(db, `course:${courseKey()}`) : null)));
+  const material = firstRow(useQuery(() => (materialKey() ? qMaterial(db, `material:${materialKey()}`) : null)));
 
   const isPast = () => !!params.callKey;
   const live = () => call.phase() === 'live' || call.phase() === 'connecting';
@@ -52,7 +82,7 @@ export default function CallPage() {
   const start = () =>
     call.start({ courseId: `course:${courseKey()}`, materialId: materialKey() ? `material:${materialKey()}` : null, mode: mode() });
   const again = () =>
-    navigate(`/courses/${courseKey()}/call?mode=${mode()}${materialKey() ? `&material=${materialKey()}` : ''}`, { replace: !isPast() });
+    navigate(`/courses/${courseKey()}/call?mode=${mode()}${materialKey() ? `&material=${materialKey()}` : ''}`, { replace: !isPast(), ...freshCall() });
 
   const recapHtml = createMemo(() => (record.data()?.recap ? renderMarkdown(record.data()!.recap!) : ''));
   // Until something is said the call has the page to itself, centered.
@@ -137,7 +167,8 @@ export default function CallPage() {
 
   return (
     <div class="flex h-full min-h-[18rem] min-w-0 flex-col">
-      <div class="flex h-12 shrink-0 items-center px-3 sm:h-14 sm:px-5">
+      {/* On larger screens the sidebar leads back. */}
+      <div class="flex h-12 shrink-0 items-center px-3 sm:h-14 sm:px-5 md:hidden">
         <Show when={!live()} fallback={<span class="max-w-full truncate px-2 text-[14px] text-muted">{course.data()?.title}</span>}>
           <A href={courseKey() ? `/courses/${courseKey()}` : '/'} class={`${buttonClass('ghost', 'sm')} max-w-full text-muted`}>
             <ArrowLeft size={16} stroke-width={1.75} class="shrink-0" />
@@ -148,7 +179,7 @@ export default function CallPage() {
 
       {/* The call */}
       <section
-        class="call-presence flex shrink-0 flex-col items-center justify-center gap-4 px-5 pb-6 transition-[flex-grow] duration-500 ease-out sm:gap-6 sm:pb-8"
+        class="call-presence call-center flex shrink-0 flex-col items-center justify-center gap-4 px-5 pb-6 transition-[flex-grow] duration-500 ease-out sm:gap-6 sm:pb-8 md:pt-10"
         style={{ 'flex-grow': hasTranscript() ? 0 : 1 }}
         aria-live="polite"
       >
@@ -204,53 +235,77 @@ export default function CallPage() {
           <div
             ref={attach}
             onScroll={measure}
-            class="transcript-fade scroll-quiet relative h-full overflow-y-auto overscroll-contain px-4 pb-8 sm:px-6"
+            class="transcript-fade scroll-quiet relative h-full overflow-y-auto overscroll-contain pb-8"
             style={fade()}
             aria-label="Transcript"
           >
-            <div class="mx-auto min-w-0 max-w-2xl">
-              <Show when={recapHtml()}>
-                <div class="mb-6 min-w-0 rounded-[20px] bg-soft p-4 sm:mb-8 sm:p-6">
-                  <div class="mb-3 flex items-center gap-2 text-[13px] text-muted">
-                    <Dot tone="ready" /> Recap
+            <div class="call-center px-4 sm:px-6">
+              <div class="mx-auto min-w-0 max-w-2xl">
+                <Show when={recapHtml()}>
+                  <div class="mb-6 min-w-0 rounded-[20px] bg-soft p-4 sm:mb-8 sm:p-6">
+                    <div class="mb-3 flex items-center gap-2 text-[13px] text-muted">
+                      <Dot tone="ready" /> Recap
+                    </div>
+                    <div class="lecture" innerHTML={recapHtml()} />
                   </div>
-                  <div class="lecture" innerHTML={recapHtml()} />
-                </div>
-              </Show>
+                </Show>
 
-              <ol class="space-y-3">
-                <For
-                  each={turns.data() ?? []}
-                  fallback={<li class="py-8 text-center text-[15px] text-muted">Nothing was said in this call.</li>}
-                >
-                  {(t) => (
-                    <li class={`flex ${t.role === 'student' ? 'justify-end' : 'justify-start'}`}>
-                      <p
-                        class={`min-w-0 max-w-[88%] rounded-[20px] px-4 py-2.5 text-[15px] leading-relaxed [overflow-wrap:anywhere] sm:max-w-[80%] ${
-                          t.role === 'student' ? 'rounded-br-md bg-solid text-solid-fg' : 'rounded-bl-md bg-soft text-fg'
-                        }`}
-                      >
-                        <span class="sr-only">{t.role === 'tutor' ? 'Tutor: ' : 'You: '}</span>
-                        {t.text}
-                      </p>
-                    </li>
-                  )}
-                </For>
-              </ol>
+                <ol class="space-y-3">
+                  <For
+                    each={turns.data() ?? []}
+                    fallback={<li class="py-8 text-center text-[15px] text-muted">Nothing was said in this call.</li>}
+                  >
+                    {(t) => (
+                      <li class={`flex flex-col ${t.role === 'student' ? 'items-end' : 'items-start'}`}>
+                        <p
+                          class={`min-w-0 max-w-[88%] rounded-[20px] px-4 py-2.5 text-[15px] leading-relaxed [overflow-wrap:anywhere] sm:max-w-[80%] ${
+                            t.role === 'student' ? 'rounded-br-md bg-solid text-solid-fg' : 'rounded-bl-md bg-soft text-fg'
+                          }`}
+                        >
+                          <span class="sr-only">{t.role === 'tutor' ? 'Tutor: ' : 'You: '}</span>
+                          {t.text}
+                        </p>
+                        <Show when={t.role === 'tutor' && sourcesBySeq().get(t.seq)}>
+                          {(sources) => (
+                            <div class="mt-1.5 flex min-w-0 max-w-[88%] flex-wrap gap-1.5 sm:max-w-[80%]" aria-label="Sources">
+                              <For each={sources()}>
+                                {(s) => (
+                                  <A
+                                    href={s.href}
+                                    class="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-[12px] text-muted transition-colors hover:bg-soft hover:text-fg"
+                                  >
+                                    <FileText size={12} stroke-width={1.9} class="shrink-0" />
+                                    <span class="truncate">{s.title}</span>
+                                    <Show when={s.where}>
+                                      <span class="max-w-[60%] shrink-0 truncate tabular-nums">· {s.where}</span>
+                                    </Show>
+                                  </A>
+                                )}
+                              </For>
+                            </div>
+                          )}
+                        </Show>
+                      </li>
+                    )}
+                  </For>
+                </ol>
+              </div>
             </div>
           </div>
 
           <Show when={live() && !pinned()}>
-            <button
-              type="button"
-              class={`${buttonClass('solid', 'sm')} absolute bottom-4 left-1/2 -translate-x-1/2 shadow-card`}
-              onClick={() => {
-                setPinned(true);
-                toLatest();
-              }}
-            >
-              <ArrowDown size={15} stroke-width={1.9} /> Latest
-            </button>
+            <div class="call-center pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
+              <button
+                type="button"
+                class={`${buttonClass('solid', 'sm')} pointer-events-auto shadow-card`}
+                onClick={() => {
+                  setPinned(true);
+                  toLatest();
+                }}
+              >
+                <ArrowDown size={15} stroke-width={1.9} /> Latest
+              </button>
+            </div>
           </Show>
         </div>
       </Show>

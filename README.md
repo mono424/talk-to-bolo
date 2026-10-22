@@ -44,7 +44,9 @@ No download needed. Bring your material, a microphone, and a little curiosity.
 ### Built around your course
 
 - **Course context.** Bolo uses your lecture material and searches across the course when more context is needed.
-- **PDFs with their pictures.** Slides become searchable Markdown, with extracted images kept alongside the text.
+- **Learning over time.** Set your place in each lecture. Bolo separates reached material from demonstrated understanding and uses SurrealDB Agent Memory for course concepts and student evidence when configured.
+- **Your PDFs, kept as they are.** The original PDF stays in the app to read page by page, and its text and pictures become searchable for the tutor. Markdown and text notes are imported as they are.
+- **Sources you can check.** The tutor cites the lecture pages it teaches from. Transcripts, recaps, course search and the MCP tools link straight to the page.
 - **A voice conversation.** Speech, turn-taking, and interruptions run over WebRTC.
 - **A record of each session.** Calls include transcripts and study recaps you can return to.
 - **AI access.** An MCP server lets your assistant manage courses, add material, and search your notes with a personal API key.
@@ -83,7 +85,9 @@ cp apps/landing/.env.example apps/landing/.env.local
 pnpm dev:landing
 ```
 
-Set `PUBLIC_APP_URL` to your app's URL before building the landing page for production.
+The published app is [talktobolo.stg.spky.cloud](https://talktobolo.stg.spky.cloud/).
+Production landing-page links use that address by default; set `PUBLIC_APP_URL`
+to override it.
 
 ### Useful commands
 

@@ -29,6 +29,30 @@ export class Surreal {
 
   /** Runs one or more statements and returns every statement's result. */
   async queryAll(sql: string, vars: Record<string, unknown> = {}): Promise<unknown[]> {
+    const names = Object.keys(vars);
+    let bindings = vars;
+    let bindingStatements = 0;
+    if (names.length) {
+      for (const name of names) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`Invalid SurrealDB parameter name: ${name}`);
+      }
+      let transport = '__surreal_transport';
+      while (names.includes(transport) || names.includes(`${transport}_json`)) transport += '_';
+      // JSON-RPC guesses record types from strings such as "Source: 01" and
+      // can truncate their contents. Decode JSON inside the query to retain
+      // literal strings; explicit type::record casts still create references.
+      // The envelope starts with "{", so RPC leaves it a string. Sending JSON
+      // directly avoids expanding already-base64 PDF/image data a second time.
+      // Omit null object fields as before, so option<T> fields receive NONE.
+      const json = JSON.stringify(vars, (_key, value) => value === null ? undefined : value);
+      bindings = { [`${transport}_json`]: json };
+      const prefix = [
+        `LET $${transport} = encoding::json::decode($${transport}_json);`,
+        ...names.map((name) => `LET $${name} = $${transport}[${JSON.stringify(name)}];`),
+      ];
+      bindingStatements = prefix.length;
+      sql = `${prefix.join('\n')}\n${sql}`;
+    }
     const res = await fetch(`${baseUrl(this.env)}/rpc`, {
       method: 'POST',
       headers: {
@@ -36,11 +60,11 @@ export class Surreal {
         accept: 'application/json',
         'surreal-ns': this.env.SURREAL_NS,
         'surreal-db': this.env.SURREAL_DB,
+        ...(this.authorization.startsWith('Basic ') && this.env.SURREAL_AUTH_NS ? { 'surreal-auth-ns': this.env.SURREAL_AUTH_NS } : {}),
+        ...(this.authorization.startsWith('Basic ') && this.env.SURREAL_AUTH_DB ? { 'surreal-auth-db': this.env.SURREAL_AUTH_DB } : {}),
         authorization: this.authorization,
       },
-      // JSON null reaches SurrealDB as NULL, which an option<T> field rejects;
-      // a missing key is NONE. So nulls are dropped, at any depth.
-      body: JSON.stringify({ id: 1, method: 'query', params: [sql, vars] }, (_k, v) => (v === null ? undefined : v)),
+      body: JSON.stringify({ id: 1, method: 'query', params: [sql, bindings] }),
     });
     if (res.status === 401 || res.status === 403) throw new SurrealAuthError(await res.text());
     const text = await res.text();
@@ -58,7 +82,7 @@ export class Surreal {
     const results = body.result ?? [];
     const failed = results.find((r) => r.status !== 'OK');
     if (failed) throw new Error(`SurrealDB: ${String(failed.result)}`);
-    return results.map((r) => r.result);
+    return results.slice(bindingStatements).map((r) => r.result);
   }
 
   /** Runs the statements and returns the result of the last one. */
@@ -101,7 +125,7 @@ export function recordId(table: string, raw: unknown): string {
 export class UserError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 403 | 404 | 503 = 400,
+    readonly status: 400 | 403 | 404 | 409 | 503 = 400,
   ) {
     super(message);
   }
@@ -110,6 +134,11 @@ export class BadRequest extends UserError {}
 export class NotFound extends UserError {
   constructor(message: string) {
     super(message, 404);
+  }
+}
+export class Conflict extends UserError {
+  constructor(message: string) {
+    super(message, 409);
   }
 }
 

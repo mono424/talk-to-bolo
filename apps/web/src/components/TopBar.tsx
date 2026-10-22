@@ -1,7 +1,8 @@
 import { A } from '@solidjs/router';
-import { createSignal, Show } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { KeyRound, LogOut, Menu, X } from 'lucide-solid';
 import { useAuth } from '../lib/auth';
+import { HeaderSlot } from './HeaderSlot';
 
 /** Bolo, the approved TalkToBolo mark. */
 export function Logo(props: { class?: string }) {
@@ -17,8 +18,21 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
   const [menu, setMenu] = createSignal(false);
   const initial = () => auth.user()?.name?.trim().charAt(0).toUpperCase() || '?';
 
+  // How much of the bar's right end the account menu takes: page controls in
+  // the slot keep clear of it (.header-column in global.css).
+  let header!: HTMLElement;
+  let account!: HTMLDivElement;
+  onMount(() => {
+    const measure = () =>
+      header.style.setProperty('--account-w', `${header.getBoundingClientRect().right - account.getBoundingClientRect().left}px`);
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    observer.observe(account);
+    onCleanup(() => observer.disconnect());
+  });
+
   return (
-    <header class="flex h-16 shrink-0 items-center gap-2 px-3 sm:px-5">
+    <header ref={header} class="relative flex h-16 shrink-0 items-center gap-2 px-3 sm:px-5">
       <button
         type="button"
         class="inline-flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-soft hover:text-fg md:hidden"
@@ -29,11 +43,15 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
       >
         {props.menuOpen ? <X size={20} stroke-width={1.75} /> : <Menu size={20} stroke-width={1.75} />}
       </button>
-      <A href="/" class="mr-3 inline-flex shrink-0 items-center text-fg" aria-label="TalkToBolo home">
+      <A href="/" class="mr-1 inline-flex shrink-0 items-center text-fg sm:mr-3" aria-label="TalkToBolo home">
         <Logo />
       </A>
 
-      <div class="relative ml-auto">
+      {/* Beside the sidebar, the slot spans the page below it, so pages can line controls up with their content.
+          Wide windows end it at the recent calls column, clear of the account menu above it. */}
+      <HeaderSlot class="flex min-w-0 flex-1 items-center gap-2 md:pointer-events-none md:absolute md:inset-y-0 md:left-[288px] md:right-0 xl:right-[288px] xl:[--account-w:0px]" />
+
+      <div ref={account} class="relative ml-auto shrink-0">
         <button
           type="button"
           onClick={() => setMenu(!menu())}

@@ -9,6 +9,9 @@ surrealdb:
   namespace: main
   database: studycall
 schema: ../schema
+# PDFs and the images extracted from them (see ../sp00ky.yml).
+buckets:
+  - ../schema/buckets/materials.surql
 version:
   dev: canary
 logLevel:

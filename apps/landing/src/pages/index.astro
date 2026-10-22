@@ -5,7 +5,7 @@ import '../styles/global.css';
 import Icon from '../components/Icon.astro';
 import Logo from '../components/Logo.astro';
 
-const appUrl = import.meta.env.PUBLIC_APP_URL?.trim() || (import.meta.env.DEV ? 'http://localhost:5180' : null);
+const appUrl = import.meta.env.PUBLIC_APP_URL?.trim() || (import.meta.env.DEV ? 'http://localhost:5180' : 'https://talktobolo.stg.spky.cloud/');
 const baseUrl = import.meta.env.BASE_URL;
 const canonicalUrl = new URL(baseUrl, Astro.site);
 const waveform = [12, 22, 16, 33, 47, 27, 19, 40, 57, 34, 22, 48, 64, 39, 22, 35, 51, 29, 16, 26, 44, 32, 20, 13, 27, 39, 23, 15, 30, 19, 12];

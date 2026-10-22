@@ -2,9 +2,10 @@
 -- STUDYCALL SCHEMA
 --
 -- Source of truth for the database. `spky generate` turns it into the typed
--- client schema (apps/web/src/schema.gen.ts). Tables marked `-- @nosync` live
--- only on the server: the API Worker reads and writes them, the client never
--- syncs them (chunks with their embeddings, extracted images, raw PDF bytes).
+-- client schema (apps/web/src/schema.gen.ts). Tables the client never syncs
+-- (search chunks with their embeddings, extracted images, the parts of each
+-- uploaded PDF) live in apps/api/src/server-schema.surql, and their bytes are
+-- files in the `materials` bucket (schema/buckets/materials.surql).
 -- ##################################################################
 
 -- ##################################################################
@@ -142,6 +143,14 @@ DEFINE FIELD OVERWRITE image_count ON TABLE material TYPE int DEFAULT 0
 -- Bumped by the API on every (re)index, so a stale run can tell it lost.
 DEFINE FIELD OVERWRITE index_rev ON TABLE material TYPE int DEFAULT 0
   PERMISSIONS FOR update WHERE false;
+-- Last section the student has reached, using the search index's zero-based
+-- positions. Uploading material never marks it as reached or understood.
+DEFINE FIELD OVERWRITE learned_through ON TABLE material TYPE int DEFAULT -1
+  ASSERT $value >= -1
+  PERMISSIONS FOR update WHERE false;
+-- Revision of the material's AgentMemory graph, written by the API.
+DEFINE FIELD OVERWRITE memory_rev ON TABLE material TYPE int DEFAULT 0
+  PERMISSIONS FOR update WHERE false;
 DEFINE FIELD OVERWRITE created_at ON TABLE material TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at ON TABLE material TYPE datetime VALUE time::now();
 
@@ -187,6 +196,7 @@ DEFINE INDEX OVERWRITE call_course ON TABLE call FIELDS course;
 
 DEFINE EVENT OVERWRITE call_deleted ON TABLE call WHEN $event = "DELETE" THEN {
   DELETE call_turn WHERE call = $before.id;
+  DELETE turn_source WHERE call = $before.id;
 };
 
 -- The transcript, one row per spoken turn. Written by the API as the call
@@ -204,6 +214,33 @@ DEFINE FIELD OVERWRITE text ON TABLE call_turn TYPE string;
 DEFINE FIELD OVERWRITE created_at ON TABLE call_turn TYPE datetime DEFAULT time::now();
 
 DEFINE INDEX OVERWRITE call_turn_call ON TABLE call_turn FIELDS call, seq UNIQUE;
+
+-- The lecture passages a tutor turn cited, one row per citation. Written by
+-- the API with the turn, so the transcript shows them as links into the
+-- material (a PDF opens at the page).
+DEFINE TABLE OVERWRITE turn_source SCHEMAFULL
+  PERMISSIONS
+    FOR select WHERE owner = $auth.id
+    FOR create, update, delete WHERE false;
+
+DEFINE FIELD OVERWRITE owner ON TABLE turn_source TYPE record<user>;
+DEFINE FIELD OVERWRITE call ON TABLE turn_source TYPE record<call>; -- @parent
+-- The tutor turn (call_turn.seq) and the passage number the tutor cited.
+DEFINE FIELD OVERWRITE seq ON TABLE turn_source TYPE int;
+DEFINE FIELD OVERWRITE ref ON TABLE turn_source TYPE int;
+DEFINE FIELD OVERWRITE material ON TABLE turn_source TYPE record<material>;
+-- The material's title when cited, so the link reads well after a rename or
+-- deletion.
+DEFINE FIELD OVERWRITE title ON TABLE turn_source TYPE string;
+DEFINE FIELD OVERWRITE page ON TABLE turn_source TYPE option<int>;
+DEFINE FIELD OVERWRITE page_end ON TABLE turn_source TYPE option<int>;
+DEFINE FIELD OVERWRITE heading ON TABLE turn_source TYPE option<string>;
+-- Where in the turn's text the citation was made. A reply cut short by an
+-- interruption keeps only the citations it got to.
+DEFINE FIELD OVERWRITE at ON TABLE turn_source TYPE int;
+DEFINE FIELD OVERWRITE created_at ON TABLE turn_source TYPE datetime DEFAULT time::now();
+
+DEFINE INDEX OVERWRITE turn_source_call ON TABLE turn_source FIELDS call, seq;
 
 -- ##################################################################
 -- API KEYS (MCP access for AI clients)

@@ -5,6 +5,9 @@ import type { Db } from './query';
 
 export type CallPhase = 'idle' | 'connecting' | 'live' | 'ending' | 'ended' | 'error';
 
+/** Navigation state that starts a fresh call, even at the same address. */
+export const freshCall = () => ({ state: { call: Date.now() } });
+
 /**
  * One voice call with the tutor. ElevenLabs runs the audio (speech in, turn
  * taking, speech out) over WebRTC; every reply comes from Claude through the

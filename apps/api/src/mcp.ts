@@ -1,15 +1,17 @@
-import { McpServer, OAuthError, OAuthErrorCode, createMcpHandler, requireBearerAuth, type AuthInfo } from '@modelcontextprotocol/server';
+import { McpServer, OAuthError, OAuthErrorCode, createMcpHandler, getOAuthProtectedResourceMetadataUrl, requireBearerAuth, type AuthInfo } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { Env } from './env';
 import { MAX_PDF_BYTES, ensureServerSchema, fetchPdf, getOwnedMaterial, searchCourse, startIngest, storePdfAndIngest, validatePdf } from './service';
 import { Surreal, fromBase64, recordId, signinRecord } from './surreal';
+import { appOrigin, oauthOrigin, verifyOAuthAccessToken } from './oauth';
+import { createMaterial } from './material-create';
 
 /**
  * Remote MCP server (Streamable HTTP, stateless) at /mcp, so an AI client
  * (Claude, ChatGPT, an agent) can read and write a user's courses and lecture
  * material directly.
  *
- * Auth: `Authorization: Bearer sc_...`, a personal API key from Settings.
+ * Auth: OAuth access tokens, or a personal API key from Settings.
  * The key signs in through the database's `agent` access method, which hands
  * back a session for the key's owner, so SurrealDB enforces the same table
  * permissions as in the web app. Only server-only work (PDF processing,
@@ -39,15 +41,26 @@ async function sessionForKey(env: Env, key: string): Promise<Session | null> {
 }
 
 export async function handleMcp(req: Request, env: Env): Promise<Response> {
+  const origin = oauthOrigin(req, env);
+  const resource = new URL(`${origin}/mcp`);
   const gate = requireBearerAuth({
+    resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(resource),
+    expectedResource: resource,
+    requiredScopes: ['courses'],
     verifier: {
       async verifyAccessToken(token: string) {
+        if (token.startsWith('bolo_at_')) {
+          const auth = await verifyOAuthAccessToken(env, token, resource.href);
+          if (!auth) throw new OAuthError(OAuthErrorCode.InvalidToken, 'This TalkToBolo connection has expired or been disconnected.');
+          return auth;
+        }
         const session = token.startsWith('sc_') ? await sessionForKey(env, token) : null;
         if (!session) throw new OAuthError(OAuthErrorCode.InvalidToken, 'Unknown or revoked TalkToBolo API key.');
         return {
           token,
           clientId: 'studycall-api-key',
-          scopes: [],
+          scopes: ['courses'],
+          resource,
           expiresAt: Math.floor(Date.now() / 1000) + 3600,
           extra: { userId: session.userId, dbToken: session.token },
         };
@@ -56,7 +69,6 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
   });
   const auth = await gate(req);
   if (auth instanceof Response) return auth;
-  const origin = new URL(req.url).origin;
   return createMcpHandler(({ authInfo }) => buildServer(env, authInfo ?? auth, origin)).fetch(req, {
     authInfo: auth,
   });
@@ -79,8 +91,14 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
 
   // Images in lecture markdown are `asset:<id>` inside the app. AI clients see
   // absolute URLs instead, and may write either form back.
-  const toExternal = (md: string) => md.replace(/\(asset:([A-Za-z0-9_-]+)\)/g, `(${origin}/assets/$1)`);
-  const toInternal = (md: string) => md.replaceAll(`(${origin}/assets/`, '(asset:');
+  const toExternal = (md: string) => md.replace(/\(asset:([A-Za-z0-9_-]+)\)/g, `(${origin}/material-assets/$1)`);
+  const toInternal = (md: string) => md.replaceAll(`(${origin}/material-assets/`, '(asset:').replaceAll(`(${origin}/assets/`, '(asset:');
+  // Links into the app's material page, where a PDF opens at the page.
+  const app = appOrigin(env, origin);
+  const key = (id: string) => id.slice(id.indexOf(':') + 1);
+  const materialUrl = (courseId: string, materialId: string, page?: number | null) =>
+    `${app}/courses/${key(courseId)}/materials/${key(materialId)}${page ? `?page=${page}` : ''}`;
+  const PDF_CONTENT = 'The text of a PDF is derived from the original PDF, which the app shows; it cannot be edited. Change the title only, or add the corrected file as new material.';
 
   // Errors go back to the AI client as tool errors. Database messages are kept
   // on purpose: they concern the caller's own data and tell the client how to
@@ -198,7 +216,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
     {
       title: 'Read lecture material',
       description:
-        'Returns a material as Markdown. Long material comes in pages of `limit` characters: pass the returned next_offset to continue. Images are Markdown image links.',
+        'Returns a material as Markdown. Long material comes in pages of `limit` characters: pass the returned next_offset to continue. Images are Markdown image links. For a PDF, `<!-- page N -->` lines mark where each page starts: cite pages with `url` plus `?page=N`, which opens the original PDF at that page.',
       inputSchema: z.object({
         material_id: z.string(),
         offset: z.number().int().min(0).default(0),
@@ -208,8 +226,10 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
     },
     ({ material_id, offset, limit }) =>
       run(async () => {
-        const m = await user.query<{ id: string; title: string; status: string; content: string } | null>(
-          'SELECT id, title, kind, status, content FROM ONLY type::record($id)',
+        const m = await user.query<{
+          id: string; course: string; title: string; kind: string; status: string; content: string; page_count?: number | null;
+        } | null>(
+          'SELECT id, course, title, kind, status, content, page_count FROM ONLY type::record($id)',
           { id: recordId('material', material_id) },
         );
         if (!m) return fail('Material not found.');
@@ -218,7 +238,10 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
         return text({
           id: m.id,
           title: m.title,
+          kind: m.kind,
           status: m.status,
+          url: materialUrl(m.course, m.id),
+          ...(m.kind === 'pdf' ? { page_count: m.page_count ?? null, pdf_url: materialUrl(m.course, m.id, 1) } : {}),
           total_characters: content.length,
           next_offset: end < content.length ? end : null,
           content: content.slice(offset, end),
@@ -241,7 +264,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
     ({ course_id, title, content }) =>
       run(async () => {
         const id = `material:k${crypto.randomUUID().replaceAll('-', '')}`;
-        const rows = await user.query<unknown[]>(
+        const rows = await createMaterial(user,
           `CREATE type::record($id) CONTENT {
              owner: $auth.id, course: type::record($course), title: $title, kind: 'markdown', content: $content
            } RETURN id`,
@@ -257,7 +280,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
     'update_material',
     {
       title: 'Replace lecture material',
-      description: "Replaces a material's title and/or its whole Markdown content. For small changes use edit_material.",
+      description: "Replaces a material's title and/or its whole Markdown content. For small changes use edit_material. The content of a PDF cannot be replaced, only its title.",
       inputSchema: z.object({
         material_id: z.string(),
         title: z.string().min(1).optional(),
@@ -268,6 +291,10 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
     ({ material_id, title, content }) =>
       run(async () => {
         const id = recordId('material', material_id);
+        if (content) {
+          const kind = await user.query<string | null>('RETURN (SELECT VALUE kind FROM type::record($id))[0]', { id });
+          if (kind === 'pdf') return fail(PDF_CONTENT);
+        }
         const patch: Record<string, string> = {};
         if (title) patch.title = title;
         if (content) patch.content = toInternal(content);
@@ -284,14 +311,15 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
     {
       title: 'Edit lecture material',
       description:
-        'Replaces one exact passage of a material with new text (find and replace). old_text must occur exactly once; include enough surrounding text to make it unique.',
+        'Replaces one exact passage of a material with new text (find and replace). old_text must occur exactly once; include enough surrounding text to make it unique. Not for PDFs, whose text is derived from the original.',
       inputSchema: z.object({ material_id: z.string(), old_text: z.string().min(1), new_text: z.string() }),
     },
     ({ material_id, old_text, new_text }) =>
       run(async () => {
         const id = recordId('material', material_id);
-        const m = await user.query<{ content: string } | null>('SELECT content FROM ONLY type::record($id)', { id });
+        const m = await user.query<{ content: string; kind: string } | null>('SELECT content, kind FROM ONLY type::record($id)', { id });
         if (!m) return fail('Material not found.');
+        if (m.kind === 'pdf') return fail(PDF_CONTENT);
         const content = toExternal(m.content);
         const at = content.indexOf(old_text);
         if (at < 0) return fail('old_text was not found in the material.');
@@ -314,7 +342,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
     {
       title: 'Add a PDF',
       description:
-        'Adds a PDF (slides, script, paper) to a course from an https URL or base64 data. It is converted to Markdown with its images and indexed; that takes a minute or more, list_materials shows the progress.',
+        'Adds a PDF (slides, script, paper) to a course from an https URL or base64 data. The original is kept and shown in the app. Its text is converted to Markdown with its images and indexed; that takes a minute or more, list_materials shows the progress.',
       inputSchema: z.object({
         course_id: z.string(),
         title: z.string().min(1).optional(),
@@ -330,7 +358,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
         // Validate before creating the material, so a bad file leaves nothing behind.
         validatePdf(file.bytes);
         const id = `material:k${crypto.randomUUID().replaceAll('-', '')}`;
-        const rows = await user.query<unknown[]>(
+        const rows = await createMaterial(user,
           `CREATE type::record($id) CONTENT {
              owner: $auth.id, course: type::record($course), title: $title, kind: 'pdf', content: ''
            } RETURN id`,
@@ -363,7 +391,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
     'search_course',
     {
       title: 'Search a course',
-      description: "Searches a course's material by meaning and keywords. Returns the best matching passages.",
+      description: "Searches a course's material by meaning and keywords. Returns the best matching passages, each with a `url` to cite: for a PDF it opens the original at the passage's page (`page` to `page_end`).",
       inputSchema: z.object({
         course_id: z.string(),
         query: z.string().min(1),
@@ -386,7 +414,16 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
           ownerId: userId,
           materialId: material_id ? recordId('material', material_id) : null,
         });
-        return text(hits);
+        return text(hits.map((h) => ({
+          material: h.material,
+          materialTitle: h.materialTitle,
+          heading: h.heading,
+          page: h.page,
+          page_end: h.pageEnd,
+          url: materialUrl(courseId, h.material, h.page),
+          text: h.text,
+          score: h.score,
+        })));
       }),
   );
 

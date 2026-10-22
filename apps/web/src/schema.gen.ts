@@ -52,6 +52,7 @@ export const schema = {
      * - `material` → `material` (one)
      * - `owner` → `user` (one)
      * - `call_turns` → `call_turn` (many)
+     * - `turn_sources` → `turn_source` (many)
      *
      * @example
      * const rows = useQuery(() => db.query('call').orderBy('id', 'asc').limit(20).build());
@@ -102,6 +103,7 @@ export const schema = {
         started_at: { type: 'string' as const, dateTime: true, optional: false },
         status: { type: 'string' as const, optional: false },
         call_turns: { type: 'string' as const, array: true, optional: true },
+        turn_sources: { type: 'string' as const, array: true, optional: true },
       },
       primaryKey: ['id'] as const
     },
@@ -207,6 +209,7 @@ export const schema = {
      * - `course` → `course` (one)
      * - `owner` → `user` (one)
      * - `calls` → `call` (many)
+     * - `turn_sources` → `turn_source` (many)
      *
      * @example
      * const rows = useQuery(() => db.query('material').orderBy('id', 'asc').limit(20).build());
@@ -247,6 +250,8 @@ export const schema = {
         image_count: { type: 'number' as const, optional: false },
         index_rev: { type: 'number' as const, optional: false },
         kind: { type: 'string' as const, optional: false },
+        learned_through: { type: 'number' as const, optional: false },
+        memory_rev: { type: 'number' as const, optional: false },
         /**
          * `owner` — string
          *
@@ -266,6 +271,63 @@ export const schema = {
          */
         updated_at: { type: 'string' as const, dateTime: true, optional: true },
         calls: { type: 'string' as const, array: true, optional: true },
+        turn_sources: { type: 'string' as const, array: true, optional: true },
+      },
+      primaryKey: ['id'] as const
+    },
+    /**
+     * `turn_source` table.
+     *
+     * Relationships:
+     * - `call` → `call` (one)
+     * - `material` → `material` (one)
+     * - `owner` → `user` (one)
+     *
+     * @example
+     * const rows = useQuery(() => db.query('turn_source').orderBy('id', 'asc').limit(20).build());
+     */
+    {
+      name: 'turn_source' as const,
+      columns: {
+        /**
+         * `id` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        id: { type: 'string' as const, recordId: true, optional: false },
+        at: { type: 'number' as const, optional: false },
+        /**
+         * `call` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         *
+         * `@parent` — auto-populated server-side from the auth context. Do not write from client code.
+         */
+        call: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `created_at` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        created_at: { type: 'string' as const, dateTime: true, optional: false },
+        heading: { type: 'string' as const, optional: true },
+        /**
+         * `material` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        material: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `owner` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        owner: { type: 'string' as const, recordId: true, optional: false },
+        page: { type: 'number' as const, optional: true },
+        page_end: { type: 'number' as const, optional: true },
+        ref: { type: 'number' as const, optional: false },
+        seq: { type: 'number' as const, optional: false },
+        title: { type: 'string' as const, optional: false },
       },
       primaryKey: ['id'] as const
     },
@@ -278,6 +340,7 @@ export const schema = {
      * - `call_turns` → `call_turn` (many)
      * - `courses` → `course` (many)
      * - `materials` → `material` (many)
+     * - `turn_sources` → `turn_source` (many)
      *
      * @example
      * const rows = useQuery(() => db.query('user').orderBy('id', 'asc').limit(20).build());
@@ -305,6 +368,7 @@ export const schema = {
         call_turns: { type: 'string' as const, array: true, optional: true },
         courses: { type: 'string' as const, array: true, optional: true },
         materials: { type: 'string' as const, array: true, optional: true },
+        turn_sources: { type: 'string' as const, array: true, optional: true },
       },
       primaryKey: ['id'] as const
     },
@@ -338,6 +402,12 @@ export const schema = {
       from: 'call' as const,
       field: 'call_turns' as const,
       to: 'call_turn' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'call' as const,
+      field: 'turn_sources' as const,
+      to: 'turn_source' as const,
       cardinality: 'many' as const
     },
     {
@@ -389,6 +459,30 @@ export const schema = {
       cardinality: 'many' as const
     },
     {
+      from: 'material' as const,
+      field: 'turn_sources' as const,
+      to: 'turn_source' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'turn_source' as const,
+      field: 'call' as const,
+      to: 'call' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'turn_source' as const,
+      field: 'material' as const,
+      to: 'material' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'turn_source' as const,
+      field: 'owner' as const,
+      to: 'user' as const,
+      cardinality: 'one' as const
+    },
+    {
       from: 'user' as const,
       field: 'api_keys' as const,
       to: 'api_key' as const,
@@ -418,12 +512,21 @@ export const schema = {
       to: 'material' as const,
       cardinality: 'many' as const
     },
+    {
+      from: 'user' as const,
+      field: 'turn_sources' as const,
+      to: 'turn_source' as const,
+      cardinality: 'many' as const
+    },
   ],
   access: {
     account: {"signIn":{"params":{"email":{"type":"string","optional":false},"password":{"type":"string","optional":false}}},"signup":{"params":{"email":{"type":"string","optional":false},"name":{"type":"string","optional":false},"password":{"type":"string","optional":false}}}},
     agent: {"signIn":{"params":{"key":{"type":"string","optional":false}}},"signup":{"params":{}}},
   },
   buckets: [
+    {
+      name: 'materials' as const,
+    },
   ],
   backends: {
   },
@@ -444,9 +547,10 @@ export const SURQL_SCHEMA = `-- ################################################
 -- STUDYCALL SCHEMA
 --
 -- Source of truth for the database. \`spky generate\` turns it into the typed
--- client schema (apps/web/src/schema.gen.ts). Tables marked \`-- @nosync\` live
--- only on the server: the API Worker reads and writes them, the client never
--- syncs them (chunks with their embeddings, extracted images, raw PDF bytes).
+-- client schema (apps/web/src/schema.gen.ts). Tables the client never syncs
+-- (search chunks with their embeddings, extracted images, the parts of each
+-- uploaded PDF) live in apps/api/src/server-schema.surql, and their bytes are
+-- files in the \`materials\` bucket (schema/buckets/materials.surql).
 -- ##################################################################
 
 -- ##################################################################
@@ -540,6 +644,11 @@ DEFINE FIELD OVERWRITE chunk_count ON TABLE material TYPE option<int> DEFAULT 0 
 DEFINE FIELD OVERWRITE image_count ON TABLE material TYPE option<int> DEFAULT 0 PERMISSIONS FOR update WHERE false;
 -- Bumped by the API on every (re)index, so a stale run can tell it lost.
 DEFINE FIELD OVERWRITE index_rev ON TABLE material TYPE option<int> DEFAULT 0 PERMISSIONS FOR update WHERE false;
+-- Last section the student has reached, using the search index's zero-based
+-- positions. Uploading material never marks it as reached or understood.
+DEFINE FIELD OVERWRITE learned_through ON TABLE material TYPE option<int> DEFAULT -1 ASSERT $value >= -1 PERMISSIONS FOR update WHERE false;
+-- Revision of the material's AgentMemory graph, written by the API.
+DEFINE FIELD OVERWRITE memory_rev ON TABLE material TYPE option<int> DEFAULT 0 PERMISSIONS FOR update WHERE false;
 DEFINE FIELD OVERWRITE created_at ON TABLE material TYPE option<datetime> DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at ON TABLE material TYPE option<datetime>;
 
@@ -581,6 +690,7 @@ DEFINE INDEX OVERWRITE call_course ON TABLE call FIELDS course;
 
 DEFINE EVENT OVERWRITE call_deleted ON TABLE call WHEN $event = "DELETE" THEN {
   DELETE call_turn WHERE call = $before.id;
+  DELETE turn_source WHERE call = $before.id;
 };
 
 -- The transcript, one row per spoken turn. Written by the API as the call
@@ -597,6 +707,32 @@ DEFINE FIELD OVERWRITE text ON TABLE call_turn TYPE option<string>;
 DEFINE FIELD OVERWRITE created_at ON TABLE call_turn TYPE option<datetime> DEFAULT time::now();
 
 DEFINE INDEX OVERWRITE call_turn_call ON TABLE call_turn FIELDS call, seq UNIQUE;
+
+-- The lecture passages a tutor turn cited, one row per citation. Written by
+-- the API with the turn, so the transcript shows them as links into the
+-- material (a PDF opens at the page).
+DEFINE TABLE OVERWRITE turn_source SCHEMAFULL
+PERMISSIONS FOR select, create, update, delete WHERE true;
+
+DEFINE FIELD OVERWRITE owner ON TABLE turn_source TYPE option<record<user>>;
+DEFINE FIELD OVERWRITE call ON TABLE turn_source TYPE option<record<call>>;
+ -- @parent
+-- The tutor turn (call_turn.seq) and the passage number the tutor cited.
+DEFINE FIELD OVERWRITE seq ON TABLE turn_source TYPE option<int>;
+DEFINE FIELD OVERWRITE ref ON TABLE turn_source TYPE option<int>;
+DEFINE FIELD OVERWRITE material ON TABLE turn_source TYPE option<record<material>>;
+-- The material's title when cited, so the link reads well after a rename or
+-- deletion.
+DEFINE FIELD OVERWRITE title ON TABLE turn_source TYPE option<string>;
+DEFINE FIELD OVERWRITE page ON TABLE turn_source TYPE option<int>;
+DEFINE FIELD OVERWRITE page_end ON TABLE turn_source TYPE option<int>;
+DEFINE FIELD OVERWRITE heading ON TABLE turn_source TYPE option<string>;
+-- Where in the turn's text the citation was made. A reply cut short by an
+-- interruption keeps only the citations it got to.
+DEFINE FIELD OVERWRITE at ON TABLE turn_source TYPE option<int>;
+DEFINE FIELD OVERWRITE created_at ON TABLE turn_source TYPE option<datetime> DEFAULT time::now();
+
+DEFINE INDEX OVERWRITE turn_source_call ON TABLE turn_source FIELDS call, seq;
 
 -- ##################################################################
 -- API KEYS (MCP access for AI clients)
@@ -764,6 +900,7 @@ DEFINE FIELD _00_rv ON TABLE call TYPE int DEFAULT 0 PERMISSIONS FOR select, cre
 DEFINE FIELD _00_rv ON TABLE call_turn TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE course TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE material TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
+DEFINE FIELD _00_rv ON TABLE turn_source TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE user TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 
 
@@ -836,6 +973,20 @@ THEN {
 
 -- Table: material Client Deletion
 DEFINE EVENT OVERWRITE _00_material_client_delete ON TABLE material
+WHEN $event = "DELETE"
+THEN {
+    -- No-op for now.
+};
+
+-- Table: turn_source Client Mutation
+DEFINE EVENT OVERWRITE _00_turn_source_client_mutation ON TABLE turn_source
+WHEN $before != $after AND $event != "DELETE"
+THEN {
+    -- No-op for now. Client mutation sync logic moved to DBSP.
+};
+
+-- Table: turn_source Client Deletion
+DEFINE EVENT OVERWRITE _00_turn_source_client_delete ON TABLE turn_source
 WHEN $event = "DELETE"
 THEN {
     -- No-op for now.

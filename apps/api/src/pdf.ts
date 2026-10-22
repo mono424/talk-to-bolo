@@ -6,24 +6,45 @@ import type { Env } from './env';
 import { claude, FALLBACK, textOf } from './claude';
 import { Surreal, UserError, fromBase64, toBase64 } from './surreal';
 
-/** The uploaded PDF, reassembled from its stored parts. */
-export async function loadPdf(env: Env, materialId: string): Promise<Uint8Array> {
-  const db = Surreal.system(env);
-  const count = await db.query<number>(
+/** How many stored parts the material's PDF has (0: no PDF). */
+export async function pdfPartCount(env: Env, materialId: string): Promise<number> {
+  return Surreal.system(env).query<number>(
     'RETURN count(SELECT id FROM source_part WHERE material = type::record($m))',
     { m: materialId },
   );
-  if (!count) throw new UserError('The uploaded PDF is missing. Upload it again.');
-  const parts: Uint8Array[] = [];
+}
+
+/** The uploaded PDF's parts in order, read a few at a time. */
+export async function* pdfParts(env: Env, materialId: string, count: number): AsyncGenerator<Uint8Array> {
+  const db = Surreal.system(env);
+  let next = 0;
   // A few parts per request: each comes back base64 in JSON.
   for (let from = 0; from < count; from += 3) {
-    const rows = await db.query<{ b64: string }[]>(
-      `SELECT idx, encoding::base64::encode(data) AS b64 FROM source_part
+    const rows = await db.query<{ idx: number; b64?: string | null }[]>(
+      `SELECT idx, {
+         LET $bytes = type::file('materials', '/sources/' + <string>record::id(id)).get() ?? data;
+         RETURN IF $bytes != NONE { encoding::base64::encode($bytes) } ELSE { NONE };
+       } AS b64 FROM source_part
        WHERE material = type::record($m) AND idx >= $from AND idx < $to ORDER BY idx`,
       { m: materialId, from, to: from + 3 },
     );
-    for (const r of rows) parts.push(fromBase64(r.b64));
+    for (const r of rows) {
+      if (r.idx !== next || r.b64 == null) {
+        throw new UserError('The uploaded PDF is missing one or more parts. Upload it again.');
+      }
+      next++;
+      yield fromBase64(r.b64);
+    }
   }
+  if (next !== count) throw new UserError('The uploaded PDF is missing one or more parts. Upload it again.');
+}
+
+/** The uploaded PDF, reassembled from its stored parts. */
+export async function loadPdf(env: Env, materialId: string): Promise<Uint8Array> {
+  const count = await pdfPartCount(env, materialId);
+  if (!count) throw new UserError('The uploaded PDF is missing. Upload it again.');
+  const parts: Uint8Array[] = [];
+  for await (const part of pdfParts(env, materialId, count)) parts.push(part);
   const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0));
   let off = 0;
   for (const p of parts) {

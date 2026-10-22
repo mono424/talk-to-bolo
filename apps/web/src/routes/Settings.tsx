@@ -1,11 +1,11 @@
 import { createSignal, For, Show } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { Check, Copy, KeyRound } from 'lucide-solid';
+import { ArrowUpRight, Check, Copy, KeyRound, MessageCircle, Sparkles } from 'lucide-solid';
 import type { schema } from '../schema.gen';
-import { API_URL, createApiKey } from '../lib/api';
+import { MCP_URL, createApiKey } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { qApiKeys } from '../lib/query';
-import { Button, Card, Dot, formatDate, inputClass, NoticeCard } from '../components/ui';
+import { Button, buttonClass, Card, Dot, formatDate, inputClass, NoticeCard } from '../components/ui';
 
 /** API keys for AI clients that use the MCP server. */
 export default function SettingsPage() {
@@ -16,16 +16,32 @@ export default function SettingsPage() {
   const [created, setCreated] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [chatgptSetup, setChatgptSetup] = createSignal(false);
+  const [addressCopied, setAddressCopied] = createSignal(false);
 
-  const mcpUrl = `${API_URL}/mcp`;
+  const mcpUrl = MCP_URL;
   const keyOrPlaceholder = () => created() ?? 'sc_YOUR_KEY';
+  const claudeUrl = new URL('https://claude.ai/customize/connectors');
+  claudeUrl.searchParams.set('modal', 'add-custom-connector');
+  claudeUrl.searchParams.set('connectorName', 'TalkToBolo');
+  claudeUrl.searchParams.set('connectorUrl', mcpUrl);
+
+  const connectChatGPT = () => {
+    setChatgptSetup(true);
+    // Open during the click so browsers do not block the new tab while the
+    // asynchronous clipboard operation is pending. The address is public.
+    window.open('https://chatgpt.com/plugins', '_blank', 'noopener,noreferrer');
+    void navigator.clipboard.writeText(mcpUrl).then(() => setAddressCopied(true)).catch(() => setAddressCopied(false));
+  };
 
   const create = async (e: SubmitEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const res = await createApiKey(db, name().trim() || 'AI client');
+      const owner = auth.userId();
+      if (!owner) throw new Error('Sign in again to create a key.');
+      const res = await createApiKey(db, owner, name().trim() || 'AI client');
       setCreated(res.key);
       setName('');
     } catch (err) {
@@ -43,6 +59,35 @@ export default function SettingsPage() {
         your notes, through TalkToBolo's MCP server.
       </p>
 
+      <Card class="mt-6 p-4 sm:mt-8 sm:p-6">
+        <h2 class="text-[18px] font-semibold tracking-tight">Bring your courses into the conversation</h2>
+        <p class="mt-2 max-w-xl text-[14px] leading-relaxed text-muted">
+          Connect your assistant, then sign in to TalkToBolo and approve access. No API key to copy.
+        </p>
+        <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <Button onClick={connectChatGPT}>
+            <MessageCircle size={17} stroke-width={1.8} /> Connect ChatGPT <ArrowUpRight size={15} />
+          </Button>
+          <a class={buttonClass('soft')} href={claudeUrl.href} target="_blank" rel="noopener noreferrer">
+            <Sparkles size={17} stroke-width={1.8} /> Connect Claude <ArrowUpRight size={15} />
+          </a>
+        </div>
+        <p class="mt-3 text-[13px] leading-relaxed text-muted">
+          Claude opens a prefilled connection. ChatGPT needs a short setup in its Plugins page.
+        </p>
+        <Show when={chatgptSetup()}>
+          <div class="mt-5 rounded-2xl bg-soft p-4" role="region" aria-label="ChatGPT connection setup">
+            <p class="text-[14px] font-medium" role="status">{addressCopied() ? 'Server address copied.' : 'Copy the server address below.'}</p>
+            <ol class="mt-2 list-decimal space-y-1.5 pl-5 text-[14px] leading-relaxed text-muted">
+              <li>In ChatGPT Plugins, choose the plus button, then Add custom MCP server.</li>
+              <li>Name it TalkToBolo, paste the server address and choose OAuth.</li>
+              <li>Create the plugin, connect your TalkToBolo account and install it.</li>
+            </ol>
+            <div class="mt-3"><CopyLine text={mcpUrl} /></div>
+          </div>
+        </Show>
+      </Card>
+
       <Show when={created()}>
         <NoticeCard
           class="mt-8"
@@ -58,7 +103,8 @@ export default function SettingsPage() {
       </Show>
 
       <Card class="mt-6 p-4 sm:mt-8 sm:p-5">
-        <h2 class="text-[16px] font-semibold">Create a key</h2>
+        <h2 class="text-[16px] font-semibold">API key for other clients</h2>
+        <p class="mt-1 text-[14px] text-muted">Use this for Claude Code or a client that asks for a bearer token.</p>
         <form onSubmit={create} class="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
             class={`${inputClass} min-w-0 flex-1`}
@@ -95,9 +141,9 @@ export default function SettingsPage() {
       </Card>
 
       <Card class="mt-4 p-2">
-        <h2 class="px-3 pb-1 pt-3 text-[16px] font-semibold">Your keys</h2>
+        <h2 class="px-3 pb-1 pt-3 text-[16px] font-semibold">Keys and connected apps</h2>
         <ul>
-          <For each={keys.data() ?? []} fallback={<li class="px-3 py-4 text-[14px] text-muted">No keys yet.</li>}>
+          <For each={keys.data() ?? []} fallback={<li class="px-3 py-4 text-[14px] text-muted">No keys or connections yet.</li>}>
             {(k) => (
               <li class="flex items-center gap-2 rounded-2xl px-2 py-2.5 hover:bg-soft sm:gap-3 sm:px-3">
                 <Dot tone={k.revoked_at ? 'idle' : 'ready'} class="mx-1" />

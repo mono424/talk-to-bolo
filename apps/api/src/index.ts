@@ -5,6 +5,8 @@ import { requireUser } from './auth';
 import { endCall, startCall } from './calls';
 import { handleChatCompletions } from './llm';
 import { handleMcp } from './mcp';
+import { approveOAuthConsent, getOAuthConsent, handleOAuth } from './oauth';
+import { setLectureProgress } from './progress';
 import {
   createApiKey,
   ensureServerSchema,
@@ -17,7 +19,8 @@ import {
   readLimited,
   MAX_PDF_BYTES,
 } from './service';
-import { BadRequest, Surreal, UserError, fromBase64, recordId } from './surreal';
+import { pdfPartCount, pdfParts } from './pdf';
+import { BadRequest, Conflict, NotFound, Surreal, UserError, fromBase64, recordId } from './surreal';
 
 export { IngestMaterial } from './ingest';
 
@@ -28,6 +31,14 @@ app.onError((err, c) => {
   // Anything else may carry database internals: log it, answer generically.
   console.error(err);
   return c.json({ error: 'Something went wrong. Try again in a moment.' }, 500);
+});
+
+// OAuth discovery, registration and token exchange are public protocol routes.
+// Account approval below still requires the signed-in student's session.
+app.use('*', async (c, next) => {
+  const response = await handleOAuth(c.req.raw, c.env);
+  if (response) return response;
+  await next();
 });
 
 // The web app calls these from the browser.
@@ -43,6 +54,18 @@ app.use(
 app.use('/api/*', requireUser);
 
 app.get('/health', (c) => c.json({ ok: true }));
+
+app.post('/api/oauth/request', async (c) => {
+  const { requestId } = await c.req.json<{ requestId?: string }>();
+  if (!requestId) throw new BadRequest('The connection request is missing. Start again from your assistant.');
+  return c.json(await getOAuthConsent(c.env, c.var.caller.userId, requestId));
+});
+
+app.post('/api/oauth/approve', async (c) => {
+  const body = await c.req.json<{ requestId?: string; allow?: boolean }>();
+  if (!body.requestId || typeof body.allow !== 'boolean') throw new BadRequest('Choose whether to allow this connection.');
+  return c.json(await approveOAuthConsent(c.env, c.var.caller.userId, { requestId: body.requestId, allow: body.allow }));
+});
 
 // ── Calls ─────────────────────────────────────────────────────────────────
 
@@ -71,11 +94,49 @@ app.post('/api/materials/:id/pdf', async (c) => {
     await storePdfAndIngest(c.env, material, bytes, name);
   } catch (err) {
     // A file refused before processing started (not a PDF, too big) still
-    // shows up on the material, so the row does not wait forever.
-    if (err instanceof UserError) await markFailed(c.env, material.id, err.message);
+    // shows up on the material, so the row does not wait forever. A refused
+    // second upload leaves the material and its PDF as they are.
+    if (err instanceof UserError && !(err instanceof Conflict)) await markFailed(c.env, material.id, err.message);
     throw err;
   }
   return c.json({ ok: true });
+});
+
+// The original PDF, for the viewer. Streamed part by part from the bucket.
+app.get('/api/materials/:id/pdf', async (c) => {
+  const id = recordId('material', c.req.param('id'));
+  await ensureServerSchema(c.env);
+  const m = await Surreal.system(c.env).query<{ kind: string; source_name?: string | null } | null>(
+    'RETURN (SELECT kind, source_name FROM type::record($id) WHERE owner = type::record($owner))[0]',
+    { id, owner: c.var.caller.userId },
+  );
+  const count = m?.kind === 'pdf' ? await pdfPartCount(c.env, id) : 0;
+  if (!count) throw new NotFound('This material has no PDF.');
+  const parts = pdfParts(c.env, id, count);
+  // The first part is read before answering, so a missing file is a JSON error.
+  const first = await parts.next();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (!first.done) controller.enqueue(first.value);
+    },
+    async pull(controller) {
+      const next = await parts.next();
+      if (next.done) controller.close();
+      else controller.enqueue(next.value);
+    },
+    async cancel() {
+      await parts.return(undefined);
+    },
+  });
+  const name = m?.source_name || 'lecture.pdf';
+  return new Response(body, {
+    headers: {
+      'content-type': 'application/pdf',
+      'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(name)}`,
+      // A material's PDF never changes: a second upload is refused.
+      'cache-control': 'private, max-age=86400',
+    },
+  });
 });
 
 app.post('/api/materials/:id/index', async (c) => {
@@ -83,6 +144,11 @@ app.post('/api/materials/:id/index', async (c) => {
   if (material.kind === 'pdf' && !material.content.trim()) throw new BadRequest('Upload the PDF first.');
   await startIngest(c.env, material.id);
   return c.json({ ok: true });
+});
+
+app.post('/api/materials/:id/progress', async (c) => {
+  const body = await c.req.json<{ through?: unknown; rev?: unknown }>();
+  return c.json(await setLectureProgress(c.env, c.var.caller.userId, c.req.param('id'), body));
 });
 
 app.post('/api/courses/:id/search', async (c) => {
@@ -107,11 +173,15 @@ app.post('/api/keys', async (c) => {
  * tags cannot send the session token, and the ids only appear inside
  * material the owner can read.
  */
-app.get('/assets/:id', async (c) => {
+// Keep the old endpoint for existing links. The new path avoids colliding
+// with Vite's /assets directory when the API shares the app's origin.
+app.on('GET', ['/assets/:id', '/material-assets/:id'], async (c) => {
   const id = recordId('asset', c.req.param('id'));
   await ensureServerSchema(c.env);
   const row = await Surreal.system(c.env).query<{ b64: string; mime: string } | null>(
-    'SELECT encoding::base64::encode(data) AS b64, mime FROM ONLY type::record($id)',
+    `LET $row = SELECT mime, data FROM ONLY type::record($id);
+     LET $png = type::file('materials', '/assets/' + <string>record::id(type::record($id))).get() ?? $row.data;
+     RETURN IF $row AND $png { { mime: $row.mime, b64: encoding::base64::encode($png) } } ELSE { NONE };`,
     { id },
   );
   if (!row) return c.notFound();

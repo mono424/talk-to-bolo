@@ -223,6 +223,29 @@ button, a, input, select, textarea { scroll-margin-block: 1rem; }
   transition: --fade-top 400ms ease-out, --fade-bottom 400ms ease-out;
 }
 
+/*
+ * A page's controls in the top bar (components/HeaderSlot.tsx), lined up with
+ * the page's centered column (--page-column, the lecture's 48rem) but never
+ * under the account menu (--account-w, which the top bar measures).
+ */
+@media (min-width: 768px) {
+  .header-column {
+    width: 100%;
+    max-width: var(--page-column, 48rem);
+    margin-inline: auto;
+    padding-left: 2rem;
+    padding-right: max(2rem, calc(var(--account-w, 10rem) + 0.75rem - max(0px, (100% - var(--page-column, 48rem)) / 2)));
+  }
+}
+
+/*
+ * Beside the sidebar, the call centers on the window when there is room: a
+ * right margin up to the sidebar's width, leaving the call at least 22rem.
+ */
+@media (min-width: 768px) {
+  .call-center { margin-right: clamp(0px, calc(100% - 22rem), 18rem); }
+}
+
 /* Keep the hang-up control and some transcript in view on short landscape phones. */
 @media (max-height: 600px) and (max-width: 1023px) {
   .call-presence { flex-direction: row; flex-wrap: wrap; gap: 12px 20px; padding: 4px 16px 12px; }

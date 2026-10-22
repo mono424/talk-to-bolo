@@ -1,9 +1,10 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { Env } from './env';
 import { bearer, safeEqual } from './auth';
-import { callContext, saveTurns, type CallContext } from './calls';
+import { CitationFilter } from './citations';
+import { callContext, saveTurnSources, saveTurns } from './calls';
 import { claude, FALLBACK } from './claude';
-import { searchCourse } from './service';
+import { learningContext, permittedSpokenTurns, progressTool, teachingTool, PREPARE_SECTION, prepareExplanation, RECORD_SECTION, recordReached, rememberConfirmedExchange, saveLearningFocus, type LearningContext } from './learning';
 
 /**
  * The voice agent's "Custom LLM": an OpenAI Chat Completions compatible
@@ -51,6 +52,9 @@ export async function handleChatCompletions(req: Request, env: Env, ctx: Executi
   ctx.waitUntil(
     (async () => {
       let reply = '';
+      // Citation markers come out of the text before it is spoken.
+      const citer = new CitationFilter();
+      let learning: LearningContext | undefined;
       let stream: ReturnType<ReturnType<typeof claude>['beta']['messages']['stream']> | undefined;
       try {
         // The student's turn (and the tutor's previous one, as actually spoken,
@@ -58,52 +62,118 @@ export async function handleChatCompletions(req: Request, env: Env, ctx: Executi
         ctx.waitUntil(saveTurns(env, call.call, spoken.slice(-3)).catch((e) => console.error('[llm] transcript', e)));
 
         await sse.role();
-        const excerpts = await retrieve(env, call, lastStudent);
-        const messages = toAnthropic(history);
+        learning = await learningContext(env, call.call, lastStudent);
+        ctx.waitUntil(rememberConfirmedExchange(env, call.call, learning, spoken).catch((e) => console.error('[learning] evidence write failed', e)));
+        const permitted = await permittedSpokenTurns(env, call.call, learning, spoken);
+        let seq = 0;
+        const boundedHistory = history.filter((m) => {
+          if ((m.role === 'user' || m.role === 'assistant') && textOfContent(m.content).trim()) return permitted.has(seq++);
+          return true;
+        });
+        const messages = toAnthropic(boundedHistory);
         // Passages ride along with the student's turn (they are the student's
         // own material, and every model accepts them there).
         const last = messages[messages.length - 1];
-        if (excerpts && Array.isArray(last.content)) last.content.push({ type: 'text', text: excerpts });
+        if (Array.isArray(last.content)) last.content.push({ type: 'text', text: learning.note });
 
-        stream = claude(env).beta.messages.stream({
-          model: env.CLAUDE_MODEL,
-          max_tokens: 4096,
-          ...FALLBACK,
-          // A spoken reply: fast beats deep.
-          output_config: { effort: 'low' },
-          system: [{ type: 'text', text: call.system, cache_control: { type: 'ephemeral' } }],
-          messages,
-          tools: (body.tools ?? []).map((t) => ({
+        // Internal progress tools run here. Voice-agent tools such as end_call
+        // keep their existing streaming contract with ElevenLabs.
+        let progressRecorded = false;
+        let teaching = false;
+        let focusSaved = false;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const tools: Anthropic.Beta.BetaTool[] = [...(body.tools ?? []).filter((t) => ![RECORD_SECTION, PREPARE_SECTION].includes(t.function.name)).map((t) => ({
             name: t.function.name,
             description: t.function.description ?? '',
             input_schema: (t.function.parameters as Anthropic.Beta.BetaTool.InputSchema) ?? { type: 'object', properties: {} },
-          })),
-        });
+          })), ...(learning.next && attempt < 3 ? [teachingTool, ...(!progressRecorded ? [progressTool] : [])] : [])];
+          stream = claude(env).beta.messages.stream({
+            model: env.CLAUDE_MODEL,
+            max_tokens: 4096,
+            ...FALLBACK,
+            // A spoken reply: fast beats deep.
+            output_config: { effort: 'low' },
+            system: [{ type: 'text', text: call.system, cache_control: { type: 'ephemeral' } }],
+            messages,
+            ...(tools.length ? { tools, tool_choice: { type: 'auto' as const, disable_parallel_tool_use: true } } : {}),
+          });
 
-        const toolIndex = new Map<number, number>();
-        let finish: 'stop' | 'tool_calls' | 'length' = 'stop';
-        for await (const ev of stream) {
-          if (ev.type === 'content_block_start' && ev.content_block.type === 'tool_use') {
-            const n = toolIndex.size;
-            toolIndex.set(ev.index, n);
-            await sse.delta({
-              tool_calls: [{ index: n, id: ev.content_block.id, type: 'function', function: { name: ev.content_block.name, arguments: '' } }],
-            });
-          } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
-            reply += ev.delta.text;
-            await sse.delta({ content: ev.delta.text });
-          } else if (ev.type === 'content_block_delta' && ev.delta.type === 'input_json_delta') {
-            const n = toolIndex.get(ev.index);
-            if (n !== undefined) await sse.delta({ tool_calls: [{ index: n, function: { arguments: ev.delta.partial_json } }] });
-          } else if (ev.type === 'message_delta' && ev.delta.stop_reason) {
-            finish = ev.delta.stop_reason === 'tool_use' ? 'tool_calls' : ev.delta.stop_reason === 'max_tokens' ? 'length' : 'stop';
-            if (ev.delta.stop_reason === 'refusal' && !reply) {
-              reply = "Let's leave that one and get back to the material.";
-              await sse.delta({ content: reply });
+          const toolIndex = new Map<number, number>();
+          const internal = new Set<number>();
+          let finish: 'stop' | 'tool_calls' | 'length' = 'stop';
+          for await (const ev of stream) {
+            if (ev.type === 'content_block_start' && ev.content_block.type === 'tool_use') {
+              if ([RECORD_SECTION, PREPARE_SECTION].includes(ev.content_block.name)) {
+                internal.add(ev.index);
+                continue;
+              }
+              const n = toolIndex.size;
+              toolIndex.set(ev.index, n);
+              await sse.delta({
+                tool_calls: [{ index: n, id: ev.content_block.id, type: 'function', function: { name: ev.content_block.name, arguments: '' } }],
+              });
+            } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
+              const text = citer.push(ev.delta.text);
+              if (!text) continue;
+              // Persist before speech is exposed: an interruption may trigger the
+              // student's next request before this response reaches its finalizer.
+              if (!focusSaved) {
+                await saveLearningFocus(env, call.call, spoken.length, learning, teaching);
+                focusSaved = true;
+              }
+              reply += text;
+              await sse.delta({ content: text });
+            } else if (ev.type === 'content_block_delta' && ev.delta.type === 'input_json_delta') {
+              if (internal.has(ev.index)) continue;
+              const n = toolIndex.get(ev.index);
+              if (n !== undefined) await sse.delta({ tool_calls: [{ index: n, function: { arguments: ev.delta.partial_json } }] });
+            } else if (ev.type === 'message_delta' && ev.delta.stop_reason) {
+              finish = ev.delta.stop_reason === 'tool_use' ? 'tool_calls' : ev.delta.stop_reason === 'max_tokens' ? 'length' : 'stop';
+              if (ev.delta.stop_reason === 'refusal' && !reply) {
+                reply = "Let's leave that one and get back to the material.";
+                await sse.delta({ content: reply });
+              }
             }
           }
+          const held = citer.flush();
+          if (held) {
+            reply += held;
+            await sse.delta({ content: held });
+          }
+          const final: Anthropic.Beta.BetaMessage = await stream.finalMessage();
+          const progress = final.content.find((b) => b.type === 'tool_use' && [RECORD_SECTION, PREPARE_SECTION].includes(b.name));
+          if (progress?.type === 'tool_use') {
+            if (attempt === 3) { await sse.finish('stop'); break; }
+            let result: string;
+            let isError = false;
+            try {
+              if (progress.name === PREPARE_SECTION) {
+                prepareExplanation(learning, progress.input as Record<string, unknown>);
+                teaching = true;
+                focusSaved = false;
+                result = 'Explain this prepared section now, then check understanding. Wait for the student before recording it as reached.';
+              } else {
+                if (progressRecorded) throw new Error('Progress has already been recorded for this student turn.');
+                const confirmedTutor = spoken.slice(0, -1).reverse().find((t) => t.role === 'tutor');
+                await recordReached(env, call.call, learning, progress.input as Record<string, unknown>, lastStudent, confirmedTutor?.seq);
+                progressRecorded = true;
+                const oldNote = learning.note;
+                learning = await learningContext(env, call.call, lastStudent, learning.refs);
+                teaching = false;
+                if (Array.isArray(last.content)) last.content = last.content.filter((b) => b.type !== 'text' || b.text !== oldNote);
+                result = `Section recorded as reached, not mastered.\n${learning.note}`;
+              }
+            } catch (err) {
+              isError = true;
+              result = err instanceof Error ? err.message : 'Progress could not be saved.';
+            }
+            messages.push({ role: 'assistant', content: final.content });
+            messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: progress.id, content: result, is_error: isError }] });
+            continue;
+          }
+          await sse.finish(finish);
+          break;
         }
-        await sse.finish(finish);
       } catch (err) {
         if (sse.closed) {
           // The agent hung up on this turn (the student interrupted): stop generating.
@@ -121,6 +191,17 @@ export async function handleChatCompletions(req: Request, env: Env, ctx: Executi
           await saveTurns(env, call.call, [{ seq: spoken.length, role: 'tutor', text: reply }]).catch((e) =>
             console.error('[llm] transcript', e),
           );
+          // Offsets into the saved (trimmed) text; each passage once, where first cited.
+          const lead = reply.length - reply.trimStart().length;
+          const refs = learning?.refs;
+          const seen = new Set<number>();
+          const sources = refs ? citer.citations.flatMap((c) => {
+            const source = refs.get(c.ref);
+            if (!source || seen.has(c.ref)) return [];
+            seen.add(c.ref);
+            return [{ ...source, at: Math.max(0, c.at - lead) }];
+          }) : [];
+          await saveTurnSources(env, call.call, spoken.length, sources).catch((e) => console.error('[llm] sources', e));
         }
       }
     })(),
@@ -130,26 +211,6 @@ export async function handleChatCompletions(req: Request, env: Env, ctx: Executi
     headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', connection: 'keep-alive' },
   });
 }
-
-/** Course passages for the student's turn, as a mid-conversation system note. */
-async function retrieve(env: Env, call: CallContext, studentTurn: string): Promise<string | null> {
-  // The whole lecture is already in the prompt and there is nothing else to search.
-  if (call.fullLecture && !call.courseHasOtherMaterial) return null;
-  if (studentTurn.replace(/\W/g, '').length < 4) return null;
-  try {
-    const hits = await searchCourse(env, call.course.id, studentTurn, { k: 5, ownerId: call.call.owner });
-    if (!hits.length) return null;
-    const body = hits
-      .map((h) => `<passage source="${escapeAttr(h.materialTitle)}${h.heading ? ` > ${escapeAttr(h.heading)}` : ''}">\n${h.text}\n</passage>`)
-      .join('\n');
-    return `<course_passages>\nPassages from the course material that may help with this turn. Use them if relevant; do not read them out verbatim.\n${body}\n</course_passages>`;
-  } catch (err) {
-    console.error('[llm] search failed', err);
-    return null;
-  }
-}
-
-const escapeAttr = (s: string) => s.replaceAll('"', "'");
 
 const textOfContent = (c: OpenAIMessage['content']): string =>
   typeof c === 'string' ? c : Array.isArray(c) ? c.map((p) => p.text ?? '').join('') : '';

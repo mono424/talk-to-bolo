@@ -1,9 +1,10 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import type { Env } from './env';
-import { chunkMarkdown, embedText } from './chunk';
+import { chunkMarkdown, chunkPages, embedText } from './chunk';
 import { convertPages, extractPageImages, loadPdf, pageCount, placeMissingImages, type PageImageRef } from './pdf';
 import { embed, ensureServerSchema, type MaterialRow } from './service';
 import { Surreal, UserError, toBase64 } from './surreal';
+import { getMemoryDocument, indexMemorySection, memoryConfigured } from './memory';
 
 export interface IngestParams {
   materialId: string;
@@ -84,12 +85,14 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
               to,
             });
             for (const im of images) {
+              // The PNG goes to the bucket first: a row never points at a
+              // missing file (a file without a row is overwritten on retry).
               await db.query(
-                `CREATE type::record($id) CONTENT {
+                `type::file('materials', '/assets/' + <string>record::id(type::record($id))).put(encoding::base64::decode($b64));
+                 CREATE type::record($id) CONTENT {
                    owner: type::record($owner), material: type::record($m), page: $page,
-                   mime: 'image/png', width: $w, height: $h, hash: $hash,
-                   data: encoding::base64::decode($b64)
-                 }`,
+                   mime: 'image/png', width: $w, height: $h, hash: $hash
+                 };`,
                 {
                   id: `asset:a${crypto.randomUUID().replaceAll('-', '')}`,
                   owner: meta.owner,
@@ -160,15 +163,18 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
           const m = await current();
           if (!m) return STOP;
           await progress(`Indexing sections ${from + 1}-${to} of ${total}`);
-          const chunks = chunkMarkdown(m.content).slice(from, to);
+          const all = chunkMarkdown(m.content);
+          const pages = chunkPages(m.content, all).slice(from, to);
+          const chunks = all.slice(from, to);
           for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
             const batch = chunks.slice(i, i + EMBED_BATCH);
             const vectors = await embed(this.env, batch.map(embedText), 'documents');
             await db.query(
               `FOR $c IN $rows {
-                 UPSERT type::record($c.id) CONTENT {
+                 UPSERT type::record($c.id) MERGE {
                    owner: type::record($owner), course: type::record($course), material: type::record($m),
-                   rev: $rev, position: $c.position, heading: $c.heading, text: $c.text, embedding: $c.embedding
+                   rev: $rev, position: $c.position, heading: $c.heading, text: $c.text, embedding: $c.embedding,
+                   page: $c.page, page_end: $c.page_end
                  };
                };`,
               {
@@ -182,6 +188,8 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
                   heading: c.heading,
                   text: c.text,
                   embedding: vectors[j],
+                  page: pages[i + j]?.page,
+                  page_end: pages[i + j]?.pageEnd,
                 })),
               },
             );
@@ -191,6 +199,34 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
         if (r === STOP) return stopped;
       }
 
+      // Each section has its own known-time stamp. Uploading a whole lecture
+      // at once would make its later concepts visible at the first section.
+      const withMemory = memoryConfigured(this.env);
+      if (withMemory) {
+        for (let position = 0; position < total; position++) {
+          const documentId = await step.do(`memory upload ${position}`, RETRY, async (): Promise<string | Stop | null> => {
+            const m = await current();
+            if (!m) return STOP;
+            await progress(`Building course memory, section ${position + 1} of ${total}`);
+            return indexMemorySection(this.env, m, position, chunkMarkdown(m.content)[position]);
+          });
+          if (documentId === STOP) return stopped;
+          if (!documentId) throw new Error('Agent Memory was disabled during ingestion.');
+          let ready = false;
+          for (let poll = 0; poll < 60; poll++) {
+            const state = await step.do(`memory status ${position} ${poll}`, RETRY, async () => {
+              if (!(await current())) return STOP;
+              return getMemoryDocument(this.env, documentId);
+            });
+            if (state === STOP) return stopped;
+            if (state?.status === 'ready') { ready = true; break; }
+            if (state?.status === 'failed') throw new Error(`Agent Memory extraction failed for section ${position}.`);
+            await step.sleep(`memory wait ${position} ${poll}`, '10 seconds');
+          }
+          if (!ready) throw new Error('Agent Memory extraction did not finish in time.');
+        }
+      }
+
       await step.do('finish', RETRY, async () => {
         // Only while this run still owns the material: a newer run's chunks
         // must survive an older run finishing late.
@@ -198,10 +234,11 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
           `BEGIN TRANSACTION;
            IF (SELECT VALUE index_rev FROM ONLY type::record($m)) = $rev {
              DELETE chunk WHERE material = type::record($m) AND rev != $rev;
-             UPDATE type::record($m) SET status = 'ready', status_detail = NONE, error = NONE, chunk_count = $n;
+             UPDATE type::record($m) SET status = 'ready', status_detail = NONE, error = NONE, chunk_count = $n,
+               memory_rev = IF $with_memory THEN $rev ELSE 0 END;
            };
            COMMIT TRANSACTION;`,
-          { m: materialId, rev, n: total },
+          { m: materialId, rev, n: total, with_memory: withMemory },
         );
       });
       return { ok: true, chunks: total };

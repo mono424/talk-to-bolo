@@ -1,4 +1,3 @@
-import { cleanForIndex } from './chunk';
 import type { CourseRow, MaterialRow } from './service';
 
 export type CallMode = 'explain' | 'quiz' | 'qa';
@@ -17,9 +16,6 @@ const LANGUAGE_NAMES: Record<string, string> = {
 
 export const languageName = (code: string) => LANGUAGE_NAMES[code] ?? code;
 
-/** Above this the whole lecture no longer goes into the prompt; search covers it. */
-const FULL_TEXT_LIMIT = 150_000;
-
 const MODE_GUIDE: Record<CallMode, string> = {
   explain: `Walk the student through the material in its order, one idea at a time. Explain each idea simply with an example, then check understanding with one short question before moving on. Keep track of where you are and do not skip ahead unless the student asks. If an answer shows a gap, explain it another way.`,
   quiz: `Quiz the student on the material. Ask one question at a time, starting easy and getting harder. Mix recall, "why" and application questions, and vary the topics. After each answer, say whether it was right, correct it briefly if not, and ask the next question. Every five questions or so, say how they are doing and which topic to review.`,
@@ -33,17 +29,17 @@ const MODE_GUIDE: Record<CallMode, string> = {
 export function tutorSystemPrompt(input: {
   course: CourseRow;
   material: MaterialRow | null;
-  outline: { title: string; headings: string[] }[];
   mode: CallMode;
   studentName: string;
 }): string {
-  const { course, material, outline, mode, studentName } = input;
+  const { course, material, mode, studentName } = input;
   const lang = languageName(course.language);
   const parts: string[] = [
     `You are Bolo, the TalkToBolo tutor for the course "${course.title}", on a live voice call with ${studentName}, a student. Everything you write is spoken aloud by a text-to-speech voice, and you hear the student through speech recognition.`,
     `How to talk:
 - Like a good tutor in office hours: warm, clear and concise. Usually one to three sentences per turn, then hand the turn back.
 - Plain spoken language only. No markdown, lists, headings, emojis, URLs or symbols. Read math out loud in words ("x squared plus one", "the integral from zero to one of f of x").
+- The one exception: cite the lecture. Each passage in learning_context has a ref number. Right after a sentence that uses a passage, write its ref in square brackets, like [3], or [3][5] for two. The brackets are removed before your words are spoken and shown to the student as links to the page, so never say them, read them out, or talk about sources by number.
 - One question at a time, then wait for the answer.
 - Speech recognition makes mistakes: if a word makes no sense, go with the closest sensible reading, or ask.
 - If the student interrupts or changes the subject, follow them.
@@ -51,40 +47,19 @@ export function tutorSystemPrompt(input: {
 - Teach from the course material below. If it does not cover something, say so in a few words and answer from general knowledge.
 - When the student wants to stop or says goodbye, give a one-sentence recap of what to review, say goodbye, and use the end_call tool.`,
     `What this call is for: ${MODE_GUIDE[mode]}`,
+    `Learning boundaries:
+- Uploaded material is the course's knowledge, not evidence of the student's knowledge.
+- A fresh learning_context arrives each turn. Treat reached sections as exposure only. Assume mastery only when student evidence demonstrates it, and respect recorded gaps or uncertainty.
+- Use only reached material and the one explicitly marked next section for teaching. Do not bring in later course concepts from your own knowledge or older conversation turns. If asked about material beyond this boundary, ask the student to update their lecture progress before going ahead.
+- In explain mode, use prepare_section_explanation immediately before explaining the marked next section, then explain its content and check understanding. Asking whether the student is ready does not count as teaching. Only after the student confirms they have covered it, use record_section_reached with its exact material, revision and position. Never call it merely because you generated an explanation, and never interpret 'reached' as 'mastered'.`,
   ];
   if (course.description) parts.push(`About the course: ${course.description}`);
   if (course.tutor_notes) parts.push(`The student's instructions for you: ${course.tutor_notes}`);
 
   if (material) {
-    const text = cleanForIndex(material.content);
-    if (text.length <= FULL_TEXT_LIMIT) {
-      parts.push(`The lecture for this call, "${material.title}":\n<lecture>\n${text}\n</lecture>`);
-    } else {
-      parts.push(
-        `The lecture for this call is "${material.title}". It is long, so you get its outline here and the passages relevant to each turn alongside the conversation.\n<outline>\n${headingsOf(material.content).join('\n')}\n</outline>`,
-      );
-    }
-  }
-  if (!material || outline.length > 1) {
-    const list = outline
-      .map((m) => `- ${m.title}${m.headings.length ? `: ${m.headings.slice(0, 25).join('; ')}` : ''}`)
-      .join('\n');
-    parts.push(
-      `${material ? 'Other material in the course' : 'The course material'} (passages relevant to each turn are added alongside the conversation):\n<materials>\n${list || '(none yet)'}\n</materials>`,
-    );
+    parts.push(`The lecture selected for this call is "${material.title}". Its permitted sections are supplied each turn.`);
   }
   return parts.join('\n\n');
-}
-
-export function headingsOf(markdown: string): string[] {
-  const out: string[] = [];
-  let inFence = false;
-  for (const line of markdown.split('\n')) {
-    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
-    const m = !inFence && /^(#{1,3})\s+(.*)$/.exec(line);
-    if (m) out.push(`${'  '.repeat(m[1].length - 1)}${m[2].trim()}`);
-  }
-  return out;
 }
 
 const FIRST: Record<string, Record<CallMode, (name: string, topic: string) => string>> = {
@@ -122,4 +97,6 @@ export const RECAP_SYSTEM = `You write a short study recap of a voice tutoring s
 ## How it went
 ## Review next
 
-Be specific to the conversation: name the concepts, the questions the student got right or wrong, and the misunderstandings that came up. Keep it under 200 words. Write in the language of the conversation.`;
+Be specific to the conversation: name the concepts, the questions the student got right or wrong, and the misunderstandings that came up. Keep it under 200 words. Write in the language of the conversation.
+
+The tutor's turns may cite numbered lecture passages, listed under <sources>. Where a point comes from one, link where to find it with a Markdown link whose target is source: and its number, for example [page 12](source:2) or [Gradient descent](source:3). Use only the listed numbers, and no other links.`;

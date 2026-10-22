@@ -15,9 +15,11 @@
     "@spooky-sync/client-solid": "0.0.1-canary.333",
     "@spooky-sync/core": "0.0.1-canary.333",
     "@spooky-sync/query-builder": "0.0.1-canary.333",
+    "@tanstack/solid-virtual": "3.13.40",
     "dompurify": "^3.4.17",
     "lucide-solid": "^1.60.0",
     "marked": "^18.1.1",
+    "pdfjs-dist": "6.4.299",
     "solid-js": "^1.9.17",
     "surrealdb": "2.1.0"
   },

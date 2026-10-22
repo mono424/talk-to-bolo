@@ -1,16 +1,16 @@
 import { A, useNavigate, useParams } from '@solidjs/router';
-import { createMemo, createSignal, For, Show } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { ChevronDown, FileText, FileType2, PenLine, PhoneCall, Settings2, Trash2, Upload } from 'lucide-solid';
+import { FileText, FileType2, Folder, PenLine, PhoneCall, Plus, Settings2, Trash2, Upload, X } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
-import { ApiError, reindexMaterial, uploadPdf, type CallMode } from '../lib/api';
+import { ApiError, reindexMaterial, uploadPdf } from '../lib/api';
 import { idKey, newId, whenSynced } from '../lib/ids';
-import { MODES, modeLabel } from '../lib/modes';
 import { COURSE_COLORS, courseColor, LANGUAGES, type CourseColor } from '../lib/palette';
-import { qCalls, qCourse, qMaterials } from '../lib/query';
-import { Button, buttonClass, Card, Dot, Field, formatDate, IconButton, inputClass, Segmented, StatusText } from '../components/ui';
-import { PillSelect } from './Home';
+import { firstRow, qCourse, qMaterialsPage, qReadyMaterials } from '../lib/query';
+import { Button, Field, IconButton, inputClass, StatusText } from '../components/ui';
+import { scrollParent, VirtualList } from '../components/VirtualList';
+import { CourseSearch } from '../components/CourseSearch';
 
 export default function CoursePage() {
   const params = useParams();
@@ -19,24 +19,76 @@ export default function CoursePage() {
   const navigate = useNavigate();
   const courseId = () => `course:${params.courseKey}`;
 
-  const course = useQuery(() => qCourse(db, courseId()));
-  const materials = useQuery(() => qMaterials(db, courseId()));
-  const calls = useQuery(() => qCalls(db, courseId()));
+  const course = firstRow(useQuery(() => qCourse(db, courseId())));
+  const readyMaterials = useQuery(() => qReadyMaterials(db, courseId()));
 
-  const [mode, setMode] = createSignal<CallMode>('explain');
-  const [scope, setScope] = createSignal<string>('');
   const [writing, setWriting] = createSignal(false);
   const [dragging, setDragging] = createSignal(false);
   const [notice, setNotice] = createSignal<string | null>(null);
 
-  const ready = createMemo(() => (materials.data() ?? []).filter((m) => m.status === 'ready'));
-  const titleOf = (materialId: string | null | undefined) =>
-    (materials.data() ?? []).find((m) => m.id === materialId)?.title ?? 'Whole course';
+  const ready = () => readyMaterials.data() ?? [];
 
-  const startCall = () => {
-    const q = new URLSearchParams({ mode: mode() });
-    if (scope()) q.set('material', scope());
-    navigate(`/courses/${params.courseKey}/call?${q}`);
+  const startCall = () => navigate(`/courses/${params.courseKey}/call?mode=explain`);
+
+  // ── Header: the title shrinks as the page scrolls, then the header sticks ──
+  // Scrolling only changes transforms and opacity, never layout: a header that
+  // changed height would shift the page under the reader and fight the scroll.
+  // CSS sticky pins the action row while the large title scrolls away under
+  // it, and a one-line title fades in there.
+
+  const [page, setPage] = createSignal<HTMLElement>();
+  const [scroller, setScroller] = createSignal<HTMLElement | null>(null);
+  // How far the header rises before it sticks: everything above the search but the row.
+  const [rise, setRise] = createSignal(0);
+  let header!: HTMLElement;
+  let row!: HTMLDivElement;
+  let rowFill!: HTMLDivElement;
+  let smallTitle!: HTMLDivElement;
+  let largeTitle!: HTMLDivElement;
+  let searchBox!: HTMLDivElement;
+  let fade!: HTMLDivElement;
+
+  createEffect(() => {
+    const el = page() && scrollParent(page()!);
+    setScroller(el ?? null);
+    if (!el) return;
+    let frame = 0;
+    const apply = () => {
+      frame = 0;
+      // While the title passes under the row (at least 40px), or all the scroll a short page has.
+      const span = Math.max(1, Math.min(Math.max(largeTitle.offsetHeight, 40), el.scrollHeight - el.clientHeight));
+      const p = Math.min(1, Math.max(0, el.scrollTop / span));
+      const late = Math.max(0, p * 2 - 1);
+      largeTitle.style.opacity = String(Math.max(0, 1 - p * 1.5));
+      largeTitle.style.transform = p ? `scale(${1 - 0.12 * p})` : '';
+      smallTitle.style.opacity = String(late);
+      smallTitle.style.transform = `translateY(${(1 - late) * 6}px)`;
+      smallTitle.style.pointerEvents = late > 0.5 ? 'auto' : 'none';
+      rowFill.style.opacity = String(p);
+      fade.style.opacity = String(p);
+    };
+    const measure = () => {
+      setRise(Math.max(0, searchBox.offsetTop - row.offsetHeight - ROW_PAD));
+      apply();
+    };
+    const onScroll = () => {
+      frame ||= requestAnimationFrame(apply);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    observer.observe(row);
+    measure();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    onCleanup(() => {
+      observer.disconnect();
+      el.removeEventListener('scroll', onScroll);
+      cancelAnimationFrame(frame);
+    });
+  });
+
+  const write = () => {
+    setWriting(true);
+    scroller()?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // ── Adding material ────────────────────────────────────────────────────
@@ -87,7 +139,8 @@ export default function CoursePage() {
     <Show when={course.data()} fallback={<div class="p-10 text-muted">{course.isLoading() ? '' : 'Course not found.'}</div>}>
       {(c) => (
         <div
-          class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8 sm:py-10"
+          ref={setPage}
+          class="mx-auto w-full max-w-3xl px-4 sm:px-8"
           onDragOver={(e) => {
             e.preventDefault();
             setDragging(true);
@@ -99,157 +152,142 @@ export default function CoursePage() {
             if (e.dataTransfer?.files.length) void addFiles(e.dataTransfer.files);
           }}
         >
-          <header class="mb-6 flex items-start gap-3 sm:mb-8 sm:gap-4">
-            <span
-              class="mt-1.5 h-3 w-3 shrink-0 rounded-full"
-              style={{ background: courseColor(c().color) }}
-              aria-hidden="true"
-            />
-            <div class="min-w-0 flex-1">
-              <EditableTitle value={c().title} onSave={(title) => db.update('course', c().id, { title })} />
+          <header ref={header} class="sticky z-10 -mx-3 mb-3 bg-surface px-3 pb-3 pt-3 sm:pt-2" style={{ top: `${-rise()}px` }}>
+            {/* Pinned once the header sticks. Lets clicks through to the large title under it. */}
+            <div ref={row} class="pointer-events-none sticky top-0 z-10 flex items-center gap-3 pt-3 sm:gap-4">
+              <div ref={rowFill} class="absolute inset-0 bg-surface opacity-0" />
+              <div
+                ref={smallTitle}
+                class="relative flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 opacity-0"
+                aria-hidden="true"
+                onClick={() => scroller()?.scrollTo({ top: 0, behavior: 'smooth' })}
+              >
+                <Folder size={20} stroke-width={1.6} class="shrink-0" style={{ color: courseColor(c().color) }} fill={courseColor(c().color)} fill-opacity="0.18" />
+                <span class="truncate text-[17px] font-semibold tracking-tight">{c().title}</span>
+              </div>
+              <div class="pointer-events-auto relative ml-auto flex shrink-0 items-center gap-1">
+                <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} />
+                <CourseSettings course={c()} />
+              </div>
+            </div>
+            {/* Pulled up beside the actions; it scrolls away under the pinned row. Tall,
+                so the search starts well down the window. */}
+            <div class="-mt-11 min-h-[max(5rem,calc(33dvh-3rem))] md:-mt-10">
+              <div ref={largeTitle} class="flex origin-top-left items-start gap-3 pr-24 sm:gap-4 sm:pr-32">
+                <Folder
+                  size={28}
+                  stroke-width={1.6}
+                  class="mt-1 shrink-0"
+                  style={{ color: courseColor(c().color) }}
+                  fill={courseColor(c().color)}
+                  fill-opacity="0.18"
+                  aria-hidden="true"
+                />
+                <div class="min-w-0 flex-1">
+                  <EditableTitle value={c().title} onSave={(title) => db.update('course', c().id, { title })} />
+                </div>
+              </div>
               <Show when={c().description}>
-                <p class="mt-1.5 max-w-2xl break-words text-[16px] text-muted">{c().description}</p>
+                <p class="max-w-2xl break-words pb-12 pl-10 pt-1.5 text-[16px] text-muted sm:pb-16 sm:pl-11">{c().description}</p>
               </Show>
             </div>
+            <div ref={searchBox} class="mt-3">
+              <CourseSearch courseId={c().id} />
+            </div>
+            {/* The list fades out as it slides under the header. */}
+            <div ref={fade} class="pointer-events-none absolute inset-x-0 top-full h-6 bg-linear-to-b from-surface to-surface/0 opacity-0" />
           </header>
 
-          <div class="grid gap-6 xl:grid-cols-[1fr_24rem]">
-            <div class="min-w-0 space-y-6">
-              {/* Materials */}
-              <Card class={dragging() ? 'ring-2 ring-blue/40' : ''}>
-                <div class="flex flex-wrap items-center gap-2 px-4 pb-3 pt-4 sm:px-5 sm:pt-5">
-                  <h2 class="mr-auto w-full text-[16px] font-semibold sm:w-auto">Lecture material</h2>
-                  <label class={`${buttonClass('soft', 'sm')} cursor-pointer`}>
-                    <Upload size={15} stroke-width={1.75} /> Upload
-                    <input
-                      type="file"
-                      class="sr-only"
-                      multiple
-                      accept="application/pdf,.pdf,.md,.markdown,.txt,text/plain,text/markdown"
-                      onChange={(e) => {
-                        if (e.currentTarget.files) void addFiles(e.currentTarget.files);
-                        e.currentTarget.value = '';
-                      }}
-                    />
-                  </label>
-                  <Button variant="soft" size="sm" onClick={() => setWriting(!writing())}>
-                    <PenLine size={15} stroke-width={1.75} /> Write
-                  </Button>
-                </div>
+          {/* Materials */}
+          <section class={`-mx-3 rounded-2xl ${dragging() ? 'ring-2 ring-blue/40' : ''}`}>
+            <h2 class="px-3 pb-1 text-[13px] text-muted">Lecture material</h2>
 
-                <Show when={notice()}>
-                  <p class="mx-4 mb-3 break-words rounded-xl bg-red-soft px-3.5 py-2.5 text-[14px] text-red sm:mx-5">{notice()}</p>
-                </Show>
+            <Show when={notice()}>
+              <p class="mx-3 mb-2 shrink-0 break-words rounded-xl bg-red-soft px-3.5 py-2.5 text-[14px] text-red">{notice()}</p>
+            </Show>
 
-                <Show when={writing()}>
-                  <TextMaterialForm
-                    onCancel={() => setWriting(false)}
-                    onSave={async (title, content) => {
-                      setWriting(false);
-                      await addText(title, content, 'markdown');
-                    }}
-                  />
-                </Show>
+            <Show when={writing()}>
+              <TextMaterialForm
+                onCancel={() => setWriting(false)}
+                onSave={async (title, content) => {
+                  setWriting(false);
+                  await addText(title, content, 'markdown');
+                }}
+              />
+            </Show>
 
-                <ul class="px-2 pb-2">
-                  <For
-                    each={materials.data() ?? []}
-                    fallback={
-                      <li class="mx-2 mb-2 rounded-2xl border border-dashed border-line-strong px-4 py-9 text-center sm:mx-3 sm:mb-3 sm:px-6 sm:py-12">
-                        <p class="text-[15px] font-medium">Drop lecture files here</p>
-                        <p class="mt-1 text-[14px] text-muted">PDF slides and scripts, Markdown or text notes</p>
-                      </li>
-                    }
-                  >
-                    {(m) => (
-                      <li class="group flex items-center gap-2.5 rounded-2xl px-2 py-3 hover:bg-soft sm:gap-3 sm:px-3 sm:py-2.5">
-                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-soft text-muted group-hover:bg-surface">
-                          {m.kind === 'pdf' ? <FileType2 size={18} stroke-width={1.6} /> : <FileText size={18} stroke-width={1.6} />}
-                        </span>
-                        <A href={`/courses/${params.courseKey}/materials/${idKey(m.id)}`} class="min-w-0 flex-1">
-                          <span class="block truncate text-[15px] font-medium">{m.title}</span>
-                          <span class="mt-0.5 flex flex-wrap items-center gap-x-3">
-                            <StatusText status={m.status} detail={m.status_detail} />
-                            <Show when={m.page_count}>
-                              <span class="text-[13px] text-faint">{m.page_count} pages</span>
-                            </Show>
-                            <Show when={m.status === 'failed' && m.error}>
-                              <span class="min-w-0 max-w-full truncate text-[13px] text-red sm:max-w-md" title={m.error ?? ''}>
-                                {m.error}
-                              </span>
-                            </Show>
-                          </span>
-                        </A>
-                        <IconButton
-                          label={`Delete ${m.title}`}
-                          size="sm"
-                          class="shrink-0 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
-                          onClick={() => removeMaterial(m.id, m.title)}
-                        >
-                          <Trash2 size={16} stroke-width={1.75} />
-                        </IconButton>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Card>
-
-              {/* Past calls */}
-              <Show when={(calls.data() ?? []).length > 0}>
-                <Card>
-                  <h2 class="px-5 pb-2 pt-5 text-[16px] font-semibold">Past calls</h2>
-                  <ul class="px-2 pb-2">
-                    <For each={calls.data() ?? []}>
-                      {(call) => (
-                        <li>
-                          <A href={`/calls/${idKey(call.id)}`} class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 rounded-2xl px-3 py-3 hover:bg-soft sm:flex sm:gap-3 sm:py-2.5">
-                            <Dot tone={call.status === 'ended' ? 'idle' : 'running'} class="row-span-2 mx-1" />
-                            <span class="min-w-0 flex-1 truncate text-[15px]">
-                              {modeLabel(call.mode)}: {titleOf(call.material)}
+            {/* Windowed and virtualized, scrolling with the page. */}
+            <Show when={courseId()} keyed>
+              {(id) => (
+                <VirtualList
+                  pageScroll
+                  aria-label="Lecture material"
+                  window={(page, size) => useQuery(() => qMaterialsPage(db, id, page, size), { deregisterOnCleanup: true })}
+                  estimateSize={56}
+                  key={(m) => m.id}
+                  empty={
+                    <div class="mx-3 mt-1 rounded-2xl border border-dashed border-line px-4 py-8 text-center sm:px-6 sm:py-10">
+                      <p class="text-[15px] font-medium">Drop lecture files here</p>
+                      <p class="mt-1 text-[14px] text-muted">PDF slides and scripts, Markdown or text notes</p>
+                    </div>
+                  }
+                >
+                  {(m) => (
+                    <div class="group flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-soft">
+                      <span class="shrink-0 text-faint">
+                        {m().kind === 'pdf' ? <FileType2 size={18} stroke-width={1.6} /> : <FileText size={18} stroke-width={1.6} />}
+                      </span>
+                      <A href={`/courses/${params.courseKey}/materials/${idKey(m().id)}`} class="min-w-0 flex-1">
+                        <span class="block truncate text-[15px]">{m().title}</span>
+                        <span class="mt-0.5 flex flex-wrap items-center gap-x-3">
+                          <StatusText status={m().status} detail={m().status_detail} />
+                          <Show when={m().page_count}>
+                            <span class="text-[13px] text-faint">{m().page_count} pages</span>
+                          </Show>
+                          <Show when={m().status === 'ready' && m().chunk_count > 0}>
+                            <span class="text-[13px] text-faint">
+                              {(m().learned_through ?? -1) < 0
+                                ? 'Not started'
+                                : `Reached ${m().learned_through + 1} of ${m().chunk_count} sections`}
                             </span>
-                            <span class="col-start-2 shrink-0 text-[13px] text-muted">{formatDate(call.started_at, true)}</span>
-                          </A>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </Card>
-              </Show>
-            </div>
+                          </Show>
+                          <Show when={m().status === 'failed' && m().error}>
+                            <span class="min-w-0 max-w-full truncate text-[13px] text-red sm:max-w-md" title={m().error ?? ''}>
+                              {m().error}
+                            </span>
+                          </Show>
+                        </span>
+                      </A>
+                      <IconButton
+                        label={`Delete ${m().title}`}
+                        size="sm"
+                        class="shrink-0 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
+                        onClick={() => removeMaterial(m().id, m().title)}
+                      >
+                        <Trash2 size={16} stroke-width={1.75} />
+                      </IconButton>
+                    </div>
+                  )}
+                </VirtualList>
+              )}
+            </Show>
+          </section>
 
-            {/* Call card and course settings */}
-            <aside class="min-w-0 space-y-6">
-              <Card class="p-4 sm:p-5">
-                <div class="flex items-center gap-3">
-                  <PhoneCall size={20} stroke-width={1.75} class="text-muted" />
-                  <h2 class="flex-1 text-[16px] font-semibold">Call the tutor</h2>
-                  <Dot tone={ready().length ? 'ready' : 'idle'} />
-                </div>
-                <p class="mt-2 text-[15px] leading-relaxed text-muted sm:mt-1.5 sm:pl-8">{MODES.find((m) => m.value === mode())?.hint}</p>
-                <div class="mt-4 space-y-3 sm:pl-8">
-                  <Segmented label="Kind of call" value={mode()} onChange={setMode} options={MODES.map((m) => ({ value: m.value, label: m.label }))} />
-                  <PillSelect
-                    class="w-full sm:w-auto"
-                    label="About"
-                    icon={<FileText size={16} stroke-width={1.75} />}
-                    value={scope()}
-                    onChange={setScope}
-                    options={[{ value: '', label: 'The whole course' }, ...ready().map((m) => ({ value: idKey(m.id), label: m.title }))]}
-                  />
-                </div>
-                <div class="mt-5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:pl-8">
-                  <Button class="sm:shrink-0" disabled={ready().length === 0} onClick={startCall}>
-                    Start call
-                  </Button>
-                  <Show when={ready().length === 0}>
-                    <span class="text-[13px] text-muted">Needs material that is ready</span>
-                  </Show>
-                </div>
-              </Card>
+          {/* The page's bottom space. While there is more below, it stays at the
+              bottom and the list fades out under the call button. */}
+          <div class="pointer-events-none sticky bottom-0 z-[5] -mx-3 h-36 bg-linear-to-t from-surface from-40% to-surface/0" />
 
-              <CourseSettings course={c()} />
-            </aside>
-          </div>
+          {/* Centred on the page: beside the sidebar until the recents column balances it. */}
+          <Button
+            size="lg"
+            class="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 z-10 -translate-x-1/2 shadow-frame md:bottom-8 md:left-[calc(50%+144px)] xl:left-1/2"
+            disabled={ready().length === 0}
+            title={ready().length ? 'Call the tutor to explain the whole course' : 'Needs material that is ready'}
+            onClick={startCall}
+          >
+            <PhoneCall size={18} stroke-width={1.75} />
+            Talk to Bolo
+          </Button>
         </div>
       )}
     </Show>
@@ -286,12 +324,71 @@ function EditableTitle(props: { value: string; onSave: (v: string) => void }) {
   );
 }
 
+/** Upload files or write notes, from one button in the header. */
+function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () => void }) {
+  const [open, setOpen] = createSignal(false);
+  let input!: HTMLInputElement;
+  const item = 'flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10';
+  return (
+    <div class="relative">
+      <Button variant="soft" size="sm" aria-label="Add material" aria-haspopup="menu" aria-expanded={open()} onClick={() => setOpen(!open())}>
+        <Plus size={16} stroke-width={1.9} />
+        <span class="hidden sm:inline">Add</span>
+      </Button>
+      {/* Outside the menu, so closing the menu cannot drop the file picker's result. */}
+      <input
+        ref={input}
+        type="file"
+        class="sr-only"
+        tabindex="-1"
+        multiple
+        accept="application/pdf,.pdf,.md,.markdown,.txt,text/plain,text/markdown"
+        onChange={(e) => {
+          if (e.currentTarget.files?.length) props.onFiles(e.currentTarget.files);
+          e.currentTarget.value = '';
+        }}
+      />
+      <Show when={open()}>
+        <div class="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+        <div
+          role="menu"
+          class="absolute right-0 z-50 mt-2 w-56 rounded-2xl border border-line bg-surface p-1.5 shadow-card"
+          onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            class={item}
+            onClick={() => {
+              setOpen(false);
+              input.click();
+            }}
+          >
+            <Upload size={16} stroke-width={1.75} class="text-muted" /> Upload files
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class={item}
+            onClick={() => {
+              setOpen(false);
+              props.onWrite();
+            }}
+          >
+            <PenLine size={16} stroke-width={1.75} class="text-muted" /> Write notes
+          </button>
+        </div>
+      </Show>
+    </div>
+  );
+}
+
 function TextMaterialForm(props: { onSave: (title: string, content: string) => void; onCancel: () => void }) {
   const [title, setTitle] = createSignal('');
   const [content, setContent] = createSignal('');
   return (
     <form
-      class="mx-4 mb-4 space-y-3 rounded-2xl bg-soft p-3 sm:mx-5"
+      class="mx-3 mb-3 shrink-0 space-y-3 rounded-2xl bg-soft p-3"
       onSubmit={(e) => {
         e.preventDefault();
         props.onSave(title().trim(), content());
@@ -320,20 +417,44 @@ function TextMaterialForm(props: { onSave: (title: string, content: string) => v
 
 type CourseRow = TableModel<GetTable<typeof schema, 'course'>>;
 
+/** The action row's top padding, which it keeps when pinned. */
+const ROW_PAD = 12;
+
+/** The gear button by the title and the course settings dialog it opens. */
 function CourseSettings(props: { course: CourseRow }) {
   const db = useDb<typeof schema>();
   const navigate = useNavigate();
   const save = (patch: Record<string, unknown>) => db.update('course', props.course.id, patch);
+  let dialog!: HTMLDialogElement;
+
+  // Text fields save on change, which fires on blur: blur before closing.
+  const close = () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    dialog.close();
+  };
 
   return (
-    <Card>
-      <details class="group">
-        <summary class="flex cursor-pointer list-none items-center gap-3 px-5 py-4 select-none">
-          <Settings2 size={20} stroke-width={1.75} class="text-muted" />
-          <span class="flex-1 text-[16px] font-semibold">Tutor settings</span>
-          <ChevronDown size={18} class="text-muted transition-transform group-open:rotate-180" />
-        </summary>
-        <div class="space-y-4 px-5 pb-5">
+    <>
+      <IconButton label="Course settings" onClick={() => dialog.showModal()}>
+        <Settings2 size={20} stroke-width={1.75} />
+      </IconButton>
+      <dialog
+        ref={dialog}
+        aria-labelledby="course-settings-title"
+        class="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-[20px] border border-line bg-surface p-0 text-fg shadow-frame backdrop:bg-black/30"
+        onCancel={(e) => {
+          e.preventDefault();
+          close();
+        }}
+        onClick={(e) => e.target === dialog && close()}
+      >
+        <div class="space-y-4 p-5">
+          <div class="-mr-2 -mt-1 flex items-center gap-3">
+            <h2 id="course-settings-title" class="flex-1 text-[17px] font-semibold">Course settings</h2>
+            <IconButton label="Close" onClick={close}>
+              <X size={18} stroke-width={1.75} />
+            </IconButton>
+          </div>
           <Field label="The tutor speaks">
             <select class={inputClass} value={props.course.language} onChange={(e) => save({ language: e.currentTarget.value })}>
               <For each={LANGUAGES}>{(l) => <option value={l.code}>{l.label}</option>}</For>
@@ -378,6 +499,7 @@ function CourseSettings(props: { course: CourseRow }) {
             class="-ml-3 text-red"
             onClick={async () => {
               if (confirm(`Delete “${props.course.title}” with all its material and calls? This cannot be undone.`)) {
+                close();
                 await db.delete('course', props.course.id);
                 navigate('/');
               }
@@ -386,7 +508,7 @@ function CourseSettings(props: { course: CourseRow }) {
             Delete course
           </Button>
         </div>
-      </details>
-    </Card>
+      </dialog>
+    </>
   );
 }

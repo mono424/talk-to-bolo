@@ -1,9 +1,10 @@
 import type { Env } from './env';
 import { randomKey, sha256Hex } from './auth';
 import { claude, FALLBACK, textOf } from './claude';
+import type { Source } from './learning';
 import { getOwnedCourse, getOwnedMaterial, type CourseRow, type MaterialRow } from './service';
 import { BadRequest, NotFound, Surreal, UserError, recordId } from './surreal';
-import { type CallMode, firstMessage, headingsOf, RECAP_SYSTEM, tutorSystemPrompt } from './tutor';
+import { type CallMode, firstMessage, RECAP_SYSTEM, tutorSystemPrompt } from './tutor';
 
 export interface CallRow {
   id: string;
@@ -89,13 +90,31 @@ export async function endCall(env: Env, userId: string, rawCallId: string, conve
     { id: callId, conv: conversationId },
   );
 
-  const turns = await db.query<{ role: string; text: string }[]>(
+  const turns = await db.query<{ role: string; text: string; seq: number }[]>(
     'SELECT role, text, seq FROM call_turn WHERE call = type::record($id) ORDER BY seq',
     { id: callId },
   );
   if (turns.filter((t) => t.role === 'student').length === 0) return { recap: null };
 
-  const transcript = turns.map((t) => `${t.role === 'tutor' ? 'Tutor' : 'Student'}: ${t.text}`).join('\n');
+  // The lecture passages the tutor cited, numbered for the recap's links.
+  const cited = await db.query<{ seq: number; material: string; title: string; page?: number | null; heading?: string | null }[]>(
+    'SELECT seq, material, title, page, heading, at FROM turn_source WHERE call = type::record($id) ORDER BY seq, at',
+    { id: callId },
+  );
+  const sources: { material: string; title: string; page: number | null; heading: string | null }[] = [];
+  const bySeq = new Map<number, Set<number>>();
+  for (const c of cited) {
+    let n = sources.findIndex((s) => s.material === c.material && (c.page ? s.page === c.page : !s.page && s.heading === (c.heading ?? null)));
+    if (n < 0) n = sources.push({ material: c.material, title: c.title, page: c.page ?? null, heading: c.heading ?? null }) - 1;
+    bySeq.set(c.seq, (bySeq.get(c.seq) ?? new Set()).add(n + 1));
+  }
+  const transcript = turns.map((t) => {
+    const refs = [...(bySeq.get(t.seq) ?? [])];
+    return `${t.role === 'tutor' ? 'Tutor' : 'Student'}${refs.length ? ` (cites ${refs.join(', ')})` : ''}: ${t.text}`;
+  }).join('\n');
+  const sourceList = sources.map((s, i) =>
+    `${i + 1}. ${JSON.stringify(s.title)}${s.page ? `, page ${s.page}` : ''}${s.heading ? `, section ${JSON.stringify(s.heading)}` : ''}`,
+  ).join('\n');
   try {
     const msg = await claude(env)
       .beta.messages.stream({
@@ -104,10 +123,14 @@ export async function endCall(env: Env, userId: string, rawCallId: string, conve
         ...FALLBACK,
         output_config: { effort: 'low' },
         system: RECAP_SYSTEM,
-        messages: [{ role: 'user', content: `<transcript>\n${transcript}\n</transcript>` }],
+        messages: [{
+          role: 'user',
+          content: `<transcript>\n${transcript}\n</transcript>${sourceList ? `\n<sources>\n${sourceList}\n</sources>` : ''}`,
+        }],
       })
       .finalMessage();
-    const recap = msg.stop_reason === 'refusal' ? null : textOf(msg).trim() || null;
+    const text = msg.stop_reason === 'refusal' ? null : textOf(msg).trim() || null;
+    const recap = text && linkSources(text, call.course, sources);
     if (recap) await db.query('UPDATE type::record($id) SET recap = $recap', { id: callId, recap });
     return { recap };
   } catch (err) {
@@ -117,15 +140,25 @@ export async function endCall(env: Env, userId: string, rawCallId: string, conve
   }
 }
 
+/**
+ * Turns the recap's `[label](source:N)` links into links into the lecture
+ * (a PDF opens at the page). Any other `source:` link becomes plain text.
+ */
+function linkSources(md: string, courseId: string, sources: { material: string; page: number | null }[]): string {
+  const key = (id: string) => id.slice(id.indexOf(':') + 1);
+  return md.replace(/\[([^\]\n]+)\]\(\s*source:\s*(\d+)\s*\)/g, (_m, label: string, n: string) => {
+    const s = sources[Number(n) - 1];
+    if (!s) return label;
+    return `[${label}](/courses/${key(courseId)}/materials/${key(s.material)}${s.page ? `?page=${s.page}` : ''})`;
+  });
+}
+
 // ── Per-call tutor context ───────────────────────────────────────────────
 
 export interface CallContext {
   call: CallRow;
   course: CourseRow;
   system: string;
-  /** Whether the call's lecture is in the prompt in full (then no per-turn search needed for it). */
-  fullLecture: boolean;
-  courseHasOtherMaterial: boolean;
 }
 
 const contexts = new Map<string, { ctx: CallContext; until: number }>();
@@ -142,32 +175,23 @@ export async function callContext(env: Env, rawCallId: string, callKey: string):
   if (!call || !call.key_hash || call.key_hash !== hash || call.status === 'ended') return null;
   if (Date.now() - new Date(call.started_at).getTime() > 3 * 60 * 60 * 1000) return null;
 
-  const [course, material, outlineRows, name] = await Promise.all([
+  const [course, material, name] = await Promise.all([
     db.query<CourseRow>('SELECT * FROM ONLY type::record($id)', { id: call.course }),
     call.material ? db.query<MaterialRow | null>('SELECT * FROM ONLY type::record($id)', { id: call.material }) : null,
-    db.query<{ id: string; title: string; headings: string[] }[]>(
-      `SELECT id, title, created_at, content.split('\n').filter(|$l| $l.starts_with('#') AND !$l.starts_with('####')) AS headings
-       FROM material WHERE course = type::record($c) AND owner = type::record($o) AND status = 'ready' ORDER BY created_at`,
-      { c: call.course, o: call.owner },
-    ),
     db.query<string | null>('RETURN (SELECT VALUE name FROM ONLY type::record($u))', { u: call.owner }),
   ]);
 
-  const outline = outlineRows.map((m) => ({ title: m.title, headings: headingsOf(m.headings.join('\n')) }));
   const system = tutorSystemPrompt({
     course,
     material,
-    outline,
     mode: call.mode,
     studentName: name?.split(' ')[0] || 'the student',
   });
-  // Only what each turn needs: the lecture text lives once, inside `system`.
+  // Course instructions can be cached; evolving lecture and learner state cannot.
   const ctx: CallContext = {
     call,
     course,
     system,
-    fullLecture: !!material && system.includes('<lecture>'),
-    courseHasOtherMaterial: outlineRows.some((m) => m.id !== call.material),
   };
   if (contexts.size > 50) contexts.clear();
   // Short-lived, so an ended call stops being served soon after.
@@ -175,7 +199,11 @@ export async function callContext(env: Env, rawCallId: string, callKey: string):
   return ctx;
 }
 
-/** Saves spoken turns of the conversation, idempotently by position. */
+/**
+ * Saves spoken turns of the conversation, idempotently by position. A tutor
+ * turn saved again as actually spoken (shorter, after an interruption) keeps
+ * only the citations it got to.
+ */
 export async function saveTurns(env: Env, call: CallRow, turns: { seq: number; role: 'student' | 'tutor'; text: string }[]) {
   const rows = turns.filter((t) => t.text.trim());
   if (!rows.length) return;
@@ -185,6 +213,7 @@ export async function saveTurns(env: Env, call: CallRow, turns: { seq: number; r
        UPSERT type::record($t.id) CONTENT {
          owner: type::record($owner), call: type::record($call), seq: $t.seq, role: $t.role, text: $t.text
        };
+       DELETE turn_source WHERE call = type::record($call) AND seq = $t.seq AND at > string::len($t.text);
      };
      UPDATE type::record($call) SET status = 'live' WHERE status = 'starting';`,
     {
@@ -195,3 +224,26 @@ export async function saveTurns(env: Env, call: CallRow, turns: { seq: number; r
   );
 }
 
+/** The passages a tutor turn cited (see citations.ts), one row per passage. */
+export async function saveTurnSources(env: Env, call: CallRow, seq: number, sources: (Source & { at: number })[]) {
+  if (!sources.length) return;
+  const key = call.id.slice(call.id.indexOf(':') + 1);
+  await Surreal.system(env).query(
+    `FOR $s IN $rows {
+       UPSERT type::record($s.id) CONTENT {
+         owner: type::record($owner), call: type::record($call), seq: $seq, ref: $s.ref,
+         material: type::record($s.material), title: $s.title, page: $s.page, page_end: $s.page_end,
+         heading: $s.heading, at: $s.at
+       };
+     };`,
+    {
+      owner: call.owner,
+      call: call.id,
+      seq,
+      rows: sources.map((s) => ({
+        id: `turn_source:${key}_${seq}_${s.ref}`, ref: s.ref, material: s.material, title: s.materialTitle,
+        page: s.page, page_end: s.pageEnd, heading: s.heading, at: s.at,
+      })),
+    },
+  );
+}

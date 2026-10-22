@@ -1,26 +1,69 @@
-import { A, useParams } from '@solidjs/router';
-import { createMemo, createSignal, Show } from 'solid-js';
+import { useNavigate, useParams, useSearchParams } from '@solidjs/router';
+import { createEffect, createMemo, createSignal, Show, type JSX } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { ArrowLeft, Pencil, PhoneCall } from 'lucide-solid';
+import { Pencil, PhoneCall } from 'lucide-solid';
 import type { schema } from '../schema.gen';
-import { reindexMaterial } from '../lib/api';
+import { reindexMaterial, setLectureProgress } from '../lib/api';
+import { chunkMarkdown, chunkPages } from '../../../../shared/lecture';
 import { whenSynced } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
-import { qCourse, qMaterial } from '../lib/query';
-import { Button, buttonClass, inputClass, StatusText } from '../components/ui';
+import { firstRow, qMaterial } from '../lib/query';
+import { Button, inputClass, StatusText } from '../components/ui';
+import { HeaderActions, SideActions } from '../components/HeaderSlot';
+import { LecturePlace } from '../components/LecturePlace';
+import { PdfViewer } from '../components/PdfViewer';
 
 export default function MaterialPage() {
   const params = useParams();
+  const navigate = useNavigate();
+  const [search] = useSearchParams();
   const db = useDb<typeof schema>();
-  const material = useQuery(() => qMaterial(db, `material:${params.materialKey}`));
-  const course = useQuery(() => qCourse(db, `course:${params.courseKey}`));
+  const material = firstRow(useQuery(() => qMaterial(db, `material:${params.materialKey}`)));
+  // A PDF shows the original; its text is derived from it, for the tutor and search.
+  const isPdf = () => material.data()?.kind === 'pdf';
+  // ?page=N from a citation link.
+  const page = () => Number(Array.isArray(search.page) ? search.page[0] : search.page) || null;
 
   const [editing, setEditing] = createSignal(false);
   const [draft, setDraft] = createSignal('');
   const [title, setTitle] = createSignal('');
   const [saving, setSaving] = createSignal(false);
+  const [progressThrough, setProgressThrough] = createSignal<number | null>(null);
+  const [progressSaving, setProgressSaving] = createSignal(false);
+  const [progressError, setProgressError] = createSignal<string | null>(null);
 
   const html = createMemo(() => renderMarkdown(material.data()?.content ?? ''));
+  const sections = createMemo(() => chunkMarkdown(material.data()?.content ?? ''));
+  const sectionPages = createMemo(() => chunkPages(material.data()?.content ?? '', sections()));
+  const progressVersion = createMemo(() => {
+    const m = material.data();
+    return m ? `${m.id}:${m.index_rev}:${m.learned_through}` : '';
+  });
+  createEffect(() => {
+    progressVersion();
+    setProgressThrough(null);
+    setProgressError(null);
+  });
+  const selectedThrough = () => progressThrough() ?? material.data()?.learned_through ?? -1;
+
+  // Shown until the saved place syncs back; a failed save falls back to it.
+  const saveProgress = async (through: number) => {
+    const m = material.data();
+    if (!m) return;
+    setProgressThrough(through);
+    setProgressSaving(true);
+    setProgressError(null);
+    try {
+      await setLectureProgress(db, m.id, { through, rev: m.index_rev });
+    } catch (err) {
+      if (material.data()?.id === m.id) {
+        setProgressThrough(null);
+        setProgressError(err instanceof Error ? err.message : 'Progress could not be saved. Try again.');
+      }
+    } finally {
+      setProgressSaving(false);
+    }
+  };
 
   const edit = () => {
     setDraft(material.data()?.content ?? '');
@@ -33,7 +76,7 @@ export default function MaterialPage() {
     if (!m) return;
     setSaving(true);
     try {
-      const contentChanged = draft() !== m.content;
+      const contentChanged = m.kind !== 'pdf' && draft() !== m.content;
       await db.update('material', m.id, { title: title().trim() || m.title, ...(contentChanged ? { content: draft() } : {}) });
       setEditing(false);
       if (contentChanged) {
@@ -53,87 +96,131 @@ export default function MaterialPage() {
       .join(', ');
   };
 
+  const place = (cls?: string): JSX.Element => (
+    <Show when={material.data()?.status === 'ready' && sections().length > 0}>
+      <LecturePlace
+        class={cls}
+        sections={sections()}
+        pages={sectionPages()}
+        value={selectedThrough()}
+        saving={progressSaving()}
+        disabled={sections().length !== material.data()?.chunk_count}
+        error={progressError()}
+        onChange={saveProgress}
+      />
+    </Show>
+  );
+
   return (
     <Show when={material.data()} fallback={<div class="p-10 text-muted">{material.isLoading() ? '' : 'Material not found.'}</div>}>
       {(m) => (
         <div class="min-h-full min-w-0">
-          <div class="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-line bg-surface/85 px-4 py-3 backdrop-blur sm:px-6">
-            <A href={`/courses/${params.courseKey}`} class={`${buttonClass('ghost', 'sm')} -ml-1 min-w-0 max-w-full flex-1 text-muted sm:flex-none sm:max-w-72`}>
-              <ArrowLeft size={16} stroke-width={1.75} class="shrink-0" /> <span class="truncate">{course.data()?.title ?? 'Course'}</span>
-            </A>
-            <span class="ml-1 min-w-0 max-w-full">
-              <StatusText status={m().status} detail={m().status_detail} />
-            </span>
-            <div class="ml-auto flex w-full gap-2 [&>*]:flex-1 sm:w-auto sm:[&>*]:flex-none">
-              <Show
-                when={editing()}
-                fallback={
-                  <>
-                    <Button variant="soft" size="sm" onClick={edit}>
-                      <Pencil size={14} stroke-width={1.75} /> Edit
+          <HeaderActions>
+            {/* Lined up with the lecture column below it (the editor is wider). */}
+            <div class="header-column flex min-w-0 flex-1 items-center gap-2" style={{ '--page-column': editing() ? '56rem' : isPdf() ? '64rem' : '48rem' }}>
+              <span class="pointer-events-auto hidden min-w-0 truncate md:inline-flex">
+                <StatusText status={m().status} detail={m().status_detail} />
+              </span>
+              <div class="pointer-events-auto ml-auto flex shrink-0 items-center gap-2">
+                <Show
+                  when={editing()}
+                  fallback={
+                    <Button variant="soft" size="sm" class="max-sm:w-11 max-sm:px-0" onClick={edit} aria-label={isPdf() ? 'Rename' : 'Edit'}>
+                      <Pencil size={14} stroke-width={1.75} /> <span class="hidden sm:inline">{isPdf() ? 'Rename' : 'Edit'}</span>
                     </Button>
-                    <Show
-                      when={m().status === 'ready'}
-                      fallback={
-                        <Button size="sm" disabled>
-                          <PhoneCall size={14} stroke-width={1.9} /> Call about this
-                        </Button>
-                      }
-                    >
-                      <A href={`/courses/${params.courseKey}/call?mode=explain&material=${params.materialKey}`} class={buttonClass('solid', 'sm')}>
-                        <PhoneCall size={14} stroke-width={1.9} /> Call about this
-                      </A>
-                    </Show>
-                  </>
-                }
-              >
-                <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
-                  Cancel
-                </Button>
-                <Button size="sm" disabled={saving()} onClick={save}>
-                  {saving() ? 'Saving…' : 'Save'}
-                </Button>
-              </Show>
+                  }
+                >
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+                    Cancel
+                  </Button>
+                  <Button size="sm" disabled={saving()} onClick={save}>
+                    {saving() ? 'Saving…' : 'Save'}
+                  </Button>
+                </Show>
+              </div>
             </div>
-          </div>
+          </HeaderActions>
+          {/* Wide windows keep the reading place in the recent calls column; narrower ones under the title. */}
+          <Show when={!editing()}>
+            <SideActions>{place()}</SideActions>
+          </Show>
 
           <Show
             when={editing()}
             fallback={
-              <article class="mx-auto w-full min-w-0 max-w-3xl px-4 py-7 sm:px-8 sm:py-10">
+              <article class={`mx-auto w-full min-w-0 px-4 pb-28 pt-6 sm:px-8 sm:pt-5 ${isPdf() ? 'max-w-5xl' : 'max-w-3xl'}`}>
                 <h1 class="break-words text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]">{m().title}</h1>
                 <Show when={meta()}>
                   <p class="mt-1.5 break-words text-[14px] text-muted">{meta()}</p>
                 </Show>
+                <div class="mt-2 md:hidden">
+                  <StatusText status={m().status} detail={m().status_detail} />
+                </div>
+                {place('mt-4 max-w-sm xl:hidden')}
                 <div class="mt-8">
                   <Show
-                    when={m().content.trim()}
+                    when={isPdf()}
                     fallback={
-                      <p class="break-words text-muted">
-                        {m().status === 'failed'
-                          ? `Processing failed: ${m().error ?? 'unknown error'}. Upload the file again to retry.`
-                          : 'The PDF is being converted. The text appears here when it is done.'}
-                      </p>
+                      <Show
+                        when={m().content.trim()}
+                        fallback={
+                          <p class="break-words text-muted">
+                            {m().status === 'failed' ? `Processing failed: ${m().error ?? 'unknown error'}. Upload the file again to retry.` : ''}
+                          </p>
+                        }
+                      >
+                        <div class="lecture" innerHTML={html()} />
+                      </Show>
                     }
                   >
-                    <div class="lecture" innerHTML={html()} />
+                    <Show when={m().status === 'failed'}>
+                      <p class="mb-4 break-words text-[14px] text-muted" role="alert">
+                        {`Processing failed: ${m().error ?? 'unknown error'}. Upload the file again as new material to retry.`}
+                      </p>
+                    </Show>
+                    {/* The PDF is stored before it is converted, so it can be read right away. */}
+                    <Show
+                      when={m().source_size}
+                      fallback={<p class="break-words text-muted">{m().status === 'failed' ? '' : 'Uploading the PDF…'}</p>}
+                    >
+                      <PdfViewer materialId={m().id} size={m().source_size} fileName={m().source_name} page={page()} />
+                    </Show>
                   </Show>
                 </div>
               </article>
             }
           >
-            <div class="mx-auto w-full min-w-0 max-w-4xl space-y-3 px-4 py-6 sm:px-8 sm:py-8">
+            <div class="mx-auto w-full min-w-0 max-w-4xl space-y-3 px-4 py-6 sm:px-8 sm:pb-8 sm:pt-5">
               <input class={`${inputClass} text-[18px] font-semibold`} value={title()} onInput={(e) => setTitle(e.currentTarget.value)} aria-label="Title" />
-              <textarea
-                class={`${inputClass} min-h-[65dvh] resize-y font-mono text-[16px] leading-relaxed sm:min-h-[70vh] sm:text-[13px]`}
-                value={draft()}
-                onInput={(e) => setDraft(e.currentTarget.value)}
-                aria-label="Content (Markdown)"
-              />
-              <p class="text-[13px] text-muted">
-                Markdown. Saving rebuilds the search index the tutor uses. Images look like ![caption](asset:…); keep those lines to keep the image.
-              </p>
+              <Show
+                when={!isPdf()}
+                fallback={<p class="text-[13px] text-muted">The PDF is kept as uploaded. Its text comes from the file, so only the title can change.</p>}
+              >
+                <textarea
+                  class={`${inputClass} min-h-[65dvh] resize-y font-mono text-[16px] leading-relaxed sm:min-h-[70vh] sm:text-[13px]`}
+                  value={draft()}
+                  onInput={(e) => setDraft(e.currentTarget.value)}
+                  aria-label="Content (Markdown)"
+                />
+                <p class="text-[13px] text-muted">
+                  Markdown. Saving rebuilds the search index the tutor uses. Images look like ![caption](asset:…); keep those lines to keep the image.
+                </p>
+              </Show>
             </div>
+          </Show>
+
+          <Show when={!editing()}>
+            {/* Centred on the page: beside the sidebar until the recents column balances it. */}
+            <Button
+              size="lg"
+              class="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 z-10 -translate-x-1/2 shadow-frame md:bottom-8 md:left-[calc(50%+144px)] xl:left-1/2"
+              disabled={m().status !== 'ready'}
+              title={m().status === 'ready' ? 'Call the tutor to explain this lecture' : 'Available once processing has finished'}
+              onClick={() => navigate(`/courses/${params.courseKey}/call?mode=explain&material=${params.materialKey}`)}
+            >
+              <PhoneCall size={18} stroke-width={1.75} />
+              Talk to Bolo
+            </Button>
           </Show>
         </div>
       )}

@@ -1,6 +1,6 @@
 import type { Env } from './env';
 import serverSchema from './server-schema.surql';
-import { BadRequest, NotFound, Surreal, UserError, recordId, toBase64 } from './surreal';
+import { BadRequest, Conflict, NotFound, Surreal, UserError, recordId, toBase64 } from './surreal';
 
 export interface CourseRow {
   id: string;
@@ -23,6 +23,10 @@ export interface MaterialRow {
   chunk_count: number;
   image_count: number;
   index_rev: number;
+  /** Last reached section, not demonstrated mastery. Uploading never advances it. */
+  learned_through: number;
+  /** Revision whose Agent Memory graph finished extracting. */
+  memory_rev: number;
   source_name?: string | null;
 }
 
@@ -34,8 +38,20 @@ let schemaApplied = false;
  */
 export async function ensureServerSchema(env: Env): Promise<void> {
   if (schemaApplied) return;
-  await Surreal.system(env).queryAll(serverSchema);
-  schemaApplied = true;
+  for (let attempt = 0; ; attempt++) {
+    if (schemaApplied) return;
+    try {
+      await Surreal.system(env).queryAll(serverSchema);
+      schemaApplied = true;
+      return;
+    } catch (error) {
+      // Cold requests can apply the same idempotent definitions concurrently.
+      // Retry only the database's transient write conflicts, with each request
+      // owning its own I/O. Schema or permission errors must still surface.
+      if (attempt >= 5 || !(error instanceof Error) || !/Transaction conflict:.*(?:Resource busy|can be retried)/i.test(error.message)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** attempt + Math.random() * 100));
+    }
+  }
 }
 
 export async function getOwnedCourse(env: Env, userId: string, courseId: string): Promise<CourseRow> {
@@ -84,8 +100,15 @@ export async function embed(env: Env, texts: string[], kind: 'documents' | 'quer
 export interface SearchHit {
   material: string;
   materialTitle: string;
+  materialKind: MaterialRow['kind'];
+  /** The chunk's place in its material's index (revision `rev`). */
+  position: number;
+  rev: number;
   heading: string | null;
   text: string;
+  /** PDF pages the passage comes from; null for typed and Markdown material. */
+  page: number | null;
+  pageEnd: number | null;
   score: number;
 }
 
@@ -99,17 +122,23 @@ export async function searchCourse(
   env: Env,
   courseId: string,
   query: string,
-  opts: { k?: number; materialId?: string | null; ownerId: string },
+  opts: { k?: number; materialId?: string | null; ownerId: string; reachedOnly?: boolean },
 ): Promise<SearchHit[]> {
   const q = query.trim();
   if (!q) return [];
   await ensureServerSchema(env);
   const k = Math.min(Math.max(opts.k ?? 6, 1), 20);
   const [vec] = await embed(env, [q], 'queries');
-  const filter = `course = $course AND owner = $owner AND material.owner = $owner ${opts.materialId ? 'AND material = type::record($material)' : ''}`;
+  const filter = `course = $course AND owner = $owner AND material.owner = $owner
+    AND material.status = 'ready' AND rev = material.index_rev
+    ${opts.reachedOnly ? 'AND position <= (material.learned_through ?? -1)' : ''}
+    ${opts.materialId ? 'AND material = type::record($material)' : ''}`;
   const result = await Surreal.system(env).query<{
     hits: { id: string; rrf_score: number }[];
-    rows: { id: string; text: string; heading: string | null; material: string; material_title: string }[];
+    rows: {
+      id: string; text: string; heading: string | null; material: string; material_title: string;
+      material_kind: MaterialRow['kind']; position: number; rev: number; page?: number | null; page_end?: number | null;
+    }[];
   }>(
     `LET $course = type::record($course_id);
      LET $owner = type::record($owner_id);
@@ -118,14 +147,21 @@ export async function searchCourse(
      LET $hits = search::rrf([$vs, $ft], ${k}, 60);
      RETURN {
        hits: $hits.map(|$h| { id: $h.id, rrf_score: $h.rrf_score }),
-       rows: SELECT id, text, heading, material, material.title AS material_title FROM $hits.id
+       rows: SELECT id, text, heading, material, material.title AS material_title, material.kind AS material_kind,
+         position, rev, page, page_end FROM $hits.id
      };`,
     { course_id: courseId, owner_id: opts.ownerId, material: opts.materialId ?? null, vec, q },
   );
   const rows = new Map((result?.rows ?? []).map((r) => [r.id, r]));
   return (result?.hits ?? []).flatMap((h) => {
     const r = rows.get(h.id);
-    return r ? [{ material: r.material, materialTitle: r.material_title, heading: r.heading, text: r.text, score: h.rrf_score }] : [];
+    return r
+      ? [{
+          material: r.material, materialTitle: r.material_title, materialKind: r.material_kind,
+          position: r.position, rev: r.rev, heading: r.heading, text: r.text,
+          page: r.page ?? null, pageEnd: r.page_end ?? null, score: h.rrf_score,
+        }]
+      : [];
   });
 }
 
@@ -138,7 +174,8 @@ export async function searchCourse(
  */
 async function claimRev(env: Env, materialId: string, detail: string): Promise<number> {
   const rows = await Surreal.system(env).query<{ index_rev: number }[]>(
-    `UPDATE type::record($id) SET index_rev += 1, status = 'processing', status_detail = $detail, error = NONE RETURN index_rev`,
+    `UPDATE type::record($id) SET index_rev += 1, learned_through = -1, memory_rev = 0,
+       status = 'processing', status_detail = $detail, error = NONE RETURN index_rev`,
     { id: materialId, detail },
   );
   if (!rows?.length) throw new NotFound('Material not found.');
@@ -196,7 +233,11 @@ export function validatePdf(bytes: Uint8Array) {
   if (!isPdf(bytes)) throw new BadRequest('That file is not a PDF.');
 }
 
-/** Stores a PDF for a material (replacing any earlier one) and converts it. */
+/**
+ * Stores a material's PDF and converts it. The PDF is the original the viewer
+ * shows and citations point into, so it is kept until the material is
+ * deleted: only a failed upload may be replaced.
+ */
 export async function storePdfAndIngest(
   env: Env,
   material: Pick<MaterialRow, 'id' | 'owner'>,
@@ -205,6 +246,16 @@ export async function storePdfAndIngest(
 ): Promise<void> {
   validatePdf(bytes);
   await ensureServerSchema(env);
+  const held = await Surreal.system(env).query<{ status: string | null; parts: number }>(
+    `RETURN {
+       status: (SELECT VALUE status FROM ONLY type::record($m)),
+       parts: count(SELECT id FROM source_part WHERE material = type::record($m))
+     }`,
+    { m: material.id },
+  );
+  if (held.parts > 0 && held.status !== 'failed') {
+    throw new Conflict('This material already has its PDF. Upload the new file as new material.');
+  }
   // Claim first, so a run still converting the previous upload stops before
   // it can read the parts being replaced.
   const rev = await claimRev(env, material.id, 'Uploading the PDF');
@@ -212,12 +263,20 @@ export async function storePdfAndIngest(
     const db = Surreal.system(env);
     await db.query('DELETE source_part WHERE material = type::record($m)', { m: material.id });
     for (let idx = 0, off = 0; off < bytes.byteLength; idx++, off += PART_BYTES) {
+      // The part's bytes are the bucket file /sources/<id>, written before
+      // the row that points at it.
       await db.query(
-        `CREATE source_part CONTENT {
-           owner: type::record($owner), material: type::record($m), idx: $idx,
-           data: encoding::base64::decode($b64)
-         }`,
-        { owner: material.owner, m: material.id, idx, b64: toBase64(bytes.subarray(off, off + PART_BYTES)) },
+        `type::file('materials', '/sources/' + <string>record::id(type::record($id))).put(encoding::base64::decode($b64));
+         CREATE type::record($id) CONTENT {
+           owner: type::record($owner), material: type::record($m), idx: $idx
+         };`,
+        {
+          id: `source_part:p${crypto.randomUUID().replaceAll('-', '')}`,
+          owner: material.owner,
+          m: material.id,
+          idx,
+          b64: toBase64(bytes.subarray(off, off + PART_BYTES)),
+        },
       );
     }
     await db.query(

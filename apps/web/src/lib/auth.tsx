@@ -2,7 +2,7 @@ import type { JSX } from 'solid-js';
 import { createContext, createSignal, onCleanup, Show, useContext } from 'solid-js';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
 import type { schema } from '../schema.gen';
-import { qMe } from './query';
+import { firstRow, qMe } from './query';
 
 type User = TableModel<GetTable<typeof schema, 'user'>>;
 
@@ -27,10 +27,12 @@ export function AuthProvider(props: { children: JSX.Element }) {
     }),
   );
 
-  const me = useQuery(() => {
-    const id = userId();
-    return id ? qMe(db, id) : null;
-  });
+  const me = firstRow(
+    useQuery(() => {
+      const id = userId();
+      return id ? qMe(db, id) : null;
+    }),
+  );
 
   const value: AuthContextType = {
     userId,

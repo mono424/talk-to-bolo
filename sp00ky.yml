@@ -1,20 +1,28 @@
 # yaml-language-server: $schema=https://sp00ky.cloud/schema/sp00ky.schema.json
 #
 # Studycall on Sp00ky Cloud's free plan (platform: Cloudflare):
-#   - the SSP sync node runs as a Cloudflare Worker,
+#   - the SSP sync node runs as a Cloudflare Durable Object,
 #   - the web app is published as a static SPA on Workers Static Assets,
-#   - SurrealDB is the shared free database (`talktobolo/main`).
+#   - SurrealDB is the shared free database (namespace `talktobolo`), reached
+#     by both. For your own SurrealDB Cloud instance instead, use
+#     `hosting: external` with `endpoint`, `username` and `password`.
 # The free plan runs no backends, so the API (apps/api: voice calls, PDF
 # processing, search, MCP) is our own Cloudflare Worker, deployed with
 # wrangler. See README.md.
 mode: singlenode
 slug: talktobolo
+# Staging control plane (the only one provisioned).
 cloudApi: https://api-stg.sp00ky.cloud
 surrealdb:
+  # The shared free database: the project always gets the namespace named
+  # after its slug, database `main`; `spky deploy` bakes the endpoint into
+  # the web app.
   hosting: cloud
   namespace: talktobolo
   database: main
 schema: ./schema
+buckets:
+  - ./schema/buckets/materials.surql
 version:
   cloud: canary
 logLevel:

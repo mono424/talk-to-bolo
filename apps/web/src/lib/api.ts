@@ -1,11 +1,16 @@
 import type { Db } from './query';
+import { newId } from './ids';
+import { dbConfig } from '../db';
 
 /**
  * The API Worker (apps/api): voice calls, PDF processing, search, assets.
  * Every call carries the user's SurrealDB token; the Worker checks it against
  * the database before doing anything.
  */
-export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8787').replace(/\/+$/, '');
+// Production serves API, MCP and extracted images under the app's own origin.
+// An explicit override supports deployments with a separate API Worker.
+export const API_URL = (import.meta.env.VITE_API_URL?.trim() || (import.meta.env.DEV ? 'http://localhost:8787' : window.location.origin)).replace(/\/+$/, '');
+export const MCP_URL = `${API_URL}/mcp`;
 
 export const assetUrl = (id: string) => `${API_URL}/material-assets/${encodeURIComponent(id)}`;
 
@@ -30,8 +35,12 @@ export async function api<T>(db: Db, path: string, init: RequestInit = {}): Prom
   const text = await res.text();
   const body = text ? safeJson(text) : null;
   if (!res.ok) {
+    if (res.status === 405) throw new ApiError('The app could not reach its API service. Please reload and try again.', res.status);
     const msg = body && typeof body === 'object' && 'error' in body ? String(body.error) : `Request failed (${res.status})`;
     throw new ApiError(msg, res.status);
+  }
+  if (res.headers.get('content-type')?.includes('text/html')) {
+    throw new ApiError('The app could not reach its API service. Please reload and try again.', 503);
   }
   return body as T;
 }
@@ -72,20 +81,141 @@ export const uploadPdf = (db: Db, materialId: string, file: File) =>
     body: file,
   });
 
+// The last few PDFs opened, so going back to a lecture does not download it again.
+const pdfCache = new Map<string, Promise<ArrayBuffer>>();
+const PDF_STALL_MS = 30_000;
+
+/**
+ * The original PDF of a material, for the viewer. A material's PDF never
+ * changes, so it is cached by id and size. pdf.js takes ownership of the
+ * buffer it is given: pass it a copy.
+ */
+export function fetchPdf(db: Db, materialId: string, size: number | null | undefined): Promise<ArrayBuffer> {
+  const key = `${materialId}:${size ?? ''}`;
+  const hit = pdfCache.get(key);
+  if (hit) {
+    pdfCache.delete(key);
+    pdfCache.set(key, hit);
+    return hit;
+  }
+  const load = (async () => {
+    const token = db.auth.token;
+    if (!token) throw new ApiError('You are signed out. Sign in again to continue.', 401);
+    // A request that stops making progress is given up, or the viewer (and
+    // this cache) would wait on it forever. Each chunk restarts the clock, so
+    // a large PDF on a slow connection still loads.
+    const abort = new AbortController();
+    let timer = setTimeout(() => abort.abort(), PDF_STALL_MS);
+    const progress = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => abort.abort(), PDF_STALL_MS);
+    };
+    try {
+      const res = await fetch(`${API_URL}/api/materials/${encodeURIComponent(materialId)}/pdf`, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: abort.signal,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null) as { error?: string } | null;
+        throw new ApiError(body?.error ?? `The PDF could not be loaded (${res.status}).`, res.status);
+      }
+      if (!res.body) return await res.arrayBuffer();
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      for (;;) {
+        progress();
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        size += value.byteLength;
+      }
+      const out = new Uint8Array(size);
+      let off = 0;
+      for (const c of chunks) {
+        out.set(c, off);
+        off += c.byteLength;
+      }
+      return out.buffer;
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(
+        abort.signal.aborted ? 'The PDF is taking too long to load. Try again.' : 'The PDF could not be loaded. Check your connection and try again.',
+        0,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+  pdfCache.set(key, load);
+  load.catch(() => pdfCache.delete(key));
+  while (pdfCache.size > 3) pdfCache.delete(pdfCache.keys().next().value!);
+  return load;
+}
+
 /** (Re)builds the search index of a text or markdown material after an edit. */
 export const reindexMaterial = (db: Db, materialId: string) =>
   api<{ ok: true }>(db, `/api/materials/${encodeURIComponent(materialId)}/index`, { method: 'POST' });
 
+/** Marks the last reached lecture section without claiming it is understood. */
+export const setLectureProgress = (db: Db, materialId: string, input: { through: number; rev: number }) =>
+  api<{ through: number }>(db, `/api/materials/${encodeURIComponent(materialId)}/progress`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+
 export interface SearchHit {
   material: string;
   materialTitle: string;
+  materialKind: 'text' | 'markdown' | 'pdf';
+  position: number;
+  rev: number;
   heading: string | null;
   text: string;
+  /** PDF pages the passage comes from; null for typed and Markdown material. */
+  page: number | null;
+  pageEnd: number | null;
   score: number;
 }
 
-export const createApiKey = (db: Db, name: string) =>
-  api<{ id: string; key: string }>(db, '/api/keys', { method: 'POST', body: JSON.stringify({ name }) });
+/** The app path of a material, opening a PDF at `page`. */
+export const materialPath = (courseId: string, materialId: string, page?: number | null) =>
+  `/courses/${courseId.slice(courseId.indexOf(':') + 1)}/materials/${materialId.slice(materialId.indexOf(':') + 1)}${page ? `?page=${page}` : ''}`;
+
+/** "p. 12" or "pp. 12-13" for a cited passage, or null without pages. */
+export const pageLabel = (page?: number | null, pageEnd?: number | null) =>
+  page ? (pageEnd && pageEnd !== page ? `pp. ${page}-${pageEnd}` : `p. ${page}`) : null;
+
+/** Write the private hash directly: hidden fields are absent from the sync model. */
+export async function createApiKey(db: Db, owner: string, name: string): Promise<{ id: string; key: string }> {
+  const token = db.auth.token;
+  if (!token) throw new ApiError('Sign in again to create a key.', 401);
+  const bytes = crypto.getRandomValues(new Uint8Array(30));
+  const key = `sc_${btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')}`;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+  const key_hash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+  const id = newId('api_key');
+  const databaseEndpoint = dbConfig.database.endpoint;
+  if (!databaseEndpoint) throw new ApiError('The database connection is not configured.', 503);
+  const endpoint = databaseEndpoint.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/+$/, '').replace(/\/rpc$/, '');
+  const result = await fetch(`${endpoint}/rpc`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json', accept: 'application/json', authorization: `Bearer ${token}`,
+      'surreal-ns': dbConfig.database.namespace, 'surreal-db': dbConfig.database.database,
+    },
+    body: JSON.stringify({ id: 1, method: 'query', params: [
+      `CREATE type::record($id) CONTENT { owner: type::record($owner), name: $name, prefix: $prefix, key_hash: $key_hash } RETURN id`,
+      { id, owner, name: name.trim().slice(0, 80) || 'AI client', prefix: key.slice(0, 7), key_hash },
+    ] }),
+  });
+  const response = await result.json() as { error?: unknown; result?: { status: string; result: { id: string }[] | unknown }[] };
+  const row = response.result?.[0];
+  if (!result.ok || response.error || row?.status !== 'OK' || !Array.isArray(row.result) || row.result[0]?.id !== id) {
+    throw new ApiError('The key could not be saved. Please try again.', result.status === 401 ? 401 : 503);
+  }
+  return { id, key };
+}
 
 export const searchCourse = (db: Db, courseId: string, query: string) =>
   api<{ hits: SearchHit[] }>(db, `/api/courses/${encodeURIComponent(courseId)}/search`, {

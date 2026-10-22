@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "setup:voice": "tsx setup-voice-agent.ts"
+    "setup:voice": "tsx setup-voice-agent.ts",
+    "backfill:pages": "tsx backfill-chunk-pages.ts"
   },
   "devDependencies": {
     "tsx": "^4.20.0",

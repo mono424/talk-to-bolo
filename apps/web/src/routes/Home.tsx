@@ -23,7 +23,7 @@ export default function Home() {
   const firstName = () => auth.user()?.name?.split(' ')[0];
 
   return (
-    <div class="mx-auto w-full max-w-4xl px-4 py-7 sm:px-8 sm:py-14">
+    <div class="mx-auto w-full max-w-3xl px-4 pb-7 pt-6 sm:px-8 sm:pb-14 sm:pt-5">
       <h1 class="break-words text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]">
         {greeting()}
         <Show when={firstName()}>, {firstName()}</Show>
