@@ -250,10 +250,6 @@ and the password is the vault's `SURREAL_PASS`. Set a missing key with
 pnpm exec spky deploy --yes
 ```
 
-Bundling the Worker backend inside this pnpm workspace needs
-`@spooky-sync/cli` 0.0.1-canary.345 or newer: canary.344 stops at
-`esbuild: command not found`.
-
 Agent Memory is off on staging for now: the vault's `AGENT_MEMORY_URL` holds
 only the host, and with an incomplete URL every ingestion fails. To turn it on,
 set it to the Context's full URL ending in `/api/v1/<context id>` (and check

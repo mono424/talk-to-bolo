@@ -17,9 +17,6 @@ Use a comma, period, colon or a plain hyphen.
 - After editing the sp00ky schema: `pnpm generate`, then
   `spky migrate create <name> --path dev`, then check the new migration for
   `'[REDACTED]'` (see README) before applying it.
-- Up to canary.345, `pnpm generate` also writes the job outbox's `errors[*]`
-  field as an unquoted column key in `apps/web/src/schema.gen.ts`, which
-  TypeScript rejects. Delete that line; newer CLIs leave it out.
 - Record ids minted by the app start with a letter and have no dashes
   (`newId` in `apps/web/src/lib/ids.ts`, `k<uuid hex>` in the Worker), so they
   never need ⟨⟩ quoting.
