@@ -23,6 +23,12 @@ surrealdb:
 schema: ./schema
 buckets:
   - ./schema/buckets/materials.surql
+# The bucket uses a file backend (file:/buckets/materials). Without sizeGB no
+# volume is mounted at /buckets and uploaded PDFs and page images land on
+# ephemeral storage. sizeGB is the provisioned disk, not a quota.
+deployment:
+  storage:
+    sizeGB: 5
 version:
   cloud: canary
 logLevel:
