@@ -38,7 +38,7 @@ function mockFetch(t: TestContext, replies: Reply[]) {
     const headers = new Headers(init.headers);
     requests.push({ url: String(url), init, headers });
     assert.equal(headers.get('Authorization'), 'Bearer test-secret');
-    assert.equal(init.redirect, 'error');
+    assert.equal(init.redirect, 'manual');
     assert.ok(init.signal instanceof AbortSignal, 'Every request has an abort timeout.');
     const reply = replies.shift();
     assert.ok(reply, `Unexpected HTTP request: ${String(url)}`);

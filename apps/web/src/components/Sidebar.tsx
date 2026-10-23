@@ -5,7 +5,7 @@ import { ArrowLeft, ChevronsDown, ChevronsUp, FileText, FileType2, Folder, House
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { idKey, newId } from '../lib/ids';
-import { modeLabel } from '../lib/modes';
+import { modeLabel, viaLabel } from '../lib/modes';
 import { COURSE_COLORS, courseColor, type CourseColor } from '../lib/palette';
 import { firstRow, qAttention, qCall, qCallHistory, qCourses, qMaterialsPage, qRecentCalls, useCourse } from '../lib/query';
 import { freshCall } from '../lib/call';
@@ -190,7 +190,7 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
                       <A href={`/calls/${idKey(call.id)}`} class={navClass(location.pathname === `/calls/${idKey(call.id)}`)}>
                         <Dot tone={call.status === 'ended' ? 'idle' : 'running'} class="ml-1 mr-1" />
                         <span class="truncate">
-                          {modeLabel(call.mode)}: {call.material?.title ?? call.course?.title ?? 'Course'}
+                          {modeLabel(call.mode)}: {call.material?.title ?? call.course?.title ?? 'Course'}{viaLabel(call.assistant)}
                         </span>
                       </A>
                     </li>
@@ -237,7 +237,7 @@ export function RecentCalls() {
                     <Dot tone="running" />
                   </Show>
                   <span class="min-w-0 flex-1 truncate">
-                    {modeLabel(call.mode)}: {call.material?.title ?? call.course?.title ?? 'Course'}
+                    {modeLabel(call.mode)}: {call.material?.title ?? call.course?.title ?? 'Course'}{viaLabel(call.assistant)}
                   </span>
                   <span class="shrink-0 text-[12px] tabular-nums text-faint">{shortWhen(call.started_at)}</span>
                 </A>
@@ -356,6 +356,7 @@ function CallNav() {
                   <span class="min-w-0 flex-1 truncate">
                     {modeLabel(call.mode)}
                     <Show when={call.material?.title}>: {call.material!.title}</Show>
+                    {viaLabel(call.assistant)}
                   </span>
                   <span class="shrink-0 text-[12px] tabular-nums text-faint">{shortWhen(call.started_at)}</span>
                 </A>

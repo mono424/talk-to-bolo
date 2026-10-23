@@ -66,6 +66,7 @@ export const schema = {
          * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
          */
         id: { type: 'string' as const, recordId: true, optional: false },
+        assistant: { type: 'string' as const, optional: true },
         conversation_id: { type: 'string' as const, optional: true },
         /**
          * `course` — string
@@ -798,6 +799,10 @@ DEFINE FIELD OVERWRITE started_at ON TABLE call TYPE option<datetime> DEFAULT ti
 DEFINE FIELD OVERWRITE ended_at ON TABLE call TYPE option<datetime>;
 -- Written after the call: what was covered and what to review.
 DEFINE FIELD OVERWRITE recap ON TABLE call TYPE option<string>;
+-- The assistant a study session took place in ("ChatGPT"), when the student
+-- studied there and it logged the session through the MCP server. Such a
+-- session has a recap and no transcript. NONE for a voice call with Bolo.
+DEFINE FIELD OVERWRITE assistant ON TABLE call TYPE option<string>;
 -- SHA-256 of the per-call key the voice agent presents to the API's LLM
 -- endpoint. Never readable.
 DEFINE FIELD OVERWRITE key_hash ON TABLE call TYPE option<string> PERMISSIONS FOR select WHERE false;

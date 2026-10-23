@@ -26,9 +26,14 @@ test('OAuth discovery is public, path-aware and advertised by the MCP challenge'
   assert.equal(protectedResource?.status, 200);
   assert.deepEqual((await protectedResource!.json() as {authorization_servers: string[]}).authorization_servers, [origin]);
   const server = await handleOAuth(new Request(`${origin}/.well-known/oauth-authorization-server`), env);
-  const info = await server!.json() as {code_challenge_methods_supported: string[]; scopes_supported: string[]};
+  const info = await server!.json() as {
+    code_challenge_methods_supported: string[]; scopes_supported: string[];
+    client_id_metadata_document_supported: boolean; authorization_response_iss_parameter_supported: boolean;
+  };
   assert.deepEqual(info.code_challenge_methods_supported, ['S256']);
   assert.deepEqual(info.scopes_supported, ['courses']);
+  assert.equal(info.client_id_metadata_document_supported, true);
+  assert.equal(info.authorization_response_iss_parameter_supported, true);
   const unauthorized = await handleMcp(new Request(resource), env);
   assert.equal(unauthorized.status, 401);
   assert.ok(unauthorized.headers.get('www-authenticate')?.includes(`${origin}/.well-known/oauth-protected-resource/mcp`));
@@ -66,6 +71,7 @@ test('OAuth end-to-end grants preserve ownership and reject unsafe redemption an
     const approved = await approveOAuthConsent(env, 'user:u1', { requestId, allow: true });
     const callback = new URL(approved.redirectUrl);
     assert.equal(callback.searchParams.get('state'), 'keep-me');
+    assert.equal(callback.searchParams.get('iss'), origin);
     await assert.rejects(approveOAuthConsent(env, 'user:u1', { requestId, allow: true }), /already|expired/);
     return callback.searchParams.get('code')!;
   }
@@ -117,6 +123,7 @@ test('OAuth end-to-end grants preserve ownership and reject unsafe redemption an
       const denied = await approveOAuthConsent(env, 'user:u1', { requestId: id, allow: false });
       assert.equal(new URL(denied.redirectUrl).searchParams.get('error'), 'access_denied');
       assert.equal(new URL(denied.redirectUrl).searchParams.get('state'), 'keep-me');
+      assert.equal(new URL(denied.redirectUrl).searchParams.get('iss'), origin, 'RFC 9207: errors carry the issuer too.');
       const expired = await pending();
       const expiredId = new URL(expired.response.headers.get('location')!).searchParams.get('request')!;
       await db.query('UPDATE type::record($id) SET expires_at = time::now() - 1s', { id: `oauth_request:${expiredId}` });
@@ -225,6 +232,96 @@ test('OAuth end-to-end grants preserve ownership and reject unsafe redemption an
       assert.deepEqual(renewed.map((result) => result.response.status).sort(), [200, 400]);
       const winner = renewed.find((result) => result.response.status === 200)!;
       assert.equal(await verifyOAuthAccessToken(env, winner.data.access_token as string, resource), null, 'Refresh reuse also revokes the winning token.');
+    });
+  } finally {
+    await db.query(`REMOVE NAMESPACE ${namespace};`);
+  }
+});
+
+test('clients identified by a metadata document (CIMD) connect without registering', {
+  skip: !process.env.BOLO_TEST_SURREAL,
+}, async (t) => {
+  const namespace = `bolo_cimd_${crypto.randomUUID().replaceAll('-', '')}`;
+  const env = {
+    SPKY_DB_URL: 'http://127.0.0.1:8666', SPKY_DB_NS: namespace, SPKY_DB_NAME: 'main', SPKY_DB_USER: 'root', SPKY_DB_PASS: 'root',
+    API_ORIGIN: origin, APP_ORIGIN: origin,
+  } as Env;
+  const db = Surreal.system(env);
+  const clientUrl = 'https://chat.example/oauth/client.json';
+  const callback = 'https://chat.example/connector_platform_oauth_redirect';
+  const documents = new Map<string, unknown>([
+    [clientUrl, {
+      client_id: clientUrl, client_name: 'Chat Example', redirect_uris: [callback],
+      token_endpoint_auth_method: 'private_key_jwt', token_endpoint_auth_methods_supported: ['none', 'private_key_jwt'],
+      grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'],
+    }],
+    ['https://chat.example/other.json', { client_id: clientUrl, redirect_uris: [callback] }],
+    ['https://chat.example/secret.json', { client_id: 'https://chat.example/secret.json', redirect_uris: [callback], token_endpoint_auth_method: 'client_secret_basic' }],
+  ]);
+  const original = globalThis.fetch;
+  const fetched: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (url: string | URL | Request, init?: RequestInit) => {
+    const href = url instanceof Request ? url.url : String(url);
+    if (!href.startsWith('https://chat.example/')) return original(url, init);
+    fetched.push(href);
+    assert.equal(init?.redirect, 'manual', 'Workers reject redirect: error.');
+    return documents.has(href) ? Response.json(documents.get(href)) : new Response('missing', { status: 404 });
+  });
+  async function reply(request: Request) {
+    const result = await handleOAuth(request, env);
+    assert.ok(result);
+    return { response: result, data: result.headers.get('content-type')?.includes('json') ? await result.json() as Record<string, unknown> : {} };
+  }
+  const authorize = (extra: Record<string, string> = {}) => reply(new Request(`${origin}/oauth/authorize?${new URLSearchParams({
+    client_id: clientUrl, redirect_uri: callback, response_type: 'code', code_challenge: challenge, code_challenge_method: 'S256',
+    resource, scope: 'openid courses offline_access', state: 'st', ...extra,
+  })}`));
+  try {
+    await db.query(`DEFINE NAMESPACE ${namespace}; DEFINE DATABASE main;`);
+    await db.queryAll(await readFile(new URL('../../../schema/src/schema.surql', import.meta.url), 'utf8'));
+    await db.queryAll(await readFile(new URL('../src/server-schema.surql', import.meta.url), 'utf8'));
+    await db.query(`CREATE user:u1 CONTENT {email:'student@example.test',name:'Student',password:'test'};`);
+
+    await t.test('unsafe or mismatching documents are refused before any request is stored', async () => {
+      for (const extra of [
+        { client_id: 'https://chat.example/other.json' },
+        { client_id: 'https://chat.example/secret.json' },
+        { client_id: 'https://chat.example/missing.json' },
+        { client_id: 'https://chat.example/oauth/client.json?x=1' },
+        { client_id: 'https://127.0.0.1/client.json' },
+        { redirect_uri: 'https://chat.example/elsewhere' },
+        { scope: 'courses admin' },
+      ]) {
+        const rejected = await authorize(extra);
+        assert.equal(rejected.response.status, 400, JSON.stringify(extra));
+        assert.equal(rejected.response.headers.has('location'), false);
+      }
+      assert.ok(!fetched.some((href) => href.includes('?') || href.includes('127.0.0.1')), 'Invalid client ids are never fetched.');
+      assert.equal(await db.query('RETURN count(SELECT id FROM oauth_request)'), 0);
+    });
+
+    await t.test('approval returns the code with the issuer, and the URL client redeems it', async () => {
+      const started = await authorize({ resource: `${resource}/` });
+      assert.equal(started.response.status, 302);
+      const requestId = new URL(started.response.headers.get('location')!).searchParams.get('request')!;
+      const consent = await getOAuthConsent(env, 'user:u1', requestId);
+      assert.equal(consent.clientName, 'Chat Example');
+      assert.equal(consent.clientHost, 'chat.example');
+      const approved = new URL((await approveOAuthConsent(env, 'user:u1', { requestId, allow: true })).redirectUrl);
+      assert.equal(approved.origin + approved.pathname, callback);
+      assert.equal(approved.searchParams.get('iss'), origin);
+      const tokens = await reply(post('/oauth/token', {
+        client_id: clientUrl, grant_type: 'authorization_code', code: approved.searchParams.get('code')!, code_verifier: verifier,
+        redirect_uri: callback, resource,
+      }));
+      assert.equal(tokens.response.status, 200, JSON.stringify(tokens.data));
+      assert.equal(tokens.data.scope, 'courses');
+      const auth = await verifyOAuthAccessToken(env, tokens.data.access_token as string, resource);
+      assert.equal(auth?.clientId, clientUrl);
+      assert.equal(auth?.extra?.clientName, 'Chat Example');
+      // Authorizing again refreshes the same client rather than adding one.
+      assert.equal((await authorize()).response.status, 302);
+      assert.equal(await db.query('RETURN count(SELECT id FROM oauth_client)'), 1);
     });
   } finally {
     await db.query(`REMOVE NAMESPACE ${namespace};`);

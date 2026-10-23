@@ -101,6 +101,8 @@ export interface SearchHit {
   material: string;
   materialTitle: string;
   materialKind: MaterialRow['kind'];
+  course: string;
+  courseTitle: string;
   /** The chunk's place in its material's index (revision `rev`). */
   position: number;
   rev: number;
@@ -113,14 +115,15 @@ export interface SearchHit {
 }
 
 /**
- * Hybrid search over one course: vector (HNSW) and keyword (BM25) hits fused
- * with reciprocal rank fusion. Optionally limited to one material. Chunks of a
+ * Hybrid search over one course, or all of the owner's courses when
+ * `courseId` is null: vector (HNSW) and keyword (BM25) hits fused with
+ * reciprocal rank fusion. Optionally limited to one material. Chunks of a
  * material deleted mid-indexing are skipped (their `material` no longer
  * resolves).
  */
 export async function searchCourse(
   env: Env,
-  courseId: string,
+  courseId: string | null,
   query: string,
   opts: { k?: number; materialId?: string | null; ownerId: string; reachedOnly?: boolean },
 ): Promise<SearchHit[]> {
@@ -129,7 +132,7 @@ export async function searchCourse(
   await ensureServerSchema(env);
   const k = Math.min(Math.max(opts.k ?? 6, 1), 20);
   const [vec] = await embed(env, [q], 'queries');
-  const filter = `course = $course AND owner = $owner AND material.owner = $owner
+  const filter = `${courseId ? 'course = type::record($course_id) AND ' : ''}owner = $owner AND material.owner = $owner
     AND material.status = 'ready' AND rev = material.index_rev
     ${opts.reachedOnly ? 'AND position <= (material.learned_through ?? -1)' : ''}
     ${opts.materialId ? 'AND material = type::record($material)' : ''}`;
@@ -137,18 +140,18 @@ export async function searchCourse(
     hits: { id: string; rrf_score: number }[];
     rows: {
       id: string; text: string; heading: string | null; material: string; material_title: string;
-      material_kind: MaterialRow['kind']; position: number; rev: number; page?: number | null; page_end?: number | null;
+      material_kind: MaterialRow['kind']; course: string; course_title: string; position: number; rev: number;
+      page?: number | null; page_end?: number | null;
     }[];
   }>(
-    `LET $course = type::record($course_id);
-     LET $owner = type::record($owner_id);
+    `LET $owner = type::record($owner_id);
      LET $vs = SELECT id, vector::distance::knn() AS distance FROM chunk WHERE ${filter} AND embedding <|${k * 2},64|> $vec;
      LET $ft = SELECT id, search::score(1) AS score FROM chunk WHERE ${filter} AND text @1@ $q ORDER BY score DESC LIMIT ${k * 2};
      LET $hits = search::rrf([$vs, $ft], ${k}, 60);
      RETURN {
        hits: $hits.map(|$h| { id: $h.id, rrf_score: $h.rrf_score }),
        rows: SELECT id, text, heading, material, material.title AS material_title, material.kind AS material_kind,
-         position, rev, page, page_end FROM $hits.id
+         course, course.title AS course_title, position, rev, page, page_end FROM $hits.id
      };`,
     { course_id: courseId, owner_id: opts.ownerId, material: opts.materialId ?? null, vec, q },
   );
@@ -158,6 +161,7 @@ export async function searchCourse(
     return r
       ? [{
           material: r.material, materialTitle: r.material_title, materialKind: r.material_kind,
+          course: r.course, courseTitle: r.course_title,
           position: r.position, rev: r.rev, heading: r.heading, text: r.text,
           page: r.page ?? null, pageEnd: r.page_end ?? null, score: h.rrf_score,
         }]

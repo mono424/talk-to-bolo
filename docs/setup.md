@@ -355,17 +355,49 @@ Open **AI access** in the app:
 - **Connect ChatGPT** copies the server address and opens ChatGPT Plugins.
   Choose **Add custom MCP server**, paste the address, select OAuth, then create
   and install the plugin. ChatGPT does not document an equivalent prefilled
-  install link for arbitrary custom MCP servers.
+  install link for arbitrary custom MCP servers. Set it up once in a browser;
+  the plugin then also works in the ChatGPT apps on iOS and Android.
 
 Both clients use account approval on TalkToBolo's `/connect` page. No API key
-is needed. OAuth uses dynamic client registration, S256 PKCE, short-lived
-access tokens and rotating refresh tokens. Revoke a connection under **Keys and
+is needed. OAuth uses S256 PKCE, short-lived access tokens and rotating
+refresh tokens. Clients identify themselves with a Client ID Metadata Document
+(an https `client_id`, which ChatGPT prefers; the server reads it and keeps it
+for an hour) or register through dynamic client registration. Redirects back
+to the client carry `iss` (RFC 9207). Revoke a connection under **Keys and
 connected apps**. Discovery is served under `/.well-known/`; `/oauth/register`,
 `/oauth/authorize`, `/oauth/token` and `/oauth/revoke` belong to the API Worker.
 Route these paths to the Worker alongside `/mcp` when using one app origin.
 
-The client setup follows [Claude's install-link documentation](https://claude.com/docs/connectors/building/directory-vs-custom#share-an-install-link)
-and [OpenAI's custom MCP setup](https://developers.openai.com/plugins/deploy/connect-chatgpt).
+The client setup follows [Claude's install-link documentation](https://claude.com/docs/connectors/building/directory-vs-custom#share-an-install-link),
+[OpenAI's custom MCP setup](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+and [OpenAI's authentication requirements](https://developers.openai.com/plugins/build/auth).
+
+### Studying with ChatGPT voice
+
+ChatGPT Voice uses connected plugins on web, iOS and Android, so a student can
+study on the go: "What should I study today on TalkToBolo?", "Quiz me on what
+I have covered", "Save this session to TalkToBolo". The study tools
+(`apps/api/src/study.ts`) keep the rules of a call with Bolo: reached sections
+are exposure, not mastery, and tutoring stays within reached material plus the
+sections explained in order.
+
+1. `get_study_overview`: every course with lecture progress and recent
+   sessions, or one course with each lecture's next section, the last recaps'
+   review points and suggestions.
+2. `prepare_study_session`: a spoken tutoring guide for `explain`, `quiz` or
+   `qa` in the course language, with the next section (explain) or a spread of
+   reached sections (quiz, qa), and Agent Memory evidence when configured.
+3. `read_section` and `get_lecture_outline`: a lecture one section at a time,
+   with headings, pages and links that open the PDF at the page.
+4. `save_study_session` (and `record_progress`): logs the session as a `call`
+   with `assistant` set and a recap, shown under Calls, and moves the lecture
+   place forward. Progress never moves back from here.
+
+Read tools are annotated `readOnlyHint`, so with ChatGPT's plugin permission
+**Allow read actions** Voice reads without asking; writes are approved on
+screen. `search` and `fetch` follow ChatGPT's knowledge-source convention
+across all courses, returning section ids and citable links; `fetch` also
+opens `material:`, `course:` and `call:` ids.
 
 For Claude Code or another bearer-token client, create a key under **AI access**:
 
@@ -373,14 +405,16 @@ For Claude Code or another bearer-token client, create a key under **AI access**
 claude mcp add --transport http talktobolo https://talktobolo.stg.spky.cloud/mcp --header "Authorization: Bearer sc_..."
 ```
 
-Tools: `list_courses`, `create_course`, `update_course`, `list_materials`,
+Course tools: `list_courses`, `create_course`, `update_course`, `list_materials`,
 `get_material`, `add_material`, `update_material`, `edit_material`, `add_pdf`
-(https URL or base64), `delete_material`, `search_course`. Search hits and PDF
-materials carry page numbers and links into the app's viewer, so assistants can
-cite pages; the text of a PDF is derived from it and cannot be edited, only its
-title. The key signs in
-through the `agent` access method, so SurrealDB enforces the same permissions
-as in the web app; revoking it in the app cuts access within a minute.
+(https URL or base64), `delete_material`, `search_course`. Study tools:
+`get_profile`, `get_study_overview`, `prepare_study_session`, `read_section`,
+`get_lecture_outline`, `record_progress`, `save_study_session`, `search`,
+`fetch`. Search hits and PDF materials carry page numbers and links into the
+app's viewer, so assistants can cite pages; the text of a PDF is derived from
+it and cannot be edited, only its title. The key signs in through the `agent`
+access method, so SurrealDB enforces the same permissions as in the web app;
+revoking it in the app cuts access within a minute.
 
 ## Models and usage
 

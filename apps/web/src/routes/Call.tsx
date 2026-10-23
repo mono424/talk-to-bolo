@@ -155,7 +155,11 @@ function CallScreen() {
     '--fade-bottom': edges().bottom ? '2.5rem' : '0px',
   });
 
+  // A session held in an assistant and saved through the MCP server: a recap, no transcript.
+  const assistant = () => (isPast() ? record.data()?.assistant ?? null : null);
+
   const status = () => {
+    if (assistant()) return `Studied in ${assistant()}`;
     if (isPast()) return 'This call has ended';
     return {
       idle: 'Ready when you are',
@@ -214,7 +218,7 @@ function CallScreen() {
             </Match>
             <Match when={isPast() || call.phase() === 'ended'}>
               <Button size="lg" onClick={again} disabled={!courseKey()}>
-                <PhoneCall size={18} stroke-width={1.9} /> {isPast() ? 'Call again' : 'New call'}
+                <PhoneCall size={18} stroke-width={1.9} /> {assistant() ? 'Call Bolo' : isPast() ? 'Call again' : 'New call'}
               </Button>
             </Match>
             <Match when={call.phase() === 'idle' || call.phase() === 'error'}>
@@ -255,7 +259,11 @@ function CallScreen() {
                 <ol class="space-y-3">
                   <For
                     each={turns.data() ?? []}
-                    fallback={<li class="py-8 text-center text-[15px] text-muted">Nothing was said in this call.</li>}
+                    fallback={
+                      <li class="py-8 text-center text-[15px] text-muted">
+                        {assistant() ? `This session took place in ${assistant()}. Only its recap is kept.` : 'Nothing was said in this call.'}
+                      </li>
+                    }
                   >
                     {(t) => (
                       <li class={`flex flex-col ${t.role === 'student' ? 'items-end' : 'items-start'}`}>

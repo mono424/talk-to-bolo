@@ -5,7 +5,7 @@ import { requireUser } from './auth';
 import { startCall } from './calls';
 import { handleChatCompletions } from './llm';
 import { handleMcp } from './mcp';
-import { approveOAuthConsent, getOAuthConsent, handleOAuth } from './oauth';
+import { approveOAuthConsent, getOAuthConsent, handleOAuth, oauthOrigin } from './oauth';
 import { jobs } from './jobs';
 import {
   createApiKey,
@@ -63,7 +63,9 @@ app.post('/api/oauth/request', async (c) => {
 app.post('/api/oauth/approve', async (c) => {
   const body = await c.req.json<{ requestId?: string; allow?: boolean }>();
   if (!body.requestId || typeof body.allow !== 'boolean') throw new BadRequest('Choose whether to allow this connection.');
-  return c.json(await approveOAuthConsent(c.env, c.var.caller.userId, { requestId: body.requestId, allow: body.allow }));
+  return c.json(await approveOAuthConsent(
+    c.env, c.var.caller.userId, { requestId: body.requestId, allow: body.allow }, oauthOrigin(c.req.raw, c.env),
+  ));
 });
 
 // ── Calls ─────────────────────────────────────────────────────────────────

@@ -10,6 +10,8 @@ import { Button, buttonClass, Card } from '../components/ui';
 interface Consent {
   requestId: string;
   clientName: string;
+  /** Set when the client identified itself with a metadata document on this host. */
+  clientHost: string | null;
   redirectHost: string;
   scopes: string[];
   expiresAt: string;
@@ -56,12 +58,15 @@ export default function ConnectPage() {
         <Show when={consent()}>
           {(request) => <>
             <p class="mt-3 text-[15px] leading-relaxed text-muted [overflow-wrap:anywhere]">
-              <strong class="font-medium text-fg">{request().clientName}</strong> wants to use TalkToBolo as {auth.user()?.email ?? 'your signed-in account'}.
+              <strong class="font-medium text-fg">{request().clientName}</strong>
+              <Show when={request().clientHost}>{(host) => <span> ({host()})</span>}</Show> wants to use TalkToBolo as{' '}
+              {auth.user()?.email ?? 'your signed-in account'}.
             </p>
             <div class="mt-5 rounded-2xl bg-soft p-4 text-[14px] leading-relaxed">
               <p class="font-medium">This connection can:</p>
               <ul class="mt-2 list-disc space-y-1 pl-5 text-muted">
-                <li>Read and search your courses and lecture material.</li>
+                <li>Read and search your courses, lecture material, progress and past calls.</li>
+                <li>Move your lecture progress forward and save study sessions with their recap.</li>
                 <li>Create, edit and delete your courses and material.</li>
               </ul>
             </div>

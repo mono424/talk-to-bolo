@@ -10,6 +10,16 @@ const REFRESH_SECONDS = 30 * 24 * 3600;
 const REQUEST_SECONDS = 10 * 60;
 const CODE_SECONDS = 5 * 60;
 const MAX_BODY = 16_384;
+// Client ID Metadata Documents (CIMD) are small JSON files on the client's own
+// site. ChatGPT and Claude identify themselves with one instead of registering.
+const MAX_CLIENT_METADATA = 8192;
+const CLIENT_METADATA_TIMEOUT_MS = 10_000;
+// A document read this recently is used as stored. Older ones are read again,
+// and the stored copy stands in while the client's site does not answer.
+const CLIENT_METADATA_FRESH = '1h';
+// OIDC scopes clients ask for by habit. This server has no ID tokens or user
+// info, so they are left out of the grant rather than refused.
+const IGNORED_SCOPES = new Set(['openid', 'profile', 'email', 'offline_access']);
 const newId = (table: string) => `${table}:k${crypto.randomUUID().replaceAll('-', '')}`;
 const deadline = (seconds: number) => new Date(Date.now() + seconds * 1000).toISOString();
 
@@ -25,6 +35,8 @@ interface AuthorizationRequest {
   client: string;
   redirect_uri: string;
   state?: string;
+  /** The issuer the client discovered, returned as `iss` with the code (RFC 9207). */
+  issuer?: string;
   resource: string;
   scope: string;
   challenge: string;
@@ -90,7 +102,11 @@ function metadata(origin: string): OAuthMetadata {
     revocation_endpoint_auth_methods_supported: ['none'],
     code_challenge_methods_supported: ['S256'],
     scopes_supported: [SCOPE],
-  };
+    // An https `client_id` is the URL of the client's metadata document.
+    client_id_metadata_document_supported: true,
+    // Every redirect back to the client carries `iss`, success or denial.
+    authorization_response_iss_parameter_supported: true,
+  } as OAuthMetadata;
 }
 
 function response(value: unknown, status = 200): Response {
@@ -140,12 +156,16 @@ function redirectUri(value: unknown): string {
 
 function requestedScope(value: unknown): string {
   if (value === undefined || value === '') return SCOPE;
-  if (typeof value !== 'string' || value.trim() !== SCOPE) fail('invalid_scope', 'Only the courses scope is available.');
+  if (typeof value !== 'string' || value.length > 512) fail('invalid_scope', 'Only the courses scope is available.');
+  const scopes = value.split(' ').filter(Boolean);
+  if (scopes.some((scope) => scope !== SCOPE && !IGNORED_SCOPES.has(scope))) fail('invalid_scope', 'Only the courses scope is available.');
   return SCOPE;
 }
 
 function requestedResource(value: unknown, expected: string): string {
-  if (value !== undefined && value !== '' && value !== expected) fail('invalid_target', 'This server only grants access to its MCP endpoint.');
+  if (value !== undefined && value !== '' && (typeof value !== 'string' || value.replace(/\/$/, '') !== expected)) {
+    fail('invalid_target', 'This server only grants access to its MCP endpoint.');
+  }
   return expected;
 }
 
@@ -155,6 +175,75 @@ async function findClient(env: Env, clientId: string): Promise<Client> {
   );
   if (!row) fail('invalid_client', 'Unknown client.');
   return row;
+}
+
+/** An https `client_id` names a Client ID Metadata Document; anything else was registered here. */
+export function metadataDocumentUrl(clientId: string): URL | null {
+  if (!clientId.startsWith('https://')) return null;
+  let url: URL;
+  try { url = new URL(clientId); } catch { return fail('invalid_client', 'The client ID is not a valid URL.'); }
+  // A stable, plain https URL on a named host: no credentials, port, query or
+  // fragment, and a path beyond `/` (draft-ietf-oauth-client-id-metadata-document).
+  const ipLiteral = /^\[|^\d+\.\d+\.\d+\.\d+$/.test(url.hostname);
+  if (url.href !== clientId || url.username || url.password || url.port || url.search || url.hash || url.pathname === '/'
+    || ipLiteral || !url.hostname.includes('.') || /(^|\.)localhost$/.test(url.hostname) || clientId.length > 512) {
+    fail('invalid_client', 'The client ID must be a plain https URL of a client metadata document.');
+  }
+  return url;
+}
+
+/**
+ * Reads the client's metadata document and stores what this server needs from
+ * it under a record derived from the URL, so the token endpoint finds the same
+ * client. Read again when the stored copy is over an hour old, so a client
+ * that changes its redirect URIs or name is current soon after.
+ */
+async function metadataDocumentClient(env: Env, url: URL): Promise<Client> {
+  const id = `oauth_client:m${(await sha256Hex(url.href)).slice(0, 32)}`;
+  const stored = await Surreal.system(env).query<(Client & { fresh: boolean }) | undefined>(
+    `RETURN (SELECT *, fetched_at > time::now() - ${CLIENT_METADATA_FRESH} AS fresh FROM type::record($id) WHERE client_id = $client)[0]`,
+    { id, client: url.href },
+  );
+  if (stored?.fresh) return stored;
+  let doc: unknown;
+  try {
+    // Workers have no redirect: 'error'; a redirect is refused as not ok.
+    const res = await fetch(url, {
+      headers: { accept: 'application/json', 'user-agent': 'TalkToBolo-OAuth/1.0' }, redirect: 'manual', signal: AbortSignal.timeout(CLIENT_METADATA_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    doc = JSON.parse(new TextDecoder().decode(await readLimited(res.body, MAX_CLIENT_METADATA)));
+  } catch (error) {
+    console.error('[oauth] client metadata document unavailable', url.host, error instanceof Error ? error.message : 'error');
+    if (stored) return stored;
+    return fail('invalid_client', 'The client metadata document could not be read.');
+  }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) fail('invalid_client_metadata', 'The client metadata document is not a JSON object.');
+  const values = doc as Record<string, unknown>;
+  if (values.client_id !== url.href) fail('invalid_client_metadata', 'The client metadata document names another client.');
+  if (values.client_secret !== undefined) fail('invalid_client_metadata', 'A client metadata document must not hold a secret.');
+  // The client may prefer another method; it uses one both sides support.
+  const methods = values.token_endpoint_auth_methods_supported;
+  const single = values.token_endpoint_auth_method;
+  const publicClient = Array.isArray(methods) ? methods.includes('none') : single === undefined || single === 'none';
+  if (!publicClient) fail('invalid_client_metadata', 'This server only supports public clients (token_endpoint_auth_method none).');
+  for (const [key, needed] of [['grant_types', 'authorization_code'], ['response_types', 'code']] as const) {
+    if (values[key] !== undefined && (!Array.isArray(values[key]) || !(values[key] as unknown[]).includes(needed))) {
+      fail('invalid_client_metadata', `The client does not support ${needed}.`);
+    }
+  }
+  if (!Array.isArray(values.redirect_uris) || values.redirect_uris.length === 0 || values.redirect_uris.length > 10) {
+    fail('invalid_client_metadata', 'The client metadata document must list between one and ten redirect URIs.');
+  }
+  const redirects = [...new Set(values.redirect_uris.map(redirectUri))];
+  const raw = typeof values.client_name === 'string' ? values.client_name.trim().slice(0, 80) : '';
+  const name = raw && !/[\u0000-\u001f\u007f]/.test(raw) ? raw : url.hostname;
+  await Surreal.system(env).query(
+    `UPSERT type::record($id) SET client_id = $client, client_name = string::slice($name, 2), redirect_uris = $redirects,
+       fetched_at = time::now()`,
+    { id, client: url.href, name: `!:${name}`, redirects },
+  );
+  return { id, client_id: url.href, client_name: name, redirect_uris: redirects };
 }
 
 async function register(request: Request, env: Env): Promise<Response> {
@@ -187,7 +276,9 @@ async function authorize(request: Request, env: Env, origin: string): Promise<Re
   const params = new URL(request.url).searchParams;
   for (const key of new Set(params.keys())) if (params.getAll(key).length !== 1) fail('invalid_request', 'Repeated parameters are not supported.');
   const values = Object.fromEntries(params);
-  const client = await findClient(env, parameter(values, 'client_id'));
+  const clientId = parameter(values, 'client_id');
+  const documentUrl = metadataDocumentUrl(clientId);
+  const client = documentUrl ? await metadataDocumentClient(env, documentUrl) : await findClient(env, clientId);
   const redirect = parameter(values, 'redirect_uri');
   // Never redirect errors until the registered callback has been verified.
   if (!client.redirect_uris.includes(redirect)) fail('invalid_request', 'The redirect URI is not registered for this client.');
@@ -205,10 +296,10 @@ async function authorize(request: Request, env: Env, origin: string): Promise<Re
   await Surreal.system(env).query(
     `CREATE type::record($id) CONTENT {
       client:type::record($client),redirect_uri:$redirect,
-      state:IF $state = NONE THEN NONE ELSE string::slice($state,2) END,resource:$resource,scope:$scope,
+      state:IF $state = NONE THEN NONE ELSE string::slice($state,2) END,issuer:$issuer,resource:$resource,scope:$scope,
       challenge:$challenge,expires_at:<datetime>$expires
     }`,
-    { id, client: client.id, redirect, state: state ? `!:${state}` : null, resource, scope, challenge, expires: deadline(REQUEST_SECONDS) },
+    { id, client: client.id, redirect, state: state ? `!:${state}` : null, issuer: origin, resource, scope, challenge, expires: deadline(REQUEST_SECONDS) },
   );
   const target = new URL('/connect', appOrigin(env, origin));
   target.searchParams.set('request', id.split(':')[1]);
@@ -234,10 +325,16 @@ export async function getOAuthConsent(env: Env, _userId: string, requestId: stri
   const pending = await findRequest(env, requestId);
   const client = await Surreal.system(env).query<Client>('SELECT * FROM ONLY type::record($id)', { id: pending.client });
   if (!client) throw new BadRequest('This connection request is no longer available.');
-  return { requestId, clientName: client.client_name, redirectHost: new URL(pending.redirect_uri).host, scopes: [pending.scope], expiresAt: pending.expires_at };
+  return {
+    requestId, clientName: client.client_name, redirectHost: new URL(pending.redirect_uri).host,
+    // A metadata document's name is vouched for by the site serving it.
+    clientHost: client.client_id.startsWith('https://') ? new URL(client.client_id).host : null,
+    scopes: [pending.scope], expiresAt: pending.expires_at,
+  };
 }
 
-export async function approveOAuthConsent(env: Env, userId: string, input: { requestId: string; allow: boolean }) {
+/** `issuer` is this server's OAuth issuer, for requests made before it was stored with them. */
+export async function approveOAuthConsent(env: Env, userId: string, input: { requestId: string; allow: boolean }, issuer?: string) {
   await ensureServerSchema(env);
   if (typeof input.allow !== 'boolean') throw new BadRequest('Choose whether to allow this connection.');
   const pending = await findRequest(env, input.requestId);
@@ -245,6 +342,9 @@ export async function approveOAuthConsent(env: Env, userId: string, input: { req
   if (!client) throw new BadRequest('This connection request is no longer available.');
   const redirect = new URL(pending.redirect_uri);
   if (pending.state) redirect.searchParams.set('state', pending.state);
+  // RFC 9207: tells the client which server answered, against mix-up attacks.
+  const iss = pending.issuer ?? issuer;
+  if (iss) redirect.searchParams.set('iss', iss);
   const code = randomKey(32);
   const connection = newId('api_key');
   const grant = newId('oauth_grant');
@@ -430,8 +530,9 @@ export async function verifyOAuthAccessToken(env: Env, token: string, resource: 
   if (!/^bolo_at_[A-Za-z0-9_-]{43}$/.test(token)) return null;
   await ensureServerSchema(env);
   const row = await Surreal.system(env).query<{
-    owner: string; expires_at: string; client_id: string; scope: string; resource: string;
-  } | undefined>(`RETURN (SELECT owner,expires_at,grant.client.client_id AS client_id,grant.scope AS scope,grant.resource AS resource
+    owner: string; expires_at: string; client_id: string; client_name: string; scope: string; resource: string;
+  } | undefined>(`RETURN (SELECT owner,expires_at,grant.client.client_id AS client_id,grant.client.client_name AS client_name,
+      grant.scope AS scope,grant.resource AS resource
     FROM oauth_access WHERE token_hash = $hash AND revoked_at = NONE AND expires_at > time::now()
       AND grant.revoked_at = NONE AND grant.expires_at > time::now()
       AND grant.connection.id != NONE AND grant.connection.revoked_at = NONE AND grant.connection.owner = owner AND grant.owner = owner LIMIT 1)[0]`,
@@ -441,6 +542,6 @@ export async function verifyOAuthAccessToken(env: Env, token: string, resource: 
   if (!dbToken) return null;
   return {
     token, clientId: row.client_id, scopes: row.scope.split(' '), expiresAt: Math.floor(Date.parse(row.expires_at) / 1000),
-    resource: new URL(row.resource), extra: { userId: row.owner, dbToken },
+    resource: new URL(row.resource), extra: { userId: row.owner, dbToken, clientName: row.client_name },
   };
 }

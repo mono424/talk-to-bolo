@@ -7,3 +7,6 @@ export const MODES: { value: CallMode; label: string; hint: string }[] = [
 ];
 
 export const modeLabel = (mode: string | null | undefined) => MODES.find((m) => m.value === mode)?.label ?? '';
+
+/** A session the student held in an assistant (call.assistant) is marked with its name in lists. */
+export const viaLabel = (assistant: string | null | undefined) => (assistant ? ` · ${assistant}` : '');

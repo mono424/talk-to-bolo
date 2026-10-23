@@ -127,11 +127,15 @@ DEFINE EVENT OVERWRITE source_part_file ON TABLE source_part WHEN $event = 'DELE
 DEFINE INDEX IF NOT EXISTS api_key_hash ON TABLE api_key FIELDS key_hash UNIQUE;
 
 -- Public OAuth clients and short-lived authorization state. None of these
--- credentials or hashes are synced to the browser.
+-- credentials or hashes are synced to the browser. A client is registered
+-- here (DCR, `bolo_` ids) or identified by the https URL of its metadata
+-- document (CIMD, `oauth_client:m<hash of the URL>`, refreshed on authorize).
 DEFINE TABLE OVERWRITE oauth_client SCHEMAFULL PERMISSIONS NONE;
 DEFINE FIELD OVERWRITE client_id ON TABLE oauth_client TYPE string;
 DEFINE FIELD OVERWRITE client_name ON TABLE oauth_client TYPE string;
 DEFINE FIELD OVERWRITE redirect_uris ON TABLE oauth_client TYPE array<string>;
+-- When a metadata document client's document was last read.
+DEFINE FIELD OVERWRITE fetched_at ON TABLE oauth_client TYPE option<datetime>;
 DEFINE FIELD OVERWRITE created_at ON TABLE oauth_client TYPE datetime DEFAULT time::now();
 DEFINE INDEX IF NOT EXISTS oauth_client_id ON TABLE oauth_client FIELDS client_id UNIQUE;
 
@@ -139,6 +143,8 @@ DEFINE TABLE OVERWRITE oauth_request SCHEMAFULL PERMISSIONS NONE;
 DEFINE FIELD OVERWRITE client ON TABLE oauth_request TYPE record<oauth_client>;
 DEFINE FIELD OVERWRITE redirect_uri ON TABLE oauth_request TYPE string;
 DEFINE FIELD OVERWRITE state ON TABLE oauth_request TYPE option<string>;
+-- The issuer the client discovered; the redirect back carries it as `iss`.
+DEFINE FIELD OVERWRITE issuer ON TABLE oauth_request TYPE option<string>;
 DEFINE FIELD OVERWRITE resource ON TABLE oauth_request TYPE string;
 DEFINE FIELD OVERWRITE scope ON TABLE oauth_request TYPE string;
 DEFINE FIELD OVERWRITE challenge ON TABLE oauth_request TYPE string;

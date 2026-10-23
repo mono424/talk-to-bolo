@@ -191,6 +191,10 @@ DEFINE FIELD OVERWRITE started_at ON TABLE call TYPE datetime DEFAULT time::now(
 DEFINE FIELD OVERWRITE ended_at ON TABLE call TYPE option<datetime>;
 -- Written after the call: what was covered and what to review.
 DEFINE FIELD OVERWRITE recap ON TABLE call TYPE option<string>;
+-- The assistant a study session took place in ("ChatGPT"), when the student
+-- studied there and it logged the session through the MCP server. Such a
+-- session has a recap and no transcript. NONE for a voice call with Bolo.
+DEFINE FIELD OVERWRITE assistant ON TABLE call TYPE option<string>;
 -- SHA-256 of the per-call key the voice agent presents to the API's LLM
 -- endpoint. Never readable.
 DEFINE FIELD OVERWRITE key_hash ON TABLE call TYPE string

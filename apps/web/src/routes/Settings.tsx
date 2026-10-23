@@ -1,11 +1,19 @@
 import { createSignal, For, Show } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { ArrowUpRight, Check, Copy, KeyRound, MessageCircle, Sparkles } from 'lucide-solid';
+import { ArrowUpRight, AudioLines, Check, Copy, KeyRound, MessageCircle, Sparkles } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { MCP_URL, createApiKey } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { qApiKeys } from '../lib/query';
 import { Button, buttonClass, Card, Dot, formatDate, inputClass, NoticeCard } from '../components/ui';
+
+/** What to say to ChatGPT voice once TalkToBolo is connected. */
+const VOICE_PROMPTS = [
+  'What should I study today on TalkToBolo?',
+  'Continue my lecture where I left off.',
+  'Quiz me on what I have covered so far.',
+  'Save this session to TalkToBolo.',
+];
 
 /** API keys for AI clients that use the MCP server. */
 export default function SettingsPage() {
@@ -55,8 +63,8 @@ export default function SettingsPage() {
     <div class="mx-auto w-full min-w-0 max-w-3xl px-4 py-7 sm:px-8 sm:py-14">
       <h1 class="text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]">AI access</h1>
       <p class="mt-1.5 max-w-2xl text-[16px] leading-relaxed text-muted">
-        Let an assistant such as Claude work on your courses: create courses, add and edit lecture material, upload PDFs and search
-        your notes, through TalkToBolo's MCP server.
+        Study with ChatGPT or Claude from your own courses: they read your lectures, progress and past calls, quiz you and save
+        what you covered. They can also create courses, add material and upload PDFs, through TalkToBolo's MCP server.
       </p>
 
       <Card class="mt-6 p-4 sm:mt-8 sm:p-6">
@@ -73,7 +81,7 @@ export default function SettingsPage() {
           </a>
         </div>
         <p class="mt-3 text-[13px] leading-relaxed text-muted">
-          Claude opens a prefilled connection. ChatGPT needs a short setup in its Plugins page.
+          Claude opens a prefilled connection. ChatGPT needs a short setup in its Plugins page, once, in a browser.
         </p>
         <Show when={chatgptSetup()}>
           <div class="mt-5 rounded-2xl bg-soft p-4" role="region" aria-label="ChatGPT connection setup">
@@ -81,11 +89,37 @@ export default function SettingsPage() {
             <ol class="mt-2 list-decimal space-y-1.5 pl-5 text-[14px] leading-relaxed text-muted">
               <li>In ChatGPT Plugins, choose the plus button, then Add custom MCP server.</li>
               <li>Name it TalkToBolo, paste the server address and choose OAuth.</li>
-              <li>Create the plugin, connect your TalkToBolo account and install it.</li>
+              <li>Create the plugin, connect your TalkToBolo account and approve access.</li>
+              <li>That is it: TalkToBolo is now in the ChatGPT app on your phone too.</li>
             </ol>
             <div class="mt-3"><CopyLine text={mcpUrl} /></div>
+            <p class="mt-3 text-[13px] leading-relaxed text-muted">
+              Custom MCP servers depend on your ChatGPT plan, and a workspace admin may need to allow them.
+            </p>
           </div>
         </Show>
+      </Card>
+
+      <Card class="mt-4 p-4 sm:p-6">
+        <div class="flex items-center gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-soft text-muted">
+            <AudioLines size={20} stroke-width={1.7} />
+          </span>
+          <h2 class="text-[18px] font-semibold tracking-tight">Learn on the go with ChatGPT voice</h2>
+        </div>
+        <p class="mt-3 max-w-xl text-[14px] leading-relaxed text-muted">
+          Once connected, open ChatGPT on your phone, start Voice and ask for your course. It picks up where your calls with Bolo left
+          off, sticks to the sections you have reached, and cites the lecture page.
+        </p>
+        <ul class="mt-4 flex flex-col gap-2" aria-label="Things to say">
+          <For each={VOICE_PROMPTS}>
+            {(prompt) => <li class="rounded-2xl bg-soft px-3.5 py-2.5 text-[14px] [overflow-wrap:anywhere]">"{prompt}"</li>}
+          </For>
+        </ul>
+        <p class="mt-4 max-w-xl text-[13px] leading-relaxed text-muted">
+          Reading your notes runs without asking when ChatGPT's plugin permissions allow read actions. Saving a session and your
+          progress asks you on screen first; saved sessions appear under Calls with their recap.
+        </p>
       </Card>
 
       <Show when={created()}>

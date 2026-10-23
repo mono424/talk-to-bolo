@@ -78,7 +78,8 @@ async function request(env: Env, path: string, init: RequestInit = {}): Promise<
   const res = await fetch(endpoint(env, path), {
     ...init,
     headers,
-    redirect: 'error',
+    // Workers reject redirect: 'error'. A redirect is not ok, so it fails below.
+    redirect: 'manual',
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {

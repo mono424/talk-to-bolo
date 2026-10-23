@@ -49,7 +49,8 @@ No download needed. Bring your material, a microphone, and a little curiosity.
 - **Sources you can check.** The tutor cites the lecture pages it teaches from. Transcripts, recaps, course search and the MCP tools link straight to the page.
 - **A voice conversation.** Speech, turn-taking, and interruptions run over WebRTC.
 - **A record of each session.** Calls include transcripts and study recaps you can return to.
-- **AI access.** An MCP server lets your assistant manage courses, add material, and search your notes with a personal API key.
+- **Study on the go with ChatGPT voice.** Connect ChatGPT (or Claude) to your account and it studies with you from your own courses: it picks up your lecture progress and past calls, quizzes you on what you have covered, and saves the session and your progress back to TalkToBolo.
+- **AI access.** The same MCP server lets your assistant manage courses, add material, and search your notes, over OAuth or with a personal API key.
 
 ## Getting started
 
