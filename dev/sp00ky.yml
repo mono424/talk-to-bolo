@@ -55,7 +55,8 @@ apps:
       # apps/api/wrangler.jsonc `JOB_TOKEN`.
       token: local-dev-jobs
     deploy:
-      # Job requests time out after 10 s by default; a call recap takes longer.
+      # Job requests time out after 10 s by default; leave room for a cold
+      # Worker applying its server schema first.
       timeout: 60
     dev:
       type: npm

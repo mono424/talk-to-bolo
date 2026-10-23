@@ -1,12 +1,10 @@
 import type { Db } from './query';
-import { newId } from './ids';
-import { dbConfig } from '../db';
 
 /**
- * The API's public routes (apps/api, `expose` in sp00ky.yml): starting calls,
- * PDF upload and download, search, assets. Every call carries the user's
- * SurrealDB token; the API checks it against the database before doing
- * anything. Background work goes through the job outbox instead (jobs.ts).
+ * The API's public routes (apps/api, `expose` in sp00ky.yml): PDF upload and
+ * download, search, assets. Every request carries the user's SurrealDB token;
+ * the API checks it against the database before doing anything. Background
+ * work goes through the job outbox instead (jobs.ts).
  */
 // Production serves API, MCP and extracted images under the app's own origin.
 // An explicit override supports deployments with a separate API Worker.
@@ -53,20 +51,6 @@ function safeJson(text: string): unknown {
     return text;
   }
 }
-
-export type CallMode = 'explain' | 'quiz' | 'qa';
-
-export interface StartedCall {
-  callId: string;
-  conversationToken: string;
-  callKey: string;
-  firstMessage: string;
-  language: string;
-  studentName: string;
-}
-
-export const startCall = (db: Db, input: { courseId: string; materialId?: string | null; mode: CallMode }) =>
-  api<StartedCall>(db, '/api/calls', { method: 'POST', body: JSON.stringify(input) });
 
 /** Uploads a PDF for a material that already exists; processing starts at once. */
 export const uploadPdf = (db: Db, materialId: string, file: File) =>
@@ -169,37 +153,6 @@ export const materialPath = (courseId: string, materialId: string, page?: number
 /** "p. 12" or "pp. 12-13" for a cited passage, or null without pages. */
 export const pageLabel = (page?: number | null, pageEnd?: number | null) =>
   page ? (pageEnd && pageEnd !== page ? `pp. ${page}-${pageEnd}` : `p. ${page}`) : null;
-
-/** Write the private hash directly: hidden fields are absent from the sync model. */
-export async function createApiKey(db: Db, owner: string, name: string): Promise<{ id: string; key: string }> {
-  const token = db.auth.token;
-  if (!token) throw new ApiError('Sign in again to create a key.', 401);
-  const bytes = crypto.getRandomValues(new Uint8Array(30));
-  const key = `sc_${btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')}`;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
-  const key_hash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
-  const id = newId('api_key');
-  const databaseEndpoint = dbConfig.database.endpoint;
-  if (!databaseEndpoint) throw new ApiError('The database connection is not configured.', 503);
-  const endpoint = databaseEndpoint.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/+$/, '').replace(/\/rpc$/, '');
-  const result = await fetch(`${endpoint}/rpc`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json', accept: 'application/json', authorization: `Bearer ${token}`,
-      'surreal-ns': dbConfig.database.namespace, 'surreal-db': dbConfig.database.database,
-    },
-    body: JSON.stringify({ id: 1, method: 'query', params: [
-      `CREATE type::record($id) CONTENT { owner: type::record($owner), name: $name, prefix: $prefix, key_hash: $key_hash } RETURN id`,
-      { id, owner, name: name.trim().slice(0, 80) || 'AI client', prefix: key.slice(0, 7), key_hash },
-    ] }),
-  });
-  const response = await result.json() as { error?: unknown; result?: { status: string; result: { id: string }[] | unknown }[] };
-  const row = response.result?.[0];
-  if (!result.ok || response.error || row?.status !== 'OK' || !Array.isArray(row.result) || row.result[0]?.id !== id) {
-    throw new ApiError('The key could not be saved. Please try again.', result.status === 401 ? 401 : 503);
-  }
-  return { id, key };
-}
 
 export const searchCourse = (db: Db, courseId: string, query: string) =>
   api<{ hits: SearchHit[] }>(db, `/api/courses/${encodeURIComponent(courseId)}/search`, {

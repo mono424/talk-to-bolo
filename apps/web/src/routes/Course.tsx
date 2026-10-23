@@ -1,14 +1,14 @@
 import { A, useNavigate, useParams } from '@solidjs/router';
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { FileText, FileType2, Folder, PenLine, PhoneCall, Plus, Settings2, Trash2, Upload, X } from 'lucide-solid';
+import { FileText, FileType2, Folder, PenLine, Plus, Settings2, Trash2, Upload, X } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { ApiError, uploadPdf } from '../lib/api';
 import { reindexMaterial } from '../lib/jobs';
 import { idKey, newId, whenSynced } from '../lib/ids';
 import { COURSE_COLORS, courseColor, LANGUAGES, type CourseColor } from '../lib/palette';
-import { qMaterialsPage, qReadyMaterials, useCourse } from '../lib/query';
+import { qMaterialsPage, useCourse } from '../lib/query';
 import { Button, Field, IconButton, inputClass, StatusText } from '../components/ui';
 import { scrollParent, VirtualList } from '../components/VirtualList';
 import { CourseSearch } from '../components/CourseSearch';
@@ -17,19 +17,13 @@ export default function CoursePage() {
   const params = useParams();
   const db = useDb<typeof schema>();
   const auth = useAuth();
-  const navigate = useNavigate();
   const courseId = () => `course:${params.courseKey}`;
 
   const course = useCourse(db, auth.userId, courseId);
-  const readyMaterials = useQuery(() => qReadyMaterials(db, courseId()));
 
   const [writing, setWriting] = createSignal(false);
   const [dragging, setDragging] = createSignal(false);
   const [notice, setNotice] = createSignal<string | null>(null);
-
-  const ready = () => readyMaterials.data() ?? [];
-
-  const startCall = () => navigate(`/courses/${params.courseKey}/call?mode=explain`);
 
   // ── Header: the title shrinks as the page scrolls, then the header sticks ──
   // Scrolling only changes transforms and opacity, never layout: a header that
@@ -274,21 +268,8 @@ export default function CoursePage() {
             </Show>
           </section>
 
-          {/* The page's bottom space. While there is more below, it stays at the
-              bottom and the list fades out under the call button. */}
-          <div class="pointer-events-none sticky bottom-0 z-[5] -mx-3 h-36 bg-linear-to-t from-surface from-40% to-surface/0" />
-
-          {/* Centred on the page: beside the sidebar until the recents column balances it. */}
-          <Button
-            size="lg"
-            class="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 z-10 -translate-x-1/2 shadow-frame md:bottom-8 md:left-[calc(50%+144px)] xl:left-1/2"
-            disabled={ready().length === 0}
-            title={ready().length ? 'Call the tutor to explain the whole course' : 'Needs material that is ready'}
-            onClick={startCall}
-          >
-            <PhoneCall size={18} stroke-width={1.75} />
-            Talk to Bolo
-          </Button>
+          {/* The page's bottom space. */}
+          <div class="h-16" aria-hidden="true" />
         </div>
       )}
     </Show>
@@ -461,7 +442,7 @@ function CourseSettings(props: { course: CourseRow }) {
               <For each={LANGUAGES}>{(l) => <option value={l.code}>{l.label}</option>}</For>
             </select>
           </Field>
-          <Field label="Notes for the tutor" hint="Applied to every call in this course.">
+          <Field label="Notes for the tutor" hint="ChatGPT follows them in every study session of this course.">
             <textarea
               class={`${inputClass} min-h-24 resize-y text-[16px] sm:text-[14px]`}
               placeholder="e.g. The exam is oral. Push me on proofs."
@@ -499,7 +480,7 @@ function CourseSettings(props: { course: CourseRow }) {
             size="sm"
             class="-ml-3 text-red"
             onClick={async () => {
-              if (confirm(`Delete “${props.course.title}” with all its material and calls? This cannot be undone.`)) {
+              if (confirm(`Delete “${props.course.title}” with all its material and study sessions? This cannot be undone.`)) {
                 close();
                 await db.delete('course', props.course.id);
                 navigate('/');

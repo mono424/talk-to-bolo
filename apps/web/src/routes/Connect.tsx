@@ -53,7 +53,7 @@ export default function ConnectPage() {
         <Show when={consent.loading}><p class="mt-4 text-[15px] text-muted" role="status">Checking your connection request…</p></Show>
         <Show when={consent.error}>
           <p class="mt-4 break-words text-[15px] text-red" role="alert">{consent.error?.message ?? 'This connection request has expired.'}</p>
-          <A href="/settings" class={`${buttonClass('soft')} mt-5 w-full sm:w-auto`}>Back to AI access</A>
+          <A href="/settings" class={`${buttonClass('soft')} mt-5 w-full sm:w-auto`}>Back to ChatGPT settings</A>
         </Show>
         <Show when={consent()}>
           {(request) => <>
@@ -65,13 +65,13 @@ export default function ConnectPage() {
             <div class="mt-5 rounded-2xl bg-soft p-4 text-[14px] leading-relaxed">
               <p class="font-medium">This connection can:</p>
               <ul class="mt-2 list-disc space-y-1 pl-5 text-muted">
-                <li>Read and search your courses, lecture material, progress and past calls.</li>
+                <li>Read and search your courses, lecture material, progress and past study sessions.</li>
                 <li>Move your lecture progress forward and save study sessions with their recap.</li>
                 <li>Create, edit and delete your courses and material.</li>
               </ul>
             </div>
             <p class="mt-4 text-[13px] leading-relaxed text-muted [overflow-wrap:anywhere]">
-              Return to {request().redirectHost} after approval. You can revoke this connection from AI access at any time.
+              Return to {request().redirectHost} after approval. You can revoke this connection from the ChatGPT page in TalkToBolo at any time.
             </p>
             <Show when={error()}><p class="mt-4 break-words text-[14px] text-red" role="alert">{error()}</p></Show>
             <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">

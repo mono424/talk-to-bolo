@@ -1,11 +1,11 @@
 import { createSignal, For, Show } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { ArrowUpRight, AudioLines, Check, Copy, KeyRound, MessageCircle, Sparkles } from 'lucide-solid';
+import { ArrowUpRight, AudioLines, Check, Copy, MessageCircle } from 'lucide-solid';
 import type { schema } from '../schema.gen';
-import { MCP_URL, createApiKey } from '../lib/api';
+import { MCP_URL } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { qApiKeys } from '../lib/query';
-import { Button, buttonClass, Card, Dot, formatDate, inputClass, NoticeCard } from '../components/ui';
+import { Button, Card, Dot, formatDate } from '../components/ui';
 
 /** What to say to ChatGPT voice once TalkToBolo is connected. */
 const VOICE_PROMPTS = [
@@ -15,24 +15,15 @@ const VOICE_PROMPTS = [
   'Save this session to TalkToBolo.',
 ];
 
-/** API keys for AI clients that use the MCP server. */
+/** Connecting ChatGPT to the MCP server, and the connections made so far. */
 export default function SettingsPage() {
   const db = useDb<typeof schema>();
   const auth = useAuth();
   const keys = useQuery(() => (auth.userId() ? qApiKeys(db, auth.userId()!) : null));
-  const [name, setName] = createSignal('');
-  const [created, setCreated] = createSignal<string | null>(null);
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
   const [chatgptSetup, setChatgptSetup] = createSignal(false);
   const [addressCopied, setAddressCopied] = createSignal(false);
 
   const mcpUrl = MCP_URL;
-  const keyOrPlaceholder = () => created() ?? 'sc_YOUR_KEY';
-  const claudeUrl = new URL('https://claude.ai/customize/connectors');
-  claudeUrl.searchParams.set('modal', 'add-custom-connector');
-  claudeUrl.searchParams.set('connectorName', 'TalkToBolo');
-  claudeUrl.searchParams.set('connectorUrl', mcpUrl);
 
   const connectChatGPT = () => {
     setChatgptSetup(true);
@@ -42,46 +33,26 @@ export default function SettingsPage() {
     void navigator.clipboard.writeText(mcpUrl).then(() => setAddressCopied(true)).catch(() => setAddressCopied(false));
   };
 
-  const create = async (e: SubmitEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const owner = auth.userId();
-      if (!owner) throw new Error('Sign in again to create a key.');
-      const res = await createApiKey(db, owner, name().trim() || 'AI client');
-      setCreated(res.key);
-      setName('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the key.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div class="mx-auto w-full min-w-0 max-w-3xl px-4 py-7 sm:px-8 sm:py-14">
-      <h1 class="text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]">AI access</h1>
+      <h1 class="text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]">ChatGPT</h1>
       <p class="mt-1.5 max-w-2xl text-[16px] leading-relaxed text-muted">
-        Study with ChatGPT or Claude from your own courses: they read your lectures, progress and past calls, quiz you and save
-        what you covered. They can also create courses, add material and upload PDFs, through TalkToBolo's MCP server.
+        Study with ChatGPT from your own courses: it reads your lectures, progress and past sessions, quizzes you and saves what
+        you covered. It can also create courses, add material and upload PDFs, through TalkToBolo's MCP server.
       </p>
 
       <Card class="mt-6 p-4 sm:mt-8 sm:p-6">
         <h2 class="text-[18px] font-semibold tracking-tight">Bring your courses into the conversation</h2>
         <p class="mt-2 max-w-xl text-[14px] leading-relaxed text-muted">
-          Connect your assistant, then sign in to TalkToBolo and approve access. No API key to copy.
+          Connect ChatGPT, then sign in to TalkToBolo and approve access. No API key to copy.
         </p>
         <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <Button onClick={connectChatGPT}>
             <MessageCircle size={17} stroke-width={1.8} /> Connect ChatGPT <ArrowUpRight size={15} />
           </Button>
-          <a class={buttonClass('soft')} href={claudeUrl.href} target="_blank" rel="noopener noreferrer">
-            <Sparkles size={17} stroke-width={1.8} /> Connect Claude <ArrowUpRight size={15} />
-          </a>
         </div>
         <p class="mt-3 text-[13px] leading-relaxed text-muted">
-          Claude opens a prefilled connection. ChatGPT needs a short setup in its Plugins page, once, in a browser.
+          ChatGPT needs a short setup in its Plugins page, once, in a browser.
         </p>
         <Show when={chatgptSetup()}>
           <div class="mt-5 rounded-2xl bg-soft p-4" role="region" aria-label="ChatGPT connection setup">
@@ -108,8 +79,8 @@ export default function SettingsPage() {
           <h2 class="text-[18px] font-semibold tracking-tight">Learn on the go with ChatGPT voice</h2>
         </div>
         <p class="mt-3 max-w-xl text-[14px] leading-relaxed text-muted">
-          Once connected, open ChatGPT on your phone, start Voice and ask for your course. It picks up where your calls with Bolo left
-          off, sticks to the sections you have reached, and cites the lecture page.
+          Once connected, open ChatGPT on your phone, start Voice and ask for your course. It picks up where you left off in each
+          lecture, sticks to the sections you have reached, and cites the lecture page.
         </p>
         <ul class="mt-4 flex flex-col gap-2" aria-label="Things to say">
           <For each={VOICE_PROMPTS}>
@@ -118,66 +89,14 @@ export default function SettingsPage() {
         </ul>
         <p class="mt-4 max-w-xl text-[13px] leading-relaxed text-muted">
           Reading your notes runs without asking when ChatGPT's plugin permissions allow read actions. Saving a session and your
-          progress asks you on screen first; saved sessions appear under Calls with their recap.
+          progress asks you on screen first; saved sessions appear under Sessions with their recap.
         </p>
       </Card>
 
-      <Show when={created()}>
-        <NoticeCard
-          class="mt-8"
-          icon={<KeyRound size={20} stroke-width={1.75} />}
-          title="Copy your new key"
-          description="It is shown only this once. Put it in your AI client now."
-          tone="attention"
-        >
-          <div class="w-full">
-            <CopyLine text={created()!} />
-          </div>
-        </NoticeCard>
-      </Show>
-
-      <Card class="mt-6 p-4 sm:mt-8 sm:p-5">
-        <h2 class="text-[16px] font-semibold">API key for other clients</h2>
-        <p class="mt-1 text-[14px] text-muted">Use this for Claude Code or a client that asks for a bearer token.</p>
-        <form onSubmit={create} class="mt-3 flex flex-col gap-2 sm:flex-row">
-          <input
-            class={`${inputClass} min-w-0 flex-1`}
-            placeholder="Name it after the client, e.g. Claude Desktop"
-            value={name()}
-            onInput={(e) => setName(e.currentTarget.value)}
-            aria-label="Key name"
-          />
-          <Button type="submit" disabled={busy()}>
-            Create key
-          </Button>
-        </form>
-        <Show when={error()}>
-          <p class="mt-3 break-words text-[14px] text-red" role="alert">{error()}</p>
-        </Show>
-      </Card>
-
-      <Card class="mt-4 min-w-0 p-4 sm:p-5">
-        <h2 class="text-[16px] font-semibold">Connect a client</h2>
-        <p class="mt-1 text-[14px] text-muted">
-          MCP over Streamable HTTP at <code class="break-all font-mono text-fg">{mcpUrl}</code>, with the key as a bearer token.
-        </p>
-        <p class="mb-1.5 mt-4 text-[13px] text-muted">Claude Code</p>
-        <CopyLine text={`claude mcp add --transport http talktobolo ${mcpUrl} --header "Authorization: Bearer ${keyOrPlaceholder()}"`} />
-        <p class="mb-1.5 mt-4 text-[13px] text-muted">Clients with a JSON config</p>
-        <CopyLine
-          multiline
-          text={JSON.stringify(
-            { mcpServers: { talktobolo: { type: 'http', url: mcpUrl, headers: { Authorization: `Bearer ${keyOrPlaceholder()}` } } } },
-            null,
-            2,
-          )}
-        />
-      </Card>
-
-      <Card class="mt-4 p-2">
-        <h2 class="px-3 pb-1 pt-3 text-[16px] font-semibold">Keys and connected apps</h2>
+      <Card class="mt-6 p-2 sm:mt-8">
+        <h2 class="px-3 pb-1 pt-3 text-[16px] font-semibold">Connections</h2>
         <ul>
-          <For each={keys.data() ?? []} fallback={<li class="px-3 py-4 text-[14px] text-muted">No keys or connections yet.</li>}>
+          <For each={keys.data() ?? []} fallback={<li class="px-3 py-4 text-[14px] text-muted">No connections yet.</li>}>
             {(k) => (
               <li class="flex items-center gap-2 rounded-2xl px-2 py-2.5 hover:bg-soft sm:gap-3 sm:px-3">
                 <Dot tone={k.revoked_at ? 'idle' : 'ready'} class="mx-1" />
@@ -202,11 +121,11 @@ export default function SettingsPage() {
   );
 }
 
-function CopyLine(props: { text: string; multiline?: boolean }) {
+function CopyLine(props: { text: string }) {
   const [copied, setCopied] = createSignal(false);
   return (
     <div class="flex w-full min-w-0 items-start gap-2 rounded-2xl bg-soft p-2.5 sm:px-3.5">
-      <pre class={`min-w-0 flex-1 self-center overflow-x-auto font-mono text-[12px] leading-relaxed ${props.multiline ? '' : 'whitespace-pre-wrap break-all'}`}>
+      <pre class="min-w-0 flex-1 self-center overflow-x-auto whitespace-pre-wrap break-all font-mono text-[12px] leading-relaxed">
         {props.text}
       </pre>
       <button

@@ -1,7 +1,7 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import type { Env } from './env';
 import { chunkMarkdown, chunkPages, embedText } from './chunk';
-import { convertPages, extractPageImages, loadPdf, pageCount, placeMissingImages, type PageImageRef } from './pdf';
+import { extractPageImages, loadPdf, pageCount, pagesToMarkdown, type PageImageRef } from './pdf';
 import { embed, ensureServerSchema, type MaterialRow } from './service';
 import { Surreal, UserError, toBase64 } from './surreal';
 import { getMemoryDocument, indexMemorySection, memoryConfigured } from './memory';
@@ -10,12 +10,12 @@ export interface IngestParams {
   materialId: string;
   /** The material's `index_rev` when this run was started. */
   rev: number;
-  /** Convert the uploaded PDF to Markdown first (a new upload), or only re-index the current Markdown (an edit). */
+  /** Turn the uploaded PDF into Markdown first (a new upload), or only re-index the current Markdown (an edit). */
   convert: boolean;
 }
 
 const PAGES_PER_IMAGE_STEP = 20;
-const PAGES_PER_CONVERT_STEP = 10;
+const PAGES_PER_TEXT_STEP = 50;
 const CHUNKS_PER_EMBED_STEP = 48;
 const EMBED_BATCH = 16;
 
@@ -29,8 +29,9 @@ type Stop = typeof STOP;
  * Turns a material into something the tutor can teach from, durably, one
  * retryable step at a time:
  *
- *   PDF:  extract images -> convert pages to markdown with Claude -> save
+ *   PDF:  extract images -> read the pages' text layer as markdown -> save
  *   all:  chunk the markdown -> embed with Workers AI -> write the search index
+ *         -> the course knowledge graph in Agent Memory, when configured
  *
  * Progress is written to `material.status_detail`, which the web app shows
  * live through sync. A newer upload or edit bumps `index_rev`; this run then
@@ -54,7 +55,7 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
       const meta = await step.do('load', RETRY, async () => {
         await ensureServerSchema(this.env);
         const m = await current();
-        return m ? { kind: m.kind, owner: m.owner, course: m.course, title: m.title } : STOP;
+        return m ? { kind: m.kind, owner: m.owner, course: m.course } : STOP;
       });
       if (meta === STOP) return stopped;
 
@@ -125,13 +126,13 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
         });
 
         const parts: string[] = [];
-        for (let from = 1; from <= pages; from += PAGES_PER_CONVERT_STEP) {
-          const to = Math.min(pages, from + PAGES_PER_CONVERT_STEP - 1);
-          const md = await step.do(`convert ${from}-${to}`, RETRY, async (): Promise<string | Stop> => {
+        for (let from = 1; from <= pages; from += PAGES_PER_TEXT_STEP) {
+          const to = Math.min(pages, from + PAGES_PER_TEXT_STEP - 1);
+          const md = await step.do(`text ${from}-${to}`, RETRY, async (): Promise<string | Stop> => {
             if (!(await current())) return STOP;
-            await progress(`Converting pages ${from}-${to} of ${pages}`);
+            await progress(`Reading pages ${from}-${to} of ${pages}`);
             const pageImages = images.filter((im) => im.page >= from && im.page <= to);
-            return convertPages(this.env, await loadPdf(this.env, materialId), from, to, pages, meta.title, pageImages);
+            return pagesToMarkdown(await loadPdf(this.env, materialId), from, to, pageImages);
           });
           if (md === STOP) return stopped;
           parts.push(md);
@@ -141,7 +142,7 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
           if (!(await current())) return STOP;
           await db.query('UPDATE type::record($id) SET content = $content, image_count = $n', {
             id: materialId,
-            content: placeMissingImages(parts.join('\n\n'), images),
+            content: parts.join('\n\n'),
             n: images.length,
           });
           return true;

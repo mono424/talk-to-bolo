@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv, Env } from './env';
 import { bearer, safeEqual } from './auth';
-import { endCall } from './calls';
 import { setLectureProgress } from './progress';
 import { BadRequest, NotFound, Surreal, recordId } from './surreal';
 import { startIngest, type MaterialRow } from './service';
@@ -14,8 +13,8 @@ import { startIngest, type MaterialRow } from './service';
  * `expose`), and openapi.yml describes them.
  *
  * Nobody signs in on a job: the outbox permission only lets a student create a
- * job whose `assigned_to` is their own material or call and whose `payload.id`
- * is that same record. So the record's owner is the caller.
+ * job whose `assigned_to` is their own material and whose `payload.id` is that
+ * same record. So the record's owner is the caller.
  */
 export const jobs = new Hono<AppEnv>();
 
@@ -49,15 +48,4 @@ jobs.post('/materials/progress', async (c) => {
   const body = await c.req.json<Payload>();
   const material = await jobMaterial(c.env, body.id);
   return c.json(await setLectureProgress(c.env, material.owner, material.id, { through: body.through, rev: body.rev }));
-});
-
-// Ends a call and writes its recap with Claude, which takes a while.
-jobs.post('/calls/end', async (c) => {
-  const body = await c.req.json<Payload>();
-  const id = recordId('call', body.id);
-  const owner = await Surreal.system(c.env).query<string | null>('RETURN (SELECT VALUE owner FROM ONLY type::record($id))', { id });
-  if (!owner) throw new NotFound('Call not found.');
-  const conversationId = typeof body.conversationId === 'string' ? body.conversationId : null;
-  const { recap } = await endCall(c.env, owner, id, conversationId);
-  return c.json({ ok: true, recap: recap !== null });
 });

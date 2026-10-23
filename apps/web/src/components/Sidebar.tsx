@@ -1,14 +1,13 @@
 import { A, useLocation, useNavigate } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { ArrowLeft, ChevronsDown, ChevronsUp, FileText, FileType2, Folder, House, PhoneCall, Plus } from 'lucide-solid';
+import { ArrowLeft, ChevronsDown, ChevronsUp, FileText, FileType2, Folder, History, House, Plus } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { idKey, newId } from '../lib/ids';
 import { modeLabel, viaLabel } from '../lib/modes';
 import { COURSE_COLORS, courseColor, type CourseColor } from '../lib/palette';
-import { firstRow, qAttention, qCall, qCallHistory, qCourses, qMaterialsPage, qRecentCalls, useCourse } from '../lib/query';
-import { freshCall } from '../lib/call';
+import { qAttention, qCourses, qMaterialsPage, qRecentCalls, useCourse } from '../lib/query';
 import { Dot, materialTone, SectionLabel } from './ui';
 import { SideSlot } from './HeaderSlot';
 import { VirtualList } from './VirtualList';
@@ -16,8 +15,6 @@ import { VirtualList } from './VirtualList';
 const navClass = (active: boolean) =>
   `flex h-11 items-center gap-3 rounded-2xl px-3 text-[15px] transition-colors ${active ? 'bg-soft text-fg' : 'text-fg hover:bg-soft'}`;
 
-/** The call screen: a new call on a course, or a past one. */
-const CALL_PATH = /^\/(courses\/[^/]+\/call|calls\/[^/]+)\/?$/;
 /** A lecture: /courses/<course>/materials/<material>. */
 const MATERIAL_PATH = /^\/courses\/([^/]+)\/materials\/([^/]+)\/?$/;
 
@@ -36,10 +33,8 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
   const attention = useQuery(() => (uid() ? qAttention(db, uid()!) : null));
   const recents = useQuery(() => (uid() ? qRecentCalls(db, uid()!) : null));
 
-  // On a call the sidebar is the way back and the course's call history; on a
-  // lecture, the way back and the course's other material. Memos, so moving
-  // between lectures keeps the same list.
-  const onCall = createMemo(() => CALL_PATH.test(location.pathname));
+  // On a lecture the sidebar is the way back and the course's other material.
+  // A memo, so moving between lectures keeps the same list.
   const onMaterial = createMemo(() => MATERIAL_PATH.test(location.pathname));
 
   const [showAll, setShowAll] = createSignal(false);
@@ -85,25 +80,13 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
         }`}
         aria-label="Navigation"
       >
-        <Show
-          when={!onCall() && !onMaterial()}
-          fallback={
-            onCall() ? (
-              // Afresh per call, so its queries never switch in place (see perParam in App.tsx).
-              <Show when={location.pathname} keyed>
-                {(_path) => <CallNav />}
-              </Show>
-            ) : (
-              <MaterialNav />
-            )
-          }
-        >
+        <Show when={!onMaterial()} fallback={<MaterialNav />}>
           <nav class="space-y-0.5">
             <A href="/" class={navClass(location.pathname === '/')} end>
               <House size={19} stroke-width={1.6} class="text-muted" /> Home
             </A>
             <A href="/calls" class={navClass(location.pathname === '/calls' || location.pathname.startsWith('/calls/'))}>
-              <PhoneCall size={19} stroke-width={1.6} class="shrink-0 text-muted" /> Calls
+              <History size={19} stroke-width={1.6} class="shrink-0 text-muted" /> Sessions
             </A>
             <Show
               when={adding()}
@@ -181,14 +164,14 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
 
           <Show when={(recents.data() ?? []).length > 0}>
             {/* Wide windows show these in their own column on the right. */}
-            <section class="mt-7 xl:hidden" aria-label="Recent calls">
+            <section class="mt-7 xl:hidden" aria-label="Recent sessions">
               <SectionLabel>Recents</SectionLabel>
               <ul class="space-y-0.5">
                 <For each={recents.data() ?? []}>
                   {(call) => (
                     <li>
                       <A href={`/calls/${idKey(call.id)}`} class={navClass(location.pathname === `/calls/${idKey(call.id)}`)}>
-                        <Dot tone={call.status === 'ended' ? 'idle' : 'running'} class="ml-1 mr-1" />
+                        <Dot tone="idle" class="ml-1 mr-1" />
                         <span class="truncate">
                           {modeLabel(call.mode)}: {call.material?.title ?? call.course?.title ?? 'Course'}{viaLabel(call.assistant)}
                         </span>
@@ -206,71 +189,44 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
 }
 
 /**
- * Recent calls in a column on the right of wide windows, as wide as the
- * sidebar so the page sits centred between them. A call keeps the room for
- * itself.
+ * Recent study sessions in a column on the right of wide windows, as wide as
+ * the sidebar so the page sits centred between them.
  */
-export function RecentCalls() {
+export function RecentSessions() {
   const db = useDb<typeof schema>();
   const auth = useAuth();
   const location = useLocation();
   const recents = useQuery(() => (auth.userId() ? qRecentCalls(db, auth.userId()!) : null));
-  const shown = createMemo(() => !CALL_PATH.test(location.pathname));
 
   return (
-    <Show when={shown()}>
-      <aside class="scroll-quiet hidden w-[288px] shrink-0 overflow-y-auto overscroll-contain px-3 py-4 xl:block" aria-label="Recent calls">
-        {/* Page controls, such as a lecture's reading place. */}
-        <SideSlot class="mb-5 px-3 empty:hidden" />
-        <h2 class="px-3 pb-1.5 text-[13px] text-faint">Recent calls</h2>
-        <ul>
-          <For each={recents.data() ?? []} fallback={<li class="px-3 py-2 text-[13px] text-faint">No calls yet</li>}>
-            {(call) => (
-              <li>
-                <A
-                  href={`/calls/${idKey(call.id)}`}
-                  class={`flex h-9 items-center gap-2 rounded-xl px-3 text-[13px] transition-colors ${
-                    location.pathname === `/calls/${idKey(call.id)}` ? 'bg-soft text-fg' : 'text-muted hover:bg-soft hover:text-fg'
-                  }`}
-                >
-                  <Show when={call.status !== 'ended'}>
-                    <Dot tone="running" />
-                  </Show>
-                  <span class="min-w-0 flex-1 truncate">
-                    {modeLabel(call.mode)}: {call.material?.title ?? call.course?.title ?? 'Course'}{viaLabel(call.assistant)}
-                  </span>
-                  <span class="shrink-0 text-[12px] tabular-nums text-faint">{shortWhen(call.started_at)}</span>
-                </A>
-              </li>
-            )}
-          </For>
-        </ul>
-      </aside>
-    </Show>
+    <aside class="scroll-quiet hidden w-[288px] shrink-0 overflow-y-auto overscroll-contain px-3 py-4 xl:block" aria-label="Recent sessions">
+      {/* Page controls, such as a lecture's reading place. */}
+      <SideSlot class="mb-5 px-3 empty:hidden" />
+      <h2 class="px-3 pb-1.5 text-[13px] text-faint">Recent sessions</h2>
+      <ul>
+        <For each={recents.data() ?? []} fallback={<li class="px-3 py-2 text-[13px] text-faint">No sessions yet</li>}>
+          {(call) => (
+            <li>
+              <A
+                href={`/calls/${idKey(call.id)}`}
+                class={`flex h-9 items-center gap-2 rounded-xl px-3 text-[13px] transition-colors ${
+                  location.pathname === `/calls/${idKey(call.id)}` ? 'bg-soft text-fg' : 'text-muted hover:bg-soft hover:text-fg'
+                }`}
+              >
+                <span class="min-w-0 flex-1 truncate">
+                  {modeLabel(call.mode)}: {call.material?.title ?? call.course?.title ?? 'Course'}{viaLabel(call.assistant)}
+                </span>
+                <span class="shrink-0 text-[12px] tabular-nums text-faint">{shortWhen(call.started_at)}</span>
+              </A>
+            </li>
+          )}
+        </For>
+      </ul>
+    </aside>
   );
 }
 
-// Whether the call history is open, remembered across pages and reloads.
-const HISTORY_KEY = 'sidebar.history-open';
-const [historyOpen, setHistoryOpen] = createSignal(readFlag(HISTORY_KEY, true));
-const toggleHistory = () => {
-  setHistoryOpen(!historyOpen());
-  try {
-    localStorage.setItem(HISTORY_KEY, String(historyOpen()));
-  } catch {
-    // Storage may be unavailable (private mode); the choice lasts this visit.
-  }
-};
-function readFlag(key: string, fallback: boolean) {
-  try {
-    const v = localStorage.getItem(key);
-    return v === null ? fallback : v === 'true';
-  } catch {
-    return fallback;
-  }
-}
-
-/** Today's calls by time, older ones by day. */
+/** Today's sessions by time, older ones by day. */
 const shortWhen = (v: unknown) => {
   const d = new Date(String(v ?? ''));
   if (Number.isNaN(d.getTime())) return '';
@@ -278,96 +234,6 @@ const shortWhen = (v: unknown) => {
     ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
     : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
-
-/** The sidebar on a call: back to the course, then its calls, newest first. */
-function CallNav() {
-  const db = useDb<typeof schema>();
-  const auth = useAuth();
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  const pastKey = () => location.pathname.match(/^\/calls\/([^/]+)/)?.[1];
-  const past = firstRow(useQuery(() => (pastKey() ? qCall(db, `call:${pastKey()}`) : null)));
-  const courseKey = () =>
-    location.pathname.match(/^\/courses\/([^/]+)\/call/)?.[1] ?? (past.data()?.course ? idKey(past.data()!.course) : '');
-  const course = useCourse(db, auth.userId, () => (courseKey() ? `course:${courseKey()}` : null));
-  const history = useQuery(() => (courseKey() ? qCallHistory(db, `course:${courseKey()}`) : null));
-
-  // Same mode and lecture as the call on screen.
-  const newCall = () => {
-    if (!pastKey()) return `${location.pathname}${location.search}`;
-    const call = past.data();
-    const material = call?.material ? `&material=${idKey(call.material)}` : '';
-    return `/courses/${courseKey()}/call?mode=${call?.mode ?? 'explain'}${material}`;
-  };
-
-  return (
-    <>
-      <nav class="space-y-0.5">
-        <A href={courseKey() ? `/courses/${courseKey()}` : '/'} class={navClass(false)}>
-          <ArrowLeft size={19} stroke-width={1.6} class="shrink-0 text-muted" />
-          <span class="truncate">{course.data()?.title ?? 'Back'}</span>
-        </A>
-      </nav>
-
-      <nav class="mt-6" aria-label="Calls">
-        <A
-          href={newCall()}
-          class={`flex h-9 items-center rounded-xl px-3 text-[14px] transition-colors ${
-            pastKey() ? 'text-muted hover:bg-soft hover:text-fg' : 'bg-soft text-fg'
-          }`}
-          onClick={(e) => {
-            e.preventDefault();
-            navigate(newCall(), freshCall());
-          }}
-        >
-          New call
-        </A>
-      </nav>
-
-      <section class="mt-3" aria-label="Call history">
-        <h2 class="px-3 pb-1.5">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 text-[13px] text-muted transition-colors hover:text-fg"
-            aria-expanded={historyOpen()}
-            aria-controls="call-history"
-            onClick={() => toggleHistory()}
-          >
-            History
-            <svg viewBox="0 0 8 8" class={`h-2 w-2 transition-transform ${historyOpen() ? 'rotate-90' : ''}`} aria-hidden="true">
-              <path d="M2 1l4 3-4 3z" fill="currentColor" />
-            </svg>
-          </button>
-        </h2>
-        <ul id="call-history" hidden={!historyOpen()}>
-          <For each={history.data() ?? []} fallback={<li class="px-3 py-2 text-[14px] text-faint">No calls yet</li>}>
-            {(call) => (
-              <li>
-                <A
-                  href={`/calls/${idKey(call.id)}`}
-                  class={`flex h-9 items-center gap-2 rounded-xl px-3 text-[14px] transition-colors ${
-                    pastKey() === idKey(call.id) ? 'bg-soft text-fg' : 'text-muted hover:bg-soft hover:text-fg'
-                  }`}
-                >
-                  <Show when={call.status !== 'ended'}>
-                    <Dot tone="running" />
-                  </Show>
-                  <span class="min-w-0 flex-1 truncate">
-                    {modeLabel(call.mode)}
-                    <Show when={call.material?.title}>: {call.material!.title}</Show>
-                    {viaLabel(call.assistant)}
-                  </span>
-                  <span class="shrink-0 text-[12px] tabular-nums text-faint">{shortWhen(call.started_at)}</span>
-                </A>
-              </li>
-            )}
-          </For>
-        </ul>
-      </section>
-    </>
-  );
-}
 
 /** The sidebar on a lecture: back to the course, then all of its material. */
 function MaterialNav() {

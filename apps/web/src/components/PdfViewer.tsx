@@ -187,7 +187,7 @@ export function PdfViewer(props: { materialId: string; size?: number | null; fil
 
   return (
     <div class="relative min-w-0">
-      {/* On top: the page's floating call button owns the bottom corner. */}
+      {/* The viewer's controls stay on top while the pages scroll. */}
       <Show when={doc()}>
         <div class="sticky top-3 z-10 mb-3 flex justify-center">
           <div class="flex items-center gap-1 rounded-full border border-line bg-surface/95 px-2 py-1 shadow-card backdrop-blur">

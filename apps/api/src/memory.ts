@@ -18,16 +18,6 @@ export interface MemoryDocument {
   error?: string | null;
 }
 
-export interface ConfirmedStudentExchange {
-  callId: string;
-  studentSeq: number;
-  tutorText: string;
-  studentText: string;
-  /** Original transcript observation time; preserve it on retries. */
-  observedAt: string;
-  sectionPosition: number;
-}
-
 const NARRATIVE_START = Date.UTC(2000, 0, 1);
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -89,10 +79,10 @@ async function request(env: Env, path: string, init: RequestInit = {}): Promise<
   return res.json();
 }
 
-function post(env: Env, path: string, body: unknown, idempotencyKey?: string): Promise<unknown> {
+function post(env: Env, path: string, body: unknown): Promise<unknown> {
   return request(env, path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 }
@@ -210,38 +200,6 @@ async function queryFacts(env: Env, lens: string[][], query: string, asOf: strin
     if (!Number.isFinite(occurred) || occurred > cutoff || occurred < lower) return [];
     return [{ id: hit.id, text: hit.text, source: hit.source, score: hit.score, occurredAt: hit.occurredAt }];
   });
-}
-
-/** Persist only a tutor turn the student actually heard followed by their confirmed response. */
-export async function rememberStudentExchange(
-  env: Env,
-  material: MemoryMaterial,
-  input: ConfirmedStudentExchange,
-): Promise<void> {
-  if (!memoryConfigured(env)) return;
-  if (!input.tutorText.trim() || !input.studentText.trim()) return;
-  if (!Number.isSafeInteger(input.sectionPosition) || input.sectionPosition < 0) return;
-  if (!Number.isSafeInteger(input.studentSeq) || input.studentSeq < 0 || !input.callId || !Number.isFinite(Date.parse(input.observedAt))) {
-    throw new Error('A confirmed student exchange needs a stable call, sequence and observation time.');
-  }
-  const scope = studentMemoryScope(material, input.sectionPosition);
-  await registerScope(env, scope);
-  const text = [
-    `Confirmed tutoring evidence for student ${material.owner}, course ${material.course}, lecture ${material.id}, revision ${material.index_rev}.`,
-    `Call ${input.callId}, student turn ${input.studentSeq}. The tutor's available lecture boundary was section ${input.sectionPosition + 1}; this does not imply that every concept in that section was discussed. Observed at ${input.observedAt}.`,
-    'An explanation establishes exposure only. Mastery requires evidence from the student response. Acknowledgement, silence, uploaded material, and tutor assertions do not establish student understanding. Preserve uncertainty and any misconception shown by the response.',
-    `Tutor actually said: ${JSON.stringify(input.tutorText.trim())}`,
-    `Student actually responded: ${JSON.stringify(input.studentText.trim())}`,
-  ].join('\n\n');
-  await post(env, '/facts', {
-    text,
-    infer: 'full',
-    memory_category: 'knowledge',
-    scopes: [[scope]],
-    observed_at: input.observedAt,
-    role: 'user',
-    labels: ['evidence=confirmed_student_exchange'],
-  }, `talktobolo:${scope}:call:${segment(input.callId)}:student:${input.studentSeq}`);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

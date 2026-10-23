@@ -2,8 +2,6 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './env';
 import { requireUser } from './auth';
-import { startCall } from './calls';
-import { handleChatCompletions } from './llm';
 import { handleMcp } from './mcp';
 import { approveOAuthConsent, getOAuthConsent, handleOAuth, oauthOrigin } from './oauth';
 import { jobs } from './jobs';
@@ -67,16 +65,6 @@ app.post('/api/oauth/approve', async (c) => {
     c.env, c.var.caller.userId, { requestId: body.requestId, allow: body.allow }, oauthOrigin(c.req.raw, c.env),
   ));
 });
-
-// ── Calls ─────────────────────────────────────────────────────────────────
-
-app.post('/api/calls', async (c) => {
-  const body = await c.req.json<{ courseId?: string; materialId?: string | null; mode?: string }>();
-  return c.json(await startCall(c.env, c.var.caller.userId, body));
-});
-
-// ElevenLabs' Custom LLM endpoint (configured as <origin>/llm/v1).
-app.post('/llm/v1/chat/completions', (c) => handleChatCompletions(c.req.raw, c.env, c.executionCtx as ExecutionContext));
 
 // ── Materials ─────────────────────────────────────────────────────────────
 
@@ -184,7 +172,7 @@ app.all('/mcp', (c) => handleMcp(c.req.raw, c.env));
 
 // ── Jobs ──────────────────────────────────────────────────────────────────
 
-// Indexing, lecture progress and call recaps run as sp00ky jobs (jobs.ts).
+// Indexing and lecture progress run as sp00ky jobs (jobs.ts).
 app.route('/jobs', jobs);
 
 export default app;

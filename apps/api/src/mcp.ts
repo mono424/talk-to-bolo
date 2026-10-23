@@ -8,16 +8,15 @@ import { createMaterial } from './material-create';
 import { sha256Hex } from './auth';
 import {
   STUDY_MODES, fetchDocument, lectureOutline, materialUrl as studyMaterialUrl, prepareStudySession, readSection, recordProgress,
-  saveStudySession, searchEverything, sectionId, studyOverview, type Links,
+  saveStudySession, searchEverything, sectionId, studyOverview, type Links, type StudyMode,
 } from './study';
-import type { CallMode } from './tutor';
 
 /**
- * Remote MCP server (Streamable HTTP, stateless) at /mcp, so an AI client
- * (Claude, ChatGPT, an agent) can read and write a user's courses and lecture
- * material directly, and study with the student: ChatGPT's voice mode on a
- * phone tutors from the same material, progress and session history as a
- * call with Bolo (study.ts), and writes progress and a recap back.
+ * Remote MCP server (Streamable HTTP, stateless) at /mcp, so ChatGPT can read
+ * and write a user's courses and lecture material directly, and study with the
+ * student: ChatGPT's voice mode on a phone tutors from the student's material,
+ * progress, course knowledge graph and session history (study.ts), and writes
+ * progress and a recap back.
  *
  * Auth: OAuth access tokens, or a personal API key from Settings.
  * The key signs in through the database's `agent` access method, which hands
@@ -101,8 +100,8 @@ const structured = <T extends Record<string, unknown>>(value: T) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value) }],
 });
 
-const LANG = z.string().regex(/^[a-z]{2}$/).describe('ISO 639-1 code the tutor speaks in calls, e.g. "en", "de".');
-const MODE = z.enum(STUDY_MODES as [CallMode, ...CallMode[]])
+const LANG = z.string().regex(/^[a-z]{2}$/).describe('ISO 639-1 code the tutor speaks in study sessions, e.g. "en", "de".');
+const MODE = z.enum(STUDY_MODES as [StudyMode, ...StudyMode[]])
   .describe('explain: walk through the lecture section by section. quiz: questions on reached sections. qa: the student asks.');
 
 // ChatGPT reads these to decide when to ask the student first: in voice it
@@ -191,7 +190,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
         title: z.string().min(1),
         description: z.string().optional(),
         language: LANG.optional(),
-        tutor_notes: z.string().optional().describe('Standing instructions for the voice tutor in this course.'),
+        tutor_notes: z.string().optional().describe('Standing instructions for the tutor in this course.'),
       }),
     },
     ({ title, description, language, tutor_notes }) =>
@@ -519,7 +518,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
     {
       title: 'Study overview',
       description:
-        "Start here to study. Without course_id: every course with lecture progress and the latest sessions (voice calls with Bolo and logged sessions), to pick what to study. With course_id: each lecture's place (sections reached of total, the next section), recent session recaps with what to review, and suggestions.",
+        "Start here to study. Without course_id: every course with lecture progress and the latest logged study sessions, to pick what to study. With course_id: each lecture's place (sections reached of total, the next section), recent session recaps with what to review, and suggestions.",
       inputSchema: z.object({ course_id: z.string().optional().describe('A course id from this tool or list_courses.') }),
       annotations: READ,
       _meta: meta('Checking your progress…', 'Progress ready'),
@@ -532,7 +531,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
     {
       title: 'Prepare a study session',
       description:
-        'Call before tutoring. Returns how to tutor in the chosen mode (spoken, short turns), the course language and the student\'s instructions, and the material to use: for explain, the next section of the lecture (default: the one in progress); for quiz and qa, sections the student has reached. Also the last session\'s review points and, when recorded, what the student understood or struggled with.',
+        'Call before tutoring. Returns how to tutor in the chosen mode (spoken, short turns), the course language and the student\'s instructions, and the material to use: for explain, the next section of the lecture (default: the one in progress); for quiz and qa, sections the student has reached. Also the last session\'s review points, the key concepts of the reached sections from the course knowledge graph and, when recorded, what the student understood or struggled with.',
       inputSchema: z.object({
         course_id: z.string(),
         material_id: z.string().optional().describe('The lecture. Omit for the whole course (explain then picks the lecture in progress).'),

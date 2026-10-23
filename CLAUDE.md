@@ -40,5 +40,6 @@ write the API must read, `await whenSynced(db)` first.
   are dropped (NONE), never sent as NULL.
 - Never share a pending promise across requests (a Worker may not await I/O
   another request started): per-isolate caches hold values or flags only.
-- Claude calls use `FALLBACK` from `src/claude.ts` (server-side refusal
-  fallback) and check `stop_reason === 'refusal'`.
+- The API calls no language model. Studying runs in ChatGPT through the MCP
+  server (`src/mcp.ts`, `src/study.ts`); PDFs become Markdown from their text
+  layer (`src/pdf.ts`).

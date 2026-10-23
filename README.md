@@ -25,11 +25,11 @@
 ## Meet Bolo
 
 Turn your course material into a conversation. Upload your lecture slides or
-notes, start a voice call in your browser, and work through what you are
-learning with Bolo. Ask the question you have been stuck on, try explaining
-an idea out loud, or let Bolo quiz you.
+notes, and TalkToBolo builds a knowledge graph for each course. Then study it
+by voice in ChatGPT: ask the question you have been stuck on, try explaining
+an idea out loud, or get quizzed on what you have covered.
 
-No download needed. Bring your material, a microphone, and a little curiosity.
+Bring your material, ChatGPT, and a little curiosity.
 
 | Explain it | Quiz me | I ask |
 | --- | --- | --- |
@@ -38,26 +38,26 @@ No download needed. Bring your material, a microphone, and a little curiosity.
 ## From notes to understanding
 
 1. **Bring what you are learning.** Add PDF slides, Markdown, or text notes to a course.
-2. **Talk it through.** Pick a study mode and start a live voice conversation. Interrupt, ask back, and take it at your own pace.
-3. **Keep the conversation going.** Revisit the transcript and recap, then choose what to review next.
+2. **Talk it through in ChatGPT.** Connect TalkToBolo to ChatGPT once, start Voice and ask for your course. Pick a study mode and take it at your own pace.
+3. **Keep the conversation going.** ChatGPT saves the session and its recap to TalkToBolo and moves your place in the lecture forward, so the next session picks up there.
 
 ### Built around your course
 
-- **Course context.** Bolo uses your lecture material and searches across the course when more context is needed.
-- **Learning over time.** Set your place in each lecture. Bolo separates reached material from demonstrated understanding and uses SurrealDB Agent Memory for course concepts and student evidence when configured.
+- **Course context.** ChatGPT studies from your lecture material and searches across the course when more context is needed.
+- **A knowledge graph per course.** As material is processed, SurrealDB Agent Memory builds the course's knowledge graph section by section. ChatGPT draws on it up to your place in each lecture.
+- **Learning over time.** Set your place in each lecture. Reached material counts as seen, never as mastered.
 - **Your PDFs, kept as they are.** The original PDF stays in the app to read page by page, and its text and pictures become searchable for the tutor. Markdown and text notes are imported as they are.
-- **Sources you can check.** The tutor cites the lecture pages it teaches from. Transcripts, recaps, course search and the MCP tools link straight to the page.
-- **A voice conversation.** Speech, turn-taking, and interruptions run over WebRTC.
-- **A record of each session.** Calls include transcripts and study recaps you can return to.
-- **Study on the go with ChatGPT voice.** Connect ChatGPT (or Claude) to your account and it studies with you from your own courses: it picks up your lecture progress and past calls, quizzes you on what you have covered, and saves the session and your progress back to TalkToBolo.
-- **AI access.** The same MCP server lets your assistant manage courses, add material, and search your notes, over OAuth or with a personal API key.
+- **Sources you can check.** Recaps, course search and the MCP tools link straight to the lecture page.
+- **A record of each session.** Sessions saved from ChatGPT keep their recap, so you can return to them.
+- **Study on the go with ChatGPT voice.** Connect ChatGPT to your account and it studies with you from your own courses: it picks up your lecture progress and past sessions, quizzes you on what you have covered, and saves the session and your progress back to TalkToBolo.
+- **Course management from ChatGPT.** The same MCP server lets ChatGPT manage courses, add material, and search your notes, over OAuth.
 
 ## Getting started
 
 Use **Node.js 22.22.0 or newer**, **pnpm 10.20.0**, and **Docker** for the local stack.
-You will also need Anthropic and ElevenLabs API keys, plus a configured Cloudflare
-account for document processing and embeddings. See the
-[setup guide](docs/setup.md#accounts-you-need) for account and voice-agent setup.
+You will also need a configured Cloudflare account for document processing and
+embeddings, and a SurrealDB Agent Memory Context for the course knowledge
+graph. See the [setup guide](docs/setup.md#accounts-you-need) for account setup.
 
 ```bash
 git clone https://github.com/mono424/talk-to-bolo.git
@@ -99,11 +99,10 @@ to override it.
 | `pnpm type-check` | Check types across the workspace |
 | `pnpm --filter @studycall/web build` | Build the web app |
 | `pnpm build:landing` | Build the static landing page |
-| `pnpm setup:voice` | Create or update the ElevenLabs voice agent with your configured credentials |
 
-Voice calls need ElevenLabs to reach the API Worker. The
-[voice setup instructions](docs/setup.md#local-development) cover the local tunnel
-and shared secret.
+ChatGPT reaches the MCP server over HTTPS only. The
+[local development guide](docs/setup.md#local-development) covers the tunnel for
+trying the local stack from ChatGPT.
 
 ## Under the hood
 
@@ -111,8 +110,8 @@ and shared secret.
 | --- | --- |
 | Web app | SolidJS, TypeScript, Vite, Tailwind CSS |
 | Landing page | Astro |
-| Voice | ElevenLabs Agents over WebRTC |
-| Tutor and PDF conversion | Claude through the API Worker |
+| Tutor and voice | ChatGPT, through the MCP server |
+| Course knowledge graph | SurrealDB Agent Memory |
 | API and document processing | Hono, Cloudflare Workers, Workflows, Workers AI |
 | Data and search | SurrealDB with vector and full-text search |
 | Live sync | sp00ky with a local SQLite store in the browser |
@@ -123,9 +122,9 @@ and shared secret.
 | --- | --- |
 | [`apps/web`](apps/web) | The study app |
 | [`apps/landing`](apps/landing) | The marketing site |
-| [`apps/api`](apps/api) | Voice calls, tutoring, document ingestion, search, and MCP |
+| [`apps/api`](apps/api) | Document ingestion, search, and the MCP server for ChatGPT |
 | [`schema`](schema) | Database schema and migrations |
-| [`scripts`](scripts) | Voice-agent setup |
+| [`scripts`](scripts) | Maintenance scripts |
 | [`assets/brand`](assets/brand) | Canonical Bolo logo assets |
 | [`docs/brand`](docs/brand) | Logo construction grid, geometry, and design board |
 

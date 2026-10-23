@@ -6,7 +6,7 @@
 #   - SurrealDB is the shared free database (namespace `talktobolo`), reached
 #     by all three. For your own SurrealDB Cloud instance instead, use
 #     `hosting: external` with `endpoint`, `username` and `password`.
-#   - the API (apps/api: voice calls, PDF processing, search, MCP) is a sp00ky
+#   - the API (apps/api: PDF processing, search, MCP for ChatGPT) is a sp00ky
 #     Worker backend: `spky deploy` bundles it and the sync node runs it as a
 #     Dynamic Worker. See docs/setup.md.
 mode: singlenode
@@ -66,11 +66,11 @@ apps:
       type: outbox
       table: job
       schema: ./schema/src/outbox/api.surql
-      # A call recap takes Claude a while; indexing and progress jobs should
-      # not queue behind it.
+      # Indexing and progress jobs of different materials run side by side.
       concurrency: 4
     deploy:
-      # Job requests time out after 10 s by default; a call recap takes longer.
+      # Job requests time out after 10 s by default; leave room for a cold
+      # Worker applying its server schema first.
       timeout: 60
     auth:
       type: token
@@ -95,8 +95,6 @@ apps:
       # Routes served publicly on talktobolo.stg.spky.cloud. Everything else,
       # the job paths included, is reachable only through jobs.
       expose:
-        # Starting a call: the browser needs the voice token back at once.
-        - /api/calls
         # Course search: results shown as the student types.
         - /api/courses/*
         # PDF upload (the file is the request body) and the viewer's download.
@@ -108,27 +106,18 @@ apps:
         - /.well-known/oauth*
         # The MCP server AI clients call.
         - /mcp
-        # ElevenLabs' Custom LLM endpoint; replies stream.
-        - /llm/*
         # Images inside lectures: <img> cannot send the session token.
         - /material-assets/*
     env:
-      - vault:
-          - ANTHROPIC_API_KEY
-          - ELEVENLABS_API_KEY
-          - ELEVENLABS_AGENT_ID
-          - LLM_SHARED_SECRET
-          # Agent Memory (the course knowledge graph) is off until the vault's
-          # AGENT_MEMORY_URL is the full Context URL, ending /api/v1/<context
-          # id>: it holds only the host, and with it set every ingestion fails.
-          # Then list AGENT_MEMORY_URL and AGENT_MEMORY_API_KEY here again.
+      # Agent Memory (the course knowledge graph) is off until the vault's
+      # AGENT_MEMORY_URL is the full Context URL, ending /api/v1/<context id>:
+      # it holds only the host, and with it set every ingestion fails. Then add
+      # `- vault: [AGENT_MEMORY_URL, AGENT_MEMORY_API_KEY]` here again.
       # The database is not configured here: sp00ky sets SPKY_DB_URL,
       # SPKY_DB_NS and SPKY_DB_NAME on the Worker backend, and on the shared
       # free database its namespace login (SPKY_DB_USER, SPKY_DB_PASS,
       # SPKY_DB_LEVEL=namespace).
       - APP_ORIGIN: https://talktobolo.stg.spky.cloud
         API_ORIGIN: https://talktobolo.stg.spky.cloud
-        CLAUDE_MODEL: claude-opus-5-5
-        CLAUDE_PDF_MODEL: claude-opus-5-5
         EMBEDDING_MODEL: "@cf/qwen/qwen3-embedding-0.6b"
         JOB_TOKEN: *jobToken

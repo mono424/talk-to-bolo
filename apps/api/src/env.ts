@@ -32,18 +32,14 @@ export interface Env {
   SURREAL_AUTH_NS?: string;
   SURREAL_AUTH_DB?: string;
 
-  ANTHROPIC_API_KEY: string;
-  CLAUDE_MODEL: string;
-  CLAUDE_PDF_MODEL: string;
   EMBEDDING_MODEL: string;
 
-  /** SurrealDB Agent Memory Context API base, including /api/v1/{context_id}. */
+  /**
+   * SurrealDB Agent Memory Context API base, including /api/v1/{context_id}:
+   * the course knowledge graph. Unset: no graph is built.
+   */
   AGENT_MEMORY_URL?: string;
   AGENT_MEMORY_API_KEY?: string;
-
-  ELEVENLABS_API_KEY: string;
-  ELEVENLABS_AGENT_ID: string;
-  LLM_SHARED_SECRET: string;
 
   /** sp00ky's job runner presents this (sp00ky.yml `apps.api.auth.token`) on /jobs/*. */
   JOB_TOKEN?: string;

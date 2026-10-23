@@ -5,13 +5,13 @@ import { dbConfig } from './db';
 import { AuthProvider, useAuth } from './lib/auth';
 import { AuthScreen } from './components/AuthScreen';
 import { HeaderSlotProvider } from './components/HeaderSlot';
-import { RecentCalls, Sidebar } from './components/Sidebar';
+import { RecentSessions, Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import Home from './routes/Home';
 import CoursePage from './routes/Course';
 import MaterialPage from './routes/Material';
-import CallPage from './routes/Call';
-import CallsPage from './routes/Calls';
+import SessionPage from './routes/Session';
+import SessionsPage from './routes/Sessions';
 import SettingsPage from './routes/Settings';
 import ConnectPage from './routes/Connect';
 
@@ -45,7 +45,7 @@ function Layout(props: RouteSectionProps) {
             <div class="relative flex min-h-0 flex-1">
               <Sidebar open={menuOpen()} onClose={() => setMenuOpen(false)} />
               <main ref={main} class="scroll-quiet min-w-0 flex-1 overflow-y-auto overscroll-contain">{props.children}</main>
-              <RecentCalls />
+              <RecentSessions />
             </div>
           </HeaderSlotProvider>
         </div>
@@ -81,10 +81,9 @@ export default function App() {
           <Route path="/" component={Home} />
           <Route path="/courses/:courseKey" component={perParam('courseKey', CoursePage)} />
           <Route path="/courses/:courseKey/materials/:materialKey" component={perParam('materialKey', MaterialPage)} />
-          <Route path="/courses/:courseKey/call" component={CallPage} />
-          <Route path="/calls" component={CallsPage} />
-          {/* A live call keeps its page: it is on the course route above, never remounted. */}
-          <Route path="/calls/:callKey" component={perParam('callKey', CallPage)} />
+          {/* Study sessions live in the `call` table; links from ChatGPT use these paths. */}
+          <Route path="/calls" component={SessionsPage} />
+          <Route path="/calls/:callKey" component={perParam('callKey', SessionPage)} />
           <Route path="/settings" component={SettingsPage} />
           <Route path="/connect" component={ConnectPage} />
         </Router>

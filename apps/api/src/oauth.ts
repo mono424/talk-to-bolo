@@ -11,7 +11,7 @@ const REQUEST_SECONDS = 10 * 60;
 const CODE_SECONDS = 5 * 60;
 const MAX_BODY = 16_384;
 // Client ID Metadata Documents (CIMD) are small JSON files on the client's own
-// site. ChatGPT and Claude identify themselves with one instead of registering.
+// site. ChatGPT identifies itself with one instead of registering.
 const MAX_CLIENT_METADATA = 8192;
 const CLIENT_METADATA_TIMEOUT_MS = 10_000;
 // A document read this recently is used as stored. Older ones are read again,

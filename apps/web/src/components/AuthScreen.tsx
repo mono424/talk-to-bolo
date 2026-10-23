@@ -1,5 +1,5 @@
 import { createSignal, Show } from 'solid-js';
-import { PhoneCall } from 'lucide-solid';
+import { AudioLines } from 'lucide-solid';
 import { useAuth } from '../lib/auth';
 import { Logo } from './TopBar';
 import { Button, Card, Dot, Field, inputClass, Segmented } from './ui';
@@ -33,16 +33,16 @@ export function AuthScreen() {
       <div class="grid w-full min-w-0 max-w-4xl items-center gap-10 md:grid-cols-[1fr_minmax(0,24rem)]">
         <div class="hidden md:block">
           <Logo class="h-10 w-12" />
-          <h1 class="mt-6 text-[40px] font-semibold leading-[1.08] tracking-tight">Call your tutor about today’s lecture.</h1>
+          <h1 class="mt-6 text-[40px] font-semibold leading-[1.08] tracking-tight">Talk through today’s lecture in ChatGPT.</h1>
           <p class="mt-4 max-w-md text-[17px] leading-relaxed text-muted">
-            Add slides and notes to a course, then talk it through. The tutor explains the material, answers your questions and quizzes
-            you, out loud.
+            Add slides and notes to a course. Then ChatGPT voice explains the material, answers your questions and quizzes you from it,
+            out loud.
           </p>
 
-          {/* What a call looks like, in the app's own card language. */}
+          {/* What a study session looks like, in the app's own card language. */}
           <Card class="mt-8 max-w-md p-5">
             <div class="flex items-start gap-3">
-              <PhoneCall size={20} stroke-width={1.75} class="mt-0.5 text-muted" />
+              <AudioLines size={20} stroke-width={1.75} class="mt-0.5 text-muted" />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-3">
                   <h3 class="flex-1 text-[16px] font-semibold">Quiz: Eigenvalues</h3>
@@ -72,7 +72,7 @@ export function AuthScreen() {
           />
           <form onSubmit={submit} class="mt-6 space-y-4">
             <Show when={mode() === 'signup'}>
-              <Field label="Your name" hint="The tutor greets you with it.">
+              <Field label="Your name" hint="ChatGPT can greet you with it.">
                 <input class={inputClass} value={name()} onInput={(e) => setName(e.currentTarget.value)} required autocomplete="given-name" />
               </Field>
             </Show>

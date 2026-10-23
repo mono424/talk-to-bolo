@@ -2,7 +2,7 @@
   "name": "studycall",
   "version": "0.1.0",
   "private": true,
-  "description": "Study by voice call: an AI tutor (ElevenLabs + Claude) over your course material in SurrealDB, synced with sp00ky.",
+  "description": "Upload course material, build each course's knowledge graph, and study it by voice in ChatGPT through an MCP server. SurrealDB, synced with sp00ky.",
   "scripts": {
     "dev": "spky dev --path dev",
     "dev:web": "pnpm --filter @studycall/web dev",
@@ -11,7 +11,6 @@
     "dev:api": "pnpm --filter @studycall/api dev",
     "generate": "spky generate",
     "type-check": "pnpm -r type-check",
-    "setup:voice": "pnpm --filter @studycall/scripts setup:voice",
     "backfill:pages": "pnpm --filter @studycall/scripts backfill:pages",
     "deploy:api": "pnpm --filter @studycall/api deploy",
     "deploy": "spky deploy"

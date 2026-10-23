@@ -9,8 +9,6 @@ import {
   memoryConfigured,
   queryCourseMemory,
   recallStudentMemory,
-  rememberStudentExchange,
-  type ConfirmedStudentExchange,
   type MemoryMaterial,
 } from '../src/memory.ts';
 
@@ -23,11 +21,6 @@ const material: MemoryMaterial = {
 };
 const courseScope = courseMemoryScope(material.owner, material.course, material.id, material.index_rev);
 const chunk = { heading: 'Forces', text: 'Force equals mass times acceleration.' };
-const exchange: ConfirmedStudentExchange = {
-  callId: 'call:c1', studentSeq: 5, tutorText: 'Why does mass matter?',
-  studentText: 'Force increases with mass for fixed acceleration.',
-  observedAt: '2026-10-20T11:00:00Z', sectionPosition: 1,
-};
 
 interface CapturedRequest { url: string; init: RequestInit; headers: Headers }
 type Reply = { body: unknown; status?: number };
@@ -62,7 +55,6 @@ test('unconfigured memory and unreached boundaries perform no requests', async (
   assert.deepEqual(await queryCourseMemory(env, material, -1, 'force'), []);
   assert.deepEqual(await queryCourseMemory({} as Env, material, 2, 'force'), []);
   assert.deepEqual(await recallStudentMemory(env, material, 'force'), []);
-  await rememberStudentExchange({} as Env, material, exchange);
   assert.equal(requests.length, 0);
 });
 
@@ -143,27 +135,6 @@ test('student recall uses real known-time and exact reached-section scopes when 
   assert.equal(request.asOf, '2026-10-20T12:00:00Z');
   assert.deepEqual(request.lens, [0, 1].map((position) => [courseScope.replace(/\/course$/, `/student/section/p${position}`)]));
   assert.ok(request.lens.every(([path]: string[]) => !path.endsWith('/student') && !path.includes('*')));
-});
-
-test('confirmed exchange keeps original observation time, evidence section and retry idempotency', async (t) => {
-  const studentScope = courseScope.replace(/\/course$/, '/student/section/p1');
-  const requests = mockFetch(t, [scopeReply(studentScope), { body: {} }, scopeReply(studentScope), { body: {} }]);
-  await rememberStudentExchange(env, material, exchange);
-  await rememberStudentExchange(env, material, exchange);
-  assert.equal(requests[1].url, 'https://memory.example/api/v1/talktobolo/facts');
-  assert.equal(requests[1].headers.get('Idempotency-Key'), requests[3].headers.get('Idempotency-Key'));
-  assert.equal(requests[1].init.body, requests[3].init.body);
-  const sent = body(requests[1]);
-  assert.equal(sent.infer, 'full');
-  assert.equal(sent.observed_at, exchange.observedAt);
-  assert.equal(sent.observedAt, undefined, 'Facts writes require snake_case.');
-  assert.deepEqual(sent.scopes, [[studentScope]]);
-  assert.match(sent.text, /exposure only/);
-  assert.match(sent.text, /Mastery requires evidence from the student response/);
-  assert.match(sent.text, /Force increases with mass/);
-  await rememberStudentExchange(env, material, { ...exchange, sectionPosition: -1 });
-  await rememberStudentExchange(env, material, { ...exchange, studentText: '' });
-  assert.equal(requests.length, 4, 'Unconfirmed or unpositioned evidence must not be written.');
 });
 
 test('document polling and errors do not silently accept missing scopes or failed requests', async (t) => {

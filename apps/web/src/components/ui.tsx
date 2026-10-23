@@ -119,7 +119,7 @@ export const materialTone = (status: string): Tone =>
 export function StatusText(props: { status: string; detail?: string | null }) {
   const label = () =>
     ({
-      ready: 'Ready for calls',
+      ready: 'Ready',
       failed: 'Processing failed',
       processing: props.detail || 'Processing',
       pending: 'Waiting to process',

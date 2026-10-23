@@ -49,26 +49,19 @@ export const qMaterials = (db: Db, courseId: string) =>
 export const qMaterialsPage = (db: Db, courseId: string, page: number, size: number) =>
   db.query('material').where({ course: courseId }).orderBy('created_at', 'asc').orderBy('id', 'asc').limit(size).offset(page * size).build();
 
-/** A course's material that is ready for calls: the call card's topics. */
-export const qReadyMaterials = (db: Db, courseId: string) =>
-  db.query('material').where({ course: courseId, status: 'ready' }).orderBy('created_at', 'asc').build();
-
 export const qMaterial = (db: Db, materialId: string) => db.query('material').where({ id: materialId }).build();
 
 /** A material's latest jobs on one outbox path (jobs.ts), newest first. */
 export const qMaterialJobs = (db: Db, materialId: string, path: string) =>
   db.query('job').where({ assigned_to: materialId, path }).orderBy('created_at', 'desc').limit(5).build();
 
-/** A course's calls with their lecture: the sidebar's history on a call. */
-export const qCallHistory = (db: Db, courseId: string) =>
-  db.query('call').where({ course: courseId }).related('material').orderBy('started_at', 'desc').limit(30).build();
-
+/** One study session (a `call` row): saved by ChatGPT, or an earlier voice call. */
 export const qCall = (db: Db, callId: string) => db.query('call').where({ id: callId }).build();
 
 export const qTurns = (db: Db, callId: string) =>
   db.query('call_turn').where({ call: callId }).orderBy('seq', 'asc').build();
 
-/** The lecture passages the tutor cited in a call, for the transcript's links. */
+/** The lecture passages the tutor cited in an earlier voice call, for the transcript's links. */
 export const qTurnSources = (db: Db, callId: string) =>
   db.query('turn_source').where({ call: callId }).orderBy('seq', 'asc').orderBy('at', 'asc').build();
 
@@ -84,6 +77,6 @@ export const qAttention = (db: Db, userId: string) =>
     .limit(10)
     .build();
 
-/** The latest calls across all courses, with their course and lecture. */
+/** The latest study sessions across all courses, with their course and lecture. */
 export const qRecentCalls = (db: Db, userId: string, limit = 8) =>
   db.query('call').where({ owner: userId }).related('course').related('material').orderBy('started_at', 'desc').limit(limit).build();

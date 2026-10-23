@@ -10,7 +10,6 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@elevenlabs/client": "^1.28.0",
     "@solidjs/router": "^1.0.0",
     "@spooky-sync/client-solid": "0.0.1-canary.333",
     "@spooky-sync/core": "0.0.1-canary.333",

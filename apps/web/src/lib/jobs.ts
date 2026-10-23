@@ -6,7 +6,7 @@ import { newId } from './ids';
  * `job` outbox. sp00ky's job runner calls the API with the payload, retries
  * failures and records the outcome on the row, which syncs back like any
  * other. The outbox permission only accepts a job about the student's own
- * material or call, with that record as both `assigned_to` and `payload.id`.
+ * material, with that record as both `assigned_to` and `payload.id`.
  * Not `db.run`: it stores the payload as a JSON string the permission cannot
  * read.
  */
@@ -39,7 +39,3 @@ export const reindexMaterial = (db: Db, materialId: string) => enqueue(db, '/job
 /** Marks the last reached lecture section without claiming it is understood. */
 export const saveLectureProgress = (db: Db, materialId: string, input: { through: number; rev: number }) =>
   enqueue(db, PROGRESS_JOB, materialId, input, { maxRetries: 1 });
-
-/** Ends a call; the API writes its recap onto the call row. */
-export const endCall = (db: Db, callId: string, conversationId?: string | null) =>
-  enqueue(db, '/jobs/calls/end', callId, conversationId ? { conversationId } : {});

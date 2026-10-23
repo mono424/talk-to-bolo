@@ -3,7 +3,7 @@ import { Portal } from 'solid-js/web';
 
 /**
  * Page controls outside the page: in the app's top bar next to the account
- * menu, and at the top of the recent calls column. The layout renders the
+ * menu, and at the top of the recent sessions column. The layout renders the
  * slots; a page fills them with <HeaderActions> and <SideActions>, which
  * disappear with the page.
  */
@@ -45,7 +45,7 @@ export function HeaderActions(props: ParentProps) {
   return <Fill slot={useContext(SlotContext)?.header}>{props.children}</Fill>;
 }
 
-/** Top of the recent calls column, shown on wide windows only. */
+/** Top of the recent sessions column, shown on wide windows only. */
 export function SideSlot(props: { class?: string }) {
   return <Outlet slot={useContext(SlotContext)?.side} class={props.class} />;
 }

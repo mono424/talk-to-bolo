@@ -1,7 +1,7 @@
-import { useNavigate, useParams, useSearchParams } from '@solidjs/router';
+import { useParams, useSearchParams } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, Show, type JSX } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { Pencil, PhoneCall } from 'lucide-solid';
+import { Pencil } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { PROGRESS_JOB, reindexMaterial, saveLectureProgress } from '../lib/jobs';
 import { chunkMarkdown, chunkPages } from '../../../../shared/lecture';
@@ -15,7 +15,6 @@ import { PdfViewer } from '../components/PdfViewer';
 
 export default function MaterialPage() {
   const params = useParams();
-  const navigate = useNavigate();
   const [search] = useSearchParams();
   const db = useDb<typeof schema>();
   const material = firstRow(useQuery(() => qMaterial(db, `material:${params.materialKey}`)));
@@ -149,7 +148,7 @@ export default function MaterialPage() {
               </div>
             </div>
           </HeaderActions>
-          {/* Wide windows keep the reading place in the recent calls column; narrower ones under the title. */}
+          {/* Wide windows keep the reading place in the recent sessions column; narrower ones under the title. */}
           <Show when={!editing()}>
             <SideActions>{place()}</SideActions>
           </Show>
@@ -157,7 +156,7 @@ export default function MaterialPage() {
           <Show
             when={editing()}
             fallback={
-              <article class={`mx-auto w-full min-w-0 px-4 pb-28 pt-6 sm:px-8 sm:pt-5 ${isPdf() ? 'max-w-5xl' : 'max-w-3xl'}`}>
+              <article class={`mx-auto w-full min-w-0 px-4 pb-12 pt-6 sm:px-8 sm:pt-5 ${isPdf() ? 'max-w-5xl' : 'max-w-3xl'}`}>
                 <h1 class="break-words text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]">{m().title}</h1>
                 <Show when={meta()}>
                   <p class="mt-1.5 break-words text-[14px] text-muted">{meta()}</p>
@@ -216,20 +215,6 @@ export default function MaterialPage() {
                 </p>
               </Show>
             </div>
-          </Show>
-
-          <Show when={!editing()}>
-            {/* Centred on the page: beside the sidebar until the recents column balances it. */}
-            <Button
-              size="lg"
-              class="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 z-10 -translate-x-1/2 shadow-frame md:bottom-8 md:left-[calc(50%+144px)] xl:left-1/2"
-              disabled={m().status !== 'ready'}
-              title={m().status === 'ready' ? 'Call the tutor to explain this lecture' : 'Available once processing has finished'}
-              onClick={() => navigate(`/courses/${params.courseKey}/call?mode=explain&material=${params.materialKey}`)}
-            >
-              <PhoneCall size={18} stroke-width={1.75} />
-              Talk to Bolo
-            </Button>
           </Show>
         </div>
       )}

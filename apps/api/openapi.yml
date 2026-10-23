@@ -5,7 +5,7 @@ info:
   description: >-
     Jobs of the API backend (sp00ky.yml `apps.api`). The web app writes a row
     to the `job` outbox (schema/src/outbox/api.surql) with `path` set to one of
-    these paths, `assigned_to` set to the material or call, and the request
+    these paths, `assigned_to` set to the material, and the request
     body below as `payload`. sp00ky's job runner POSTs the payload here with
     the backend's token. Every payload's `id` is the row's `assigned_to`: the
     outbox permission refuses anything else. These paths are not public.
@@ -76,32 +76,6 @@ paths:
           description: Saved.
         '400':
           description: The lecture changed or is not ready, or the section is out of range.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /jobs/calls/end:
-    post:
-      summary: End a call and write its recap.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                id:
-                  type: string
-                  example: call:k9c1e...
-                conversationId:
-                  type: string
-                  description: The ElevenLabs conversation id, when the call connected.
-              required:
-                - id
-      responses:
-        '200':
-          description: The call is ended; the recap, if any, is on the call row.
-        '404':
-          description: The call no longer exists.
           content:
             application/json:
               schema:

@@ -33,8 +33,6 @@
     // its Worker backend.
     "SPKY_DB_NS": "main",
     "SPKY_DB_NAME": "studycall",
-    "CLAUDE_MODEL": "claude-opus-5-5",
-    "CLAUDE_PDF_MODEL": "claude-opus-5-5",
     "EMBEDDING_MODEL": "@cf/qwen/qwen3-embedding-0.6b",
     // The local sync node's job runner sends it on /jobs/* (dev/sp00ky.yml
     // `apps.api.auth.token`). Not a secret: /jobs/* is never public.
@@ -48,10 +46,7 @@
   //   SPKY_DB_LEVEL        `namespace` or `database` for a non-root user
   //   (SURREAL_URL, SURREAL_NS, SURREAL_DB, SURREAL_USER, SURREAL_PASS and
   //   SURREAL_AUTH_NS still work for whatever SPKY_DB_* leaves unset.)
-  //   ANTHROPIC_API_KEY
-  //   ELEVENLABS_API_KEY
-  //   ELEVENLABS_AGENT_ID  printed by `pnpm setup:voice`
-  //   LLM_SHARED_SECRET    the key the ElevenLabs agent presents to /llm/v1
   //   AGENT_MEMORY_URL     Context data-plane base, ending /api/v1/{context_id}
+  //                        (the course knowledge graph)
   //   AGENT_MEMORY_API_KEY server key with scoped memory read/write and scope:create
 }

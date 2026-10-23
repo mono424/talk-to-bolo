@@ -1,10 +1,7 @@
-import { PDFDocument } from 'pdf-lib';
 import { encode as encodePng } from 'fast-png';
 import { extractImages, extractText, getDocumentProxy } from 'unpdf';
-import type Anthropic from '@anthropic-ai/sdk';
 import type { Env } from './env';
-import { claude, FALLBACK, textOf } from './claude';
-import { Surreal, UserError, fromBase64, toBase64 } from './surreal';
+import { Surreal, UserError, fromBase64 } from './surreal';
 
 /** How many stored parts the material's PDF has (0: no PDF). */
 export async function pdfPartCount(env: Env, materialId: string): Promise<number> {
@@ -75,8 +72,8 @@ export interface ExtractedImage {
 
 /**
  * Raster images embedded in pages [from, to], as PNG. Icons and bullets are
- * skipped, large images scaled down. Vector drawings are not images to PDF.js;
- * the converter describes those in words instead.
+ * skipped, large images scaled down. Vector drawings are not images to PDF.js
+ * and stay in the original PDF only.
  */
 export async function extractPageImages(bytes: Uint8Array, from: number, to: number): Promise<ExtractedImage[]> {
   // Images above ~8 megapixels (full-page scans) are not decoded at all: at
@@ -149,84 +146,12 @@ export interface PageImageRef {
   height: number | null;
 }
 
-const CONVERT_SYSTEM = `You convert lecture material (PDF pages: slides, scripts, notes, papers) into faithful Markdown for a study app. A student will read it, and a voice tutor will teach from it.
-
-Rules:
-- Begin every page with a line \`<!-- page N -->\`, using the page numbers you are given.
-- Keep all of the content in the original language. Do not summarize, shorten, translate or add commentary.
-- Structure: slide titles and section titles become \`##\` headings (\`###\` below them). Drop running headers, footers, page numbers, slide numbers and logos that repeat on every page.
-- Lists, tables (GitHub Markdown) and code blocks as in the source. Merge text that the layout split across lines or columns.
-- Math in LaTeX: inline \`$...$\`, display \`$$...$$\`.
-- Pictures: the raster images extracted from these pages are listed with ids. Put each one where it belongs as \`![short caption](asset:ID)\`, with a caption that says what it shows. Diagrams, charts and drawings that are not in the list (vector graphics) get a one to three sentence description in italics that starts with "*Figure:*".
-- Output only the Markdown.`;
-
 /**
- * Pages [from, to] as Markdown, written by Claude from the page text and page
- * images. Falls back to the plain text layer if the model call fails.
+ * Pages [from, to] as Markdown, from the PDF's text layer: a `<!-- page N -->`
+ * line, the page's text, then the images extracted from that page. The
+ * original PDF stays in the viewer for its layout.
  */
-export async function convertPages(
-  env: Env,
-  bytes: Uint8Array,
-  from: number,
-  to: number,
-  total: number,
-  title: string,
-  images: PageImageRef[],
-): Promise<string> {
-  const slice = await PDFDocument.create();
-  const src = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
-  const indices = Array.from({ length: to - from + 1 }, (_, i) => from - 1 + i);
-  for (const p of await slice.copyPages(src, indices)) slice.addPage(p);
-  const sliceBytes = await slice.save();
-
-  const imageList = indices
-    .map((i) => i + 1)
-    .map((page) => {
-      const here = images.filter((im) => im.page === page);
-      if (!here.length) return null;
-      const list = here.map((im) => `asset:${im.id}${im.width ? ` (${im.width}x${im.height})` : ''}`).join(', ');
-      return `Page ${page}: ${list}`;
-    })
-    .filter(Boolean)
-    .join('\n');
-
-  const prompt = `These are pages ${from} to ${to} of "${title}" (${total} pages in total). The first page of this excerpt is page ${from}.
-
-Images extracted from these pages, in the order they appear on each page:
-${imageList || '(none)'}`;
-
-  try {
-    const stream = claude(env).beta.messages.stream({
-      model: env.CLAUDE_PDF_MODEL,
-      max_tokens: 48000,
-      ...FALLBACK,
-      output_config: { effort: 'medium' },
-      system: CONVERT_SYSTEM,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: { type: 'base64', media_type: 'application/pdf', data: toBase64(sliceBytes) },
-            } as Anthropic.Beta.BetaRequestDocumentBlock,
-            { type: 'text', text: prompt },
-          ],
-        },
-      ],
-    });
-    const msg = await stream.finalMessage();
-    if (msg.stop_reason === 'refusal') throw new Error('The model declined to convert these pages.');
-    const md = textOf(msg).trim();
-    if (!md) throw new Error('Empty conversion.');
-    return md;
-  } catch (err) {
-    console.error(`[pdf] Claude conversion of pages ${from}-${to} failed, using the text layer`, err);
-    return plainTextPages(bytes, from, to, images);
-  }
-}
-
-async function plainTextPages(bytes: Uint8Array, from: number, to: number, images: PageImageRef[]): Promise<string> {
+export async function pagesToMarkdown(bytes: Uint8Array, from: number, to: number, images: PageImageRef[]): Promise<string> {
   const pdf = await getDocumentProxy(bytes.slice());
   const { text } = await extractText(pdf, { mergePages: false });
   const parts: string[] = [];
@@ -236,22 +161,3 @@ async function plainTextPages(bytes: Uint8Array, from: number, to: number, image
   }
   return parts.join('\n\n');
 }
-
-/**
- * Makes sure every extracted image appears in the markdown: any the converter
- * did not place goes at the end of its page.
- */
-export function placeMissingImages(markdown: string, images: PageImageRef[]): string {
-  const missing = images.filter((im) => !markdown.includes(`asset:${im.id}`));
-  if (!missing.length) return markdown;
-  let out = markdown;
-  const byPage = new Map<number, PageImageRef[]>();
-  for (const im of missing) byPage.set(im.page, [...(byPage.get(im.page) ?? []), im]);
-  for (const [page, ims] of [...byPage.entries()].sort((a, b) => b[0] - a[0])) {
-    const block = ims.map((im) => `![](asset:${im.id})`).join('\n\n');
-    const next = out.indexOf(`<!-- page ${page + 1} -->`);
-    out = next >= 0 ? `${out.slice(0, next)}${block}\n\n${out.slice(next)}` : `${out}\n\n${block}`;
-  }
-  return out;
-}
-

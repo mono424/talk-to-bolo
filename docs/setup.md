@@ -2,43 +2,41 @@
 
 [Back to TalkToBolo](../README.md)
 
-This guide covers the local stack, voice agent, production deployment, and MCP
-access. Workspace packages and deployment resources use the internal
+This guide covers the local stack, production deployment, and connecting
+ChatGPT through the MCP server. Workspace packages and deployment resources use the internal
 `studycall` name.
 
 ## How it fits together
 
 ```
- Browser (SolidJS + sp00ky)                         ElevenLabs Agent
-   │  live queries / writes ──► SurrealDB ◄── SSP    │  speech <-> text
+ Browser (SolidJS + sp00ky)                         ChatGPT (web, iOS, Android)
+   │  live queries / writes ──► SurrealDB ◄── SSP    │  voice, study tools
    │                              ▲                  │
-   │  /api/* (Bearer: SurrealDB   │ system + user    │  POST /llm/v1/chat/completions
-   │   session token)             │ queries          │  (OpenAI-compatible SSE)
+   │  /api/* (Bearer: SurrealDB   │ system + user    │  /mcp (OAuth)
+   │   session token)             │ queries          │
    │  job rows ──► SSP ──► /jobs/* │                  │
    ▼                              │                  ▼
  API (apps/api, a sp00ky Worker backend) ─────────────────────────────────
-   /api/calls        start a call, ElevenLabs conversation token
-   /jobs/*           jobs from the `job` outbox: re-index, lecture progress,
-                     end a call and write its recap (apps/api/openapi.yml)
-   /llm/v1/...       tutor prompt from SurrealDB + hybrid search -> Claude stream
+   /jobs/*           jobs from the `job` outbox: re-index, lecture progress
+                     (apps/api/openapi.yml)
    /api/materials    PDF upload -> `materials` bucket (kept) -> Workflow: images
-                     (unpdf) -> Markdown (Claude) -> chunks with page numbers
+                     and text layer (unpdf) -> chunks with page numbers
                      -> embeddings (Workers AI) -> SurrealDB HNSW/BM25
+                     -> course knowledge graph (Agent Memory, when configured)
    GET /api/materials/:id/pdf  the original PDF, for the in-app viewer
    /material-assets/:id  images extracted from PDFs
-   /mcp              MCP server (Streamable HTTP), OAuth or personal API keys
-   /oauth/*          account linking for ChatGPT and Claude
+   /mcp              MCP server (Streamable HTTP) for ChatGPT
+   /oauth/*          account linking for ChatGPT
 ```
 
 | Path | What |
 | --- | --- |
-| [`schema/src/schema.surql`](../schema/src/schema.surql) | The sp00ky schema: users, courses, materials, calls, transcript, API keys, access methods. `spky generate` turns it into `apps/web/src/schema.gen.ts`. |
+| [`schema/src/schema.surql`](../schema/src/schema.surql) | The sp00ky schema: users, courses, materials, study sessions (the `call` table, with the transcripts of earlier in-app calls), connections (`api_key`), access methods. `spky generate` turns it into `apps/web/src/schema.gen.ts`. |
 | `apps/api/src/server-schema.surql` | Server-only tables (search chunks with embeddings and page numbers, extracted images, PDF parts) and their HNSW/full-text indexes. Applied by the Worker; see the comment at the top. |
 | [`schema/buckets/materials.surql`](../schema/buckets/materials.surql) | The `materials` bucket: uploaded PDFs (in parts of at most 1 MiB) and the images extracted from them. Listed under `buckets:` in both sp00ky configs. |
 | [`apps/web`](../apps/web) | SolidJS app. Every read is a named live query in `src/lib/query.ts`. |
-| [`apps/api`](../apps/api) | Cloudflare Worker (Hono): calls, LLM bridge, ingest Workflow, search, assets, MCP. On Sp00ky Cloud it is the `api` Worker backend; `openapi.yml` lists its jobs. |
+| [`apps/api`](../apps/api) | Cloudflare Worker (Hono): ingest Workflow, search, assets, MCP. On Sp00ky Cloud it is the `api` Worker backend; `openapi.yml` lists its jobs. |
 | [`schema/src/outbox/api.surql`](../schema/src/outbox/api.surql) | The `job` outbox: the web app writes a row, the sync node calls the API with its payload. |
-| `scripts/setup-voice-agent.ts` | Creates or updates the ElevenLabs agent. |
 | `sp00ky.yml` / `dev/sp00ky.yml` | Staging (free plan, shared SurrealDB, the API as a Worker backend) / local development. |
 
 ## Accounts you need
@@ -46,9 +44,8 @@ access. Workspace packages and deployment resources use the internal
 - **SurrealDB Cloud** instance running SurrealDB 3.x for production. Local development uses Docker.
 - **Sp00ky Cloud** account for deploying the sync node and web app.
 - **Cloudflare Workers Paid** account for the configured ingestion Workflow CPU limit and Workers AI embeddings.
-- **Anthropic API key** (Claude).
-- **ElevenLabs API key** with Agents access.
-- **SurrealDB Agent Memory Context and API key** for the course knowledge graph and durable student evidence. This is a separate service from the SurrealDB SQL endpoint.
+- **SurrealDB Agent Memory Context and API key** for each course's knowledge graph. This is a separate service from the SurrealDB SQL endpoint.
+- **ChatGPT** with custom MCP servers (plugins) allowed on the plan, for studying.
 
 ### Agent Memory and lecture progress
 
@@ -69,13 +66,16 @@ revision scope so old facts cannot enter current retrieval.
 
 On a lecture page, **Your place in the lecture** records the last section the
 student reached. Uploading or opening slides does not advance this boundary.
-In explain mode Bolo can teach the next section, then record it as reached
-after the student confirms it. Quiz and question modes use reached sections.
-Reaching a section establishes exposure, never mastery. Confirmed tutor/student
-exchanges are ingested as experiential evidence with their original observation
-time; generated replies alone are never evidence. Retried exchanges use stable
-receipts and idempotency keys. Each section has its own student evidence scope,
-so rewinding progress also excludes evidence about later sections.
+In ChatGPT, explain mode teaches the next section and moves the place forward
+once the student confirms it (`record_progress` or `save_study_session`). Quiz
+and question modes use reached sections. Reaching a section establishes
+exposure, never mastery.
+
+`prepare_study_session` adds the course graph's facts up to the student's
+place (`course_concepts`), and any student evidence recorded during earlier
+in-app voice calls (`student_evidence`). Each section has its own student
+evidence scope, so rewinding progress also excludes evidence about later
+sections. Sessions in ChatGPT do not write student evidence.
 
 Course graph reads use `asOf` and `include: ["facts"]`; raw passages are filtered
 by the current material revision and reached position in SQL before retrieval.
@@ -85,12 +85,12 @@ The graph is partitioned by lecture revision, so knowledge is recalled from
 relevant lectures without merging one student's evidence into course truth.
 
 With neither setting present, lecture progress and permitted passages still
-work; graph ingestion and durable student evidence are disabled. An unavailable
-configured memory service never widens passage retrieval. It fails ingestion
-with a retryable upload error and omits recalled memory during calls.
+work; no course graph is built. An unavailable configured memory service never
+widens passage retrieval. It fails ingestion with a retryable upload error and
+omits recalled memory from study sessions.
 
-Deleting local material or calls removes the local records. Agent Memory
-copies remain under their revision scopes and are no longer queried by Bolo.
+Deleting material or a course removes the local records. Agent Memory copies
+remain under their revision scopes and are no longer queried.
 For permanent erasure, use the Context's scoped erase operation as described in
 [SurrealDB's forgetting guide](https://surrealdb.com/docs/agent-memory/operations/forget).
 
@@ -118,11 +118,11 @@ deploying the API with wrangler. On sp00ky's Worker backend the platform sets
 
 ### Start the local stack
 
-Requirements: Node 22.22.0 or newer, pnpm 10.20.0, Docker, and the provider keys above. Run the commands in this guide from the repository root.
+Requirements: Node 22.22.0 or newer, pnpm 10.20.0, Docker, and for the course knowledge graph the Agent Memory settings above. Run the commands in this guide from the repository root.
 
 ```bash
 pnpm install
-cp apps/api/.dev.vars.example apps/api/.dev.vars   # fill in the keys
+cp apps/api/.dev.vars.example apps/api/.dev.vars   # fill in the database login
 pnpm dev                                            # spky dev --path dev
 ```
 
@@ -137,21 +137,14 @@ whatever `SPKY_DB_*` leaves unset. The local sync
 node runs the `job` outbox against `wrangler dev` too, with the `JOB_TOKEN` from
 `apps/api/wrangler.jsonc`.
 
-Voice calls need ElevenLabs to reach your LLM endpoint, so expose the local
-Worker and point a dev agent at it:
+ChatGPT reaches the MCP server over HTTPS only. To try the local stack from
+ChatGPT, expose the local Worker and add
+`https://YOUR-TUNNEL.trycloudflare.com/mcp` as a custom MCP server (see
+[Using the MCP server](#using-the-mcp-server)):
 
 ```bash
 cloudflared tunnel --url http://localhost:8787
 ```
-
-Use the same `LLM_SHARED_SECRET` value in the command below and in
-`apps/api/.dev.vars` so the voice agent can authenticate with the Worker.
-
-```bash
-ELEVENLABS_API_KEY=... API_URL=https://YOUR-TUNNEL.trycloudflare.com LLM_SHARED_SECRET=your-shared-secret pnpm setup:voice
-```
-
-Put the printed agent id in `.dev.vars` as `ELEVENLABS_AGENT_ID`.
 
 If `spky dev` reports port 8787 in use, a `wrangler dev` from an earlier run
 is still alive (stopping `spky dev` does not always stop it):
@@ -160,8 +153,8 @@ is still alive (stopping `spky dev` does not always stop it):
 ### Materials and the bucket
 
 A PDF upload is stored in the `materials` bucket and kept for as long as its
-material exists: the app shows the original in its viewer, and the tutor,
-course search, recaps and MCP tools cite its pages. A second upload to a
+material exists: the app shows the original in its viewer, and course search
+and the MCP tools cite its pages. A second upload to a
 material that already has its PDF is refused (409); only a failed upload can be
 replaced. Markdown and text files are imported straight into
 `material.content` and never touch the bucket.
@@ -261,15 +254,16 @@ pnpm exec spky deploy --yes
 Agent Memory is off on staging for now: the vault's `AGENT_MEMORY_URL` holds
 only the host, and with an incomplete URL every ingestion fails. To turn it on,
 set it to the Context's full URL ending in `/api/v1/<context id>` (and check
-`AGENT_MEMORY_API_KEY`), list both under `apps.api.env` again, and deploy.
+`AGENT_MEMORY_API_KEY`), add `- vault: [AGENT_MEMORY_URL, AGENT_MEMORY_API_KEY]`
+under `apps.api.env`, and deploy. Then reindex existing material to build its
+graph.
 
 Background work runs as jobs: the web app writes a row to the `job` outbox and
 the sync node POSTs its payload to the path in
 [`apps/api/openapi.yml`](../apps/api/openapi.yml) (re-indexing, lecture
-progress, ending a call and writing its recap), retrying failures. Only the
-paths under `worker.expose` are public: starting a call, search, PDF upload
-and download, the OAuth consent calls, OAuth, MCP, the voice LLM and lecture
-images. Frontend assets continue to use `/assets/`. Verify unauthenticated
+progress), retrying failures. Only the paths under `worker.expose` are public:
+search, PDF upload and download, the OAuth consent calls, OAuth, MCP and
+lecture images. Frontend assets continue to use `/assets/`. Verify unauthenticated
 `/mcp` returns an OAuth `401` challenge after deployment.
 
 ### 1. Database
@@ -294,22 +288,12 @@ there) and deploy:
 pnpm --filter @studycall/api exec wrangler secret put SPKY_DB_URL          # https://YOUR-INSTANCE.surreal.cloud
 pnpm --filter @studycall/api exec wrangler secret put SPKY_DB_USER
 pnpm --filter @studycall/api exec wrangler secret put SPKY_DB_PASS
-pnpm --filter @studycall/api exec wrangler secret put ANTHROPIC_API_KEY
-pnpm --filter @studycall/api exec wrangler secret put ELEVENLABS_API_KEY
-pnpm --filter @studycall/api exec wrangler secret put LLM_SHARED_SECRET    # openssl rand -base64 32
+pnpm --filter @studycall/api exec wrangler secret put AGENT_MEMORY_URL     # https://YOUR-CONTEXT-HOST/api/v1/YOUR-CONTEXT-ID
+pnpm --filter @studycall/api exec wrangler secret put AGENT_MEMORY_API_KEY
 pnpm --filter @studycall/api run deploy
 ```
 
-### 3. Voice agent
-
-Use the same `LLM_SHARED_SECRET` value you stored in the API Worker's secrets.
-
-```bash
-ELEVENLABS_API_KEY=... API_URL=https://talktobolo.stg.spky.cloud LLM_SHARED_SECRET=... pnpm setup:voice
-pnpm --filter @studycall/api exec wrangler secret put ELEVENLABS_AGENT_ID
-```
-
-### 4. Web app and sync node (Sp00ky Cloud, free plan on Cloudflare)
+### 3. Web app and sync node (Sp00ky Cloud, free plan on Cloudflare)
 
 The app uses its own origin for public service links. Leave `VITE_API_URL` in
 `apps/web/.env.production` empty for this deployment:
@@ -320,13 +304,11 @@ The app uses its own origin for public service links. Leave `VITE_API_URL` in
 | API | <https://talktobolo.stg.spky.cloud/api/> |
 | MCP server | <https://talktobolo.stg.spky.cloud/mcp> |
 | PDF images | `https://talktobolo.stg.spky.cloud/material-assets/:id` |
-| Voice LLM | <https://talktobolo.stg.spky.cloud/llm/v1> |
 
-The hosting layer must route `/api/*`, `/mcp`, `/material-assets/*`, `/llm/*`, and
+The hosting layer must route `/api/*`, `/mcp`, `/material-assets/*` and
 `/health` to the API Worker before the SPA fallback. A static SPA deployment
 alone returns HTML at these paths and does not provide the backend. If the
-API is hosted separately, set `VITE_API_URL` to its actual origin and use that
-origin for the voice-agent setup as well.
+API is hosted separately, set `VITE_API_URL` to its actual origin.
 
 Keep `/assets/*` on the frontend for Vite's JavaScript, styles and WebAssembly.
 The API also retains its legacy `/assets/:id` image endpoint for existing links
@@ -348,28 +330,24 @@ Worker's `APP_ORIGIN` (step 2).
 
 ## Using the MCP server
 
-Open **AI access** in the app:
+Open **ChatGPT** from the account menu in the app. **Connect ChatGPT** copies
+the server address and opens ChatGPT Plugins. Choose **Add custom MCP server**,
+paste the address, select OAuth, then create and install the plugin. ChatGPT
+does not document a prefilled install link for arbitrary custom MCP servers.
+Set it up once in a browser; the plugin then also works in the ChatGPT apps on
+iOS and Android.
 
-- **Connect Claude** opens Claude's supported install dialog with TalkToBolo's
-  name and server address already filled in.
-- **Connect ChatGPT** copies the server address and opens ChatGPT Plugins.
-  Choose **Add custom MCP server**, paste the address, select OAuth, then create
-  and install the plugin. ChatGPT does not document an equivalent prefilled
-  install link for arbitrary custom MCP servers. Set it up once in a browser;
-  the plugin then also works in the ChatGPT apps on iOS and Android.
-
-Both clients use account approval on TalkToBolo's `/connect` page. No API key
+ChatGPT uses account approval on TalkToBolo's `/connect` page. No API key
 is needed. OAuth uses S256 PKCE, short-lived access tokens and rotating
 refresh tokens. Clients identify themselves with a Client ID Metadata Document
 (an https `client_id`, which ChatGPT prefers; the server reads it and keeps it
 for an hour) or register through dynamic client registration. Redirects back
-to the client carry `iss` (RFC 9207). Revoke a connection under **Keys and
-connected apps**. Discovery is served under `/.well-known/`; `/oauth/register`,
+to the client carry `iss` (RFC 9207). Revoke a connection under
+**Connections**. Discovery is served under `/.well-known/`; `/oauth/register`,
 `/oauth/authorize`, `/oauth/token` and `/oauth/revoke` belong to the API Worker.
 Route these paths to the Worker alongside `/mcp` when using one app origin.
 
-The client setup follows [Claude's install-link documentation](https://claude.com/docs/connectors/building/directory-vs-custom#share-an-install-link),
-[OpenAI's custom MCP setup](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+The client setup follows [OpenAI's custom MCP setup](https://developers.openai.com/plugins/deploy/connect-chatgpt)
 and [OpenAI's authentication requirements](https://developers.openai.com/plugins/build/auth).
 
 ### Studying with ChatGPT voice
@@ -377,8 +355,8 @@ and [OpenAI's authentication requirements](https://developers.openai.com/plugins
 ChatGPT Voice uses connected plugins on web, iOS and Android, so a student can
 study on the go: "What should I study today on TalkToBolo?", "Quiz me on what
 I have covered", "Save this session to TalkToBolo". The study tools
-(`apps/api/src/study.ts`) keep the rules of a call with Bolo: reached sections
-are exposure, not mastery, and tutoring stays within reached material plus the
+(`apps/api/src/study.ts`) keep the lecture boundaries: reached sections are
+exposure, not mastery, and tutoring stays within reached material plus the
 sections explained in order.
 
 1. `get_study_overview`: every course with lecture progress and recent
@@ -386,11 +364,12 @@ sections explained in order.
    review points and suggestions.
 2. `prepare_study_session`: a spoken tutoring guide for `explain`, `quiz` or
    `qa` in the course language, with the next section (explain) or a spread of
-   reached sections (quiz, qa), and Agent Memory evidence when configured.
+   reached sections (quiz, qa), and with Agent Memory the course graph's facts
+   up to the student's place.
 3. `read_section` and `get_lecture_outline`: a lecture one section at a time,
    with headings, pages and links that open the PDF at the page.
 4. `save_study_session` (and `record_progress`): logs the session as a `call`
-   with `assistant` set and a recap, shown under Calls, and moves the lecture
+   with `assistant` set and a recap, shown under Sessions, and moves the lecture
    place forward. Progress never moves back from here.
 
 Read tools are annotated `readOnlyHint`, so with ChatGPT's plugin permission
@@ -399,12 +378,6 @@ screen. `search` and `fetch` follow ChatGPT's knowledge-source convention
 across all courses, returning section ids and citable links; `fetch` also
 opens `material:`, `course:` and `call:` ids.
 
-For Claude Code or another bearer-token client, create a key under **AI access**:
-
-```bash
-claude mcp add --transport http talktobolo https://talktobolo.stg.spky.cloud/mcp --header "Authorization: Bearer sc_..."
-```
-
 Course tools: `list_courses`, `create_course`, `update_course`, `list_materials`,
 `get_material`, `add_material`, `update_material`, `edit_material`, `add_pdf`
 (https URL or base64), `delete_material`, `search_course`. Study tools:
@@ -412,9 +385,7 @@ Course tools: `list_courses`, `create_course`, `update_course`, `list_materials`
 `get_lecture_outline`, `record_progress`, `save_study_session`, `search`,
 `fetch`. Search hits and PDF materials carry page numbers and links into the
 app's viewer, so assistants can cite pages; the text of a PDF is derived from
-it and cannot be edited, only its title. The key signs in through the `agent`
-access method, so SurrealDB enforces the same permissions as in the web app;
-revoking it in the app cuts access within a minute.
+it and cannot be edited, only its title.
 
 ## Models and usage
 
@@ -422,13 +393,10 @@ Model settings live in [`apps/api/wrangler.jsonc`](../apps/api/wrangler.jsonc).
 
 | Setting | Purpose | Checked-in value |
 | --- | --- | --- |
-| `CLAUDE_MODEL` | Spoken replies and session recaps | `claude-opus-5-5` |
-| `CLAUDE_PDF_MODEL` | PDF-to-Markdown conversion | `claude-opus-5-5` |
 | `EMBEDDING_MODEL` | Course search embeddings | `@cf/qwen/qwen3-embedding-0.6b` |
 
-The voice agent setup script also reads `CLAUDE_MODEL`; keep it aligned with
-the API Worker when configuring the agent. PDF conversion processes ten pages
-per request and falls back to the text layer if conversion fails.
-
-Voice calls, model inference, document processing, and hosting use your
-connected provider accounts. Check those accounts for current rates and limits.
+A PDF's text comes from its text layer (unpdf), so scanned pages without one
+yield no text. Studying runs in the student's own ChatGPT; TalkToBolo calls no
+language model itself. Document processing, embeddings, Agent Memory and
+hosting use your connected provider accounts. Check those accounts for current
+rates and limits.

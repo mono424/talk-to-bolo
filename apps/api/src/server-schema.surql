@@ -14,27 +14,6 @@
 -- ##################################################################
 
 
--- Receipts for confirmed conversation evidence. Separate from generated
--- transcript rows, with a stable observed time across retries.
-DEFINE TABLE OVERWRITE learning_exchange SCHEMAFULL PERMISSIONS NONE;
-DEFINE FIELD OVERWRITE owner ON TABLE learning_exchange TYPE record<user>;
-DEFINE FIELD OVERWRITE call ON TABLE learning_exchange TYPE record<call>;
-DEFINE FIELD OVERWRITE observed_at ON TABLE learning_exchange TYPE datetime;
-DEFINE FIELD OVERWRITE applied ON TABLE learning_exchange TYPE bool DEFAULT false;
-DEFINE INDEX IF NOT EXISTS learning_exchange_call ON TABLE learning_exchange FIELDS call;
-DEFINE TABLE OVERWRITE learning_focus SCHEMAFULL PERMISSIONS NONE;
-DEFINE FIELD OVERWRITE owner ON TABLE learning_focus TYPE record<user>;
-DEFINE FIELD OVERWRITE call ON TABLE learning_focus TYPE record<call>;
-DEFINE FIELD OVERWRITE material ON TABLE learning_focus TYPE record<material>;
-DEFINE FIELD OVERWRITE rev ON TABLE learning_focus TYPE int;
-DEFINE FIELD OVERWRITE position ON TABLE learning_focus TYPE int;
-DEFINE FIELD OVERWRITE teaching ON TABLE learning_focus TYPE bool;
-DEFINE INDEX IF NOT EXISTS learning_focus_call ON TABLE learning_focus FIELDS call;
-DEFINE EVENT OVERWRITE learning_exchange_call_deleted ON TABLE call WHEN $event = 'DELETE' THEN {
-  DELETE learning_exchange WHERE call = $before.id;
-  DELETE learning_focus WHERE call = $before.id;
-};
-
 -- Search sections of a material. Written by the API Worker only. Readable by
 -- the owner so the API can run the search with the user's own session.
 DEFINE TABLE OVERWRITE chunk SCHEMAFULL
