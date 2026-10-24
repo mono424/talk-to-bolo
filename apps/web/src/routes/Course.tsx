@@ -161,7 +161,7 @@ export default function CoursePage() {
                 <Folder size={20} stroke-width={1.6} class="h-[18px] w-[18px] shrink-0 sm:h-5 sm:w-5" style={{ color: courseColor(c().color) }} fill={courseColor(c().color)} fill-opacity="0.18" />
                 <span class="truncate text-[16px] font-semibold tracking-tight sm:text-[17px]">{c().title}</span>
               </div>
-              <div class="pointer-events-auto relative ml-auto flex shrink-0 items-center gap-2 sm:gap-1">
+              <div class="pointer-events-auto relative ml-auto flex shrink-0 items-center gap-1">
                 <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} />
                 <CourseSettings course={c()} />
               </div>
@@ -169,7 +169,7 @@ export default function CoursePage() {
             {/* Pulled up beside the actions; it scrolls away under the pinned row. Tall,
                 so the search starts well down the window. */}
             <div class="-mt-11 min-h-[max(4.5rem,calc(20dvh-3rem))] sm:min-h-[max(5rem,calc(33dvh-3rem))] md:-mt-10">
-              <div ref={largeTitle} class="flex origin-top-left items-start gap-2.5 pr-[6.5rem] pt-2 sm:gap-4 sm:pr-32 sm:pt-0">
+              <div ref={largeTitle} class="flex origin-top-left items-start gap-2.5 pr-20 pt-3 sm:gap-4 sm:pr-32 sm:pt-0">
                 <Folder
                   size={28}
                   stroke-width={1.6}
@@ -320,7 +320,7 @@ function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () =>
   const item = 'flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10';
   return (
     <div class="relative">
-      <Button variant="soft" size="sm" aria-label="Add material" aria-haspopup="menu" aria-expanded={open()} onClick={() => setOpen(!open())}>
+      <Button variant="ghost" size="sm" class="max-sm:h-9 max-sm:w-9 max-sm:px-0" aria-label="Add material" aria-haspopup="menu" aria-expanded={open()} onClick={() => setOpen(!open())}>
         <Plus size={18} stroke-width={1.9} class="sm:h-4 sm:w-4" />
         <span class="hidden sm:inline">Add</span>
       </Button>
@@ -418,9 +418,16 @@ function CourseSettings(props: { course: CourseRow }) {
 
   return (
     <>
-      <IconButton label="Course settings" onClick={() => setOpen(true)}>
-        <Settings2 size={20} stroke-width={1.75} />
-      </IconButton>
+      <Button
+        variant="ghost"
+        size="sm"
+        class="w-11 max-sm:h-9 max-sm:w-9 max-sm:px-0 sm:px-0 md:w-8"
+        aria-label="Course settings"
+        title="Course settings"
+        onClick={() => setOpen(true)}
+      >
+        <Settings2 size={18} stroke-width={1.75} class="sm:h-4 sm:w-4" />
+      </Button>
       <Show when={open()}>
         <Sheet title="Course settings" maxWidth="28rem" onClose={() => setOpen(false)}>
           {(close) => (
