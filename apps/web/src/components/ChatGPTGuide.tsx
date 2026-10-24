@@ -93,8 +93,52 @@ export function ChatGPTGuideProvider(props: { children: JSX.Element }) {
 function GuideDialog(props: { connected: boolean; onClose: () => void }) {
   let dialog!: HTMLDialogElement;
   const [urlCopied, setUrlCopied] = createSignal(false);
+  const [closing, setClosing] = createSignal(false);
 
-  onMount(() => dialog.showModal());
+  // Focus the sheet itself, not the close button, so no focus ring shows on open.
+  onMount(() => {
+    dialog.showModal();
+    dialog.focus();
+  });
+
+  // Play the exit animation (global.css, .glass-sheet[data-closing]) first.
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  const dismiss = () => {
+    if (closing()) return;
+    setClosing(true);
+    closeTimer = setTimeout(props.onClose, 230);
+  };
+  onCleanup(() => clearTimeout(closeTimer));
+
+  // Drag the handle or header down to dismiss the bottom sheet on touch.
+  let dragStart: { y: number; t: number } | null = null;
+  const onDragStart = (e: PointerEvent) => {
+    if (e.pointerType === 'mouse' || (e.target as HTMLElement).closest('button')) return;
+    dragStart = { y: e.clientY, t: e.timeStamp };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dialog.style.transition = 'none';
+  };
+  const onDragMove = (e: PointerEvent) => {
+    if (!dragStart) return;
+    const dy = e.clientY - dragStart.y;
+    // Pulling up resists, pulling down follows the finger.
+    dialog.style.transform = `translateY(${dy > 0 ? dy : dy / 6}px)`;
+  };
+  const onDragEnd = (e: PointerEvent) => {
+    if (!dragStart) return;
+    const dy = e.clientY - dragStart.y;
+    const speed = dy / Math.max(1, e.timeStamp - dragStart.t);
+    dragStart = null;
+    if (dy > 120 || (dy > 30 && speed > 0.6)) {
+      dialog.style.transition = 'transform 0.22s cubic-bezier(0.4, 0, 1, 1)';
+      dialog.style.transform = 'translateY(100%)';
+      closeTimer = setTimeout(props.onClose, 220);
+      setClosing(true);
+      return;
+    }
+    dialog.style.transition = 'transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)';
+    dialog.style.transform = '';
+  };
 
   const openChatGPT = () => {
     // Open during the click so browsers do not block the new tab while the
@@ -107,15 +151,26 @@ function GuideDialog(props: { connected: boolean; onClose: () => void }) {
     <dialog
       ref={dialog}
       aria-labelledby="chatgpt-guide-title"
-      class="m-auto max-h-[calc(100dvh-1.5rem)] w-[calc(100%-1.5rem)] max-w-xl overflow-y-auto overscroll-contain rounded-[22px] border border-line bg-surface p-0 text-fg shadow-frame backdrop:bg-black/40 sm:max-h-[calc(100dvh-4rem)]"
+      tabIndex={-1}
+      data-closing={closing() ? '' : undefined}
+      class="glass-sheet overflow-hidden p-0 text-fg open:flex open:flex-col"
       onCancel={(e) => {
         e.preventDefault();
-        props.onClose();
+        dismiss();
       }}
-      onClick={(e) => e.target === dialog && props.onClose()}
+      onClick={(e) => e.target === dialog && dismiss()}
     >
-      <div class="p-5 sm:p-7">
-        <div class="flex items-start gap-3">
+      <div
+        class="shrink-0 touch-none select-none sm:touch-auto"
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onPointerCancel={onDragEnd}
+      >
+        <div class="flex justify-center pt-2.5 sm:hidden" aria-hidden="true">
+          <span class="h-[5px] w-10 rounded-full bg-fg/20" />
+        </div>
+        <div class="flex items-start gap-3 px-5 pb-4 pt-3 sm:px-7 sm:pt-7">
           <img src="/studycall-logo.svg" alt="" class="h-11 w-9 shrink-0" />
           <div class="min-w-0 flex-1">
             <h2 id="chatgpt-guide-title" class="text-[20px] font-semibold leading-tight tracking-tight sm:text-[22px]">
@@ -127,15 +182,20 @@ function GuideDialog(props: { connected: boolean; onClose: () => void }) {
           </div>
           <button
             type="button"
-            class="-mr-2 -mt-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted hover:bg-soft hover:text-fg"
+            class="-mr-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--glass-fill)] text-muted transition-colors hover:bg-[var(--glass-fill-strong)] hover:text-fg"
             aria-label="Close"
-            onClick={props.onClose}
+            onClick={dismiss}
           >
-            <X size={20} stroke-width={1.75} />
+            <X size={18} stroke-width={2} />
           </button>
         </div>
+      </div>
 
-        <div class="mt-5 flex items-center gap-2.5 rounded-2xl bg-soft px-3.5 py-2.5 text-[14px]" role="status">
+      <div class="glass-sheet-scroll scroll-quiet min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-1 sm:px-7">
+        <div
+          class="flex items-center gap-2.5 rounded-2xl border border-[var(--glass-line)] bg-[var(--glass-fill)] px-3.5 py-2.5 text-[14px]"
+          role="status"
+        >
           <Show
             when={props.connected}
             fallback={
@@ -152,17 +212,7 @@ function GuideDialog(props: { connected: boolean; onClose: () => void }) {
 
         <ol class="mt-6 space-y-6">
           <Step n={1} title="Open ChatGPT Plugins" done={props.connected}>
-            <p>Sign in to ChatGPT if it asks. The button also copies the server address you need in step 3.</p>
-            <div class="mt-3 flex flex-wrap items-center gap-3">
-              <Button onClick={openChatGPT}>
-                Open ChatGPT Plugins <ArrowUpRight size={15} />
-              </Button>
-              <Show when={urlCopied()}>
-                <span class="inline-flex items-center gap-1.5 text-[13px] text-muted">
-                  <Check size={15} class="text-green" /> Server address copied
-                </span>
-              </Show>
-            </div>
+            <p>Sign in to ChatGPT if it asks. The button below also copies the server address you need in step 3.</p>
           </Step>
 
           <Step n={2} title="Add a custom MCP server" done={props.connected}>
@@ -173,12 +223,12 @@ function GuideDialog(props: { connected: boolean; onClose: () => void }) {
 
           <Step n={3} title="Fill in the form" done={props.connected}>
             <div class="mt-1 space-y-2.5">
-              <CopyField label="Name" text={PLUGIN_NAME} />
-              <CopyField label="Description" text={PLUGIN_DESCRIPTION} />
-              <CopyField label="Server URL" text={MCP_URL} mono />
-              <div class="flex items-center justify-between gap-3 rounded-2xl border border-line px-3.5 py-2.5">
+              <CopyField label="Name" text={PLUGIN_NAME} glass />
+              <CopyField label="Description" text={PLUGIN_DESCRIPTION} glass />
+              <CopyField label="Server URL" text={MCP_URL} mono glass />
+              <div class="flex items-center justify-between gap-3 rounded-2xl border border-[var(--glass-line)] px-3.5 py-2.5">
                 <span class="text-[13px] text-muted">Authentication</span>
-                <span class="text-[14px] font-medium">OAuth</span>
+                <span class="text-[14px] font-medium text-fg">OAuth</span>
               </div>
             </div>
           </Step>
@@ -203,7 +253,11 @@ function GuideDialog(props: { connected: boolean; onClose: () => void }) {
             </p>
             <ul class="mt-3 flex flex-col gap-2" aria-label="Things to say">
               <For each={VOICE_PROMPTS}>
-                {(prompt) => <li class="rounded-2xl bg-soft px-3.5 py-2.5 text-[14px] text-fg [overflow-wrap:anywhere]">"{prompt}"</li>}
+                {(prompt) => (
+                  <li class="rounded-2xl bg-[var(--glass-fill)] px-3.5 py-2.5 text-[14px] text-fg [overflow-wrap:anywhere]">
+                    "{prompt}"
+                  </li>
+                )}
               </For>
             </ul>
           </Step>
@@ -213,12 +267,42 @@ function GuideDialog(props: { connected: boolean; onClose: () => void }) {
           Custom MCP servers depend on your ChatGPT plan, and a workspace admin may need to allow them. You can reopen this guide
           any time from the ChatGPT button at the top.
         </p>
+      </div>
 
-        <div class="mt-5 flex justify-end gap-2">
-          <Show when={props.connected} fallback={<Button variant="soft" onClick={props.onClose}>Not now</Button>}>
-            <Button onClick={props.onClose}>Done</Button>
+      <div class="glass-sheet-footer shrink-0 px-5 pt-4 pb-5 sm:px-7 sm:pb-6">
+        <div class="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Show
+            when={!props.connected}
+            fallback={
+              <button
+                type="button"
+                class="cta-glow inline-flex h-14 w-full items-center justify-center rounded-full text-[16px] font-semibold sm:h-12 sm:w-auto sm:px-8"
+                onClick={dismiss}
+              >
+                Done
+              </button>
+            }
+          >
+            <Button variant="ghost" class="h-12 sm:h-12" onClick={dismiss}>
+              Not now
+            </Button>
+            <button
+              type="button"
+              class="cta-glow inline-flex h-14 w-full items-center gap-3 rounded-full pl-6 pr-2 text-[16px] font-semibold sm:h-12 sm:w-auto sm:pl-5 sm:text-[15px]"
+              onClick={openChatGPT}
+            >
+              <span class="flex-1 text-left">Open ChatGPT Plugins</span>
+              <span class="cta-arrow inline-flex h-10 w-10 items-center justify-center rounded-full bg-solid-fg/15 sm:h-8 sm:w-8">
+                <ArrowUpRight size={18} stroke-width={2.25} />
+              </span>
+            </button>
           </Show>
         </div>
+        <Show when={urlCopied() && !props.connected}>
+          <p class="mt-2.5 flex items-center justify-center gap-1.5 text-[13px] text-muted sm:justify-end" role="status">
+            <Check size={15} class="text-green" /> Server address copied. Paste it in step 3.
+          </p>
+        </Show>
       </div>
     </dialog>
   );
@@ -249,10 +333,14 @@ function Kbd(props: { children: JSX.Element }) {
 }
 
 /** A labelled value with a copy button. */
-export function CopyField(props: { label?: string; text: string; mono?: boolean }) {
+export function CopyField(props: { label?: string; text: string; mono?: boolean; glass?: boolean }) {
   const [copied, setCopied] = createSignal(false);
   return (
-    <div class="flex w-full min-w-0 items-center gap-2 rounded-2xl bg-soft py-2 pl-3.5 pr-1.5">
+    <div
+      class={`flex w-full min-w-0 items-center gap-2 rounded-2xl py-2 pl-3.5 pr-1.5 ${
+        props.glass ? 'border border-[var(--glass-line)] bg-[var(--glass-fill)]' : 'bg-soft'
+      }`}
+    >
       <div class="min-w-0 flex-1">
         <Show when={props.label}>
           <span class="block text-[12px] text-muted">{props.label}</span>
@@ -261,7 +349,9 @@ export function CopyField(props: { label?: string; text: string; mono?: boolean 
       </div>
       <button
         type="button"
-        class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface hover:text-fg sm:h-9 sm:w-9"
+        class={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted hover:text-fg sm:h-9 sm:w-9 ${
+          props.glass ? 'hover:bg-[var(--glass-fill-strong)]' : 'hover:bg-surface'
+        }`}
         aria-label={copied() ? 'Copied' : `Copy ${props.label ?? 'to clipboard'}`}
         title={copied() ? 'Copied' : 'Copy'}
         onClick={async () => {

@@ -219,6 +219,108 @@ button, a, input, select, textarea { scroll-margin-block: 1rem; }
   }
 }
 
+/*
+ * Glass sheet: frosted, translucent panel over a blurred page. A bottom sheet
+ * on phones (slides up, drag the handle down to dismiss), a centered card on
+ * wider screens. `data-closing` plays the exit before the dialog unmounts.
+ */
+:root {
+  --glass-bg: rgb(255 255 255 / 0.72);
+  --glass-edge: rgb(255 255 255 / 0.7);
+  --glass-line: rgb(0 0 0 / 0.06);
+  --glass-fill: rgb(0 0 0 / 0.04);
+  --glass-fill-strong: rgb(255 255 255 / 0.7);
+  --glass-shadow: 0 -1px 0 rgb(255 255 255 / 0.6) inset, 0 30px 80px -20px rgb(0 0 0 / 0.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass-bg: rgb(30 30 33 / 0.7);
+    --glass-edge: rgb(255 255 255 / 0.12);
+    --glass-line: rgb(255 255 255 / 0.07);
+    --glass-fill: rgb(255 255 255 / 0.06);
+    --glass-fill-strong: rgb(255 255 255 / 0.1);
+    --glass-shadow: 0 1px 0 rgb(255 255 255 / 0.06) inset, 0 30px 80px -20px rgb(0 0 0 / 0.8);
+  }
+}
+
+.glass-sheet {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(30px) saturate(1.8);
+  backdrop-filter: blur(30px) saturate(1.8);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+  border-radius: 28px;
+  margin: auto;
+  width: calc(100% - 3rem);
+  max-width: 36rem;
+  max-height: calc(100dvh - 4rem);
+  animation: sheet-pop 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+.glass-sheet::backdrop {
+  background: rgb(0 0 0 / 0.28);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: sheet-fade 0.3s ease-out;
+}
+.glass-sheet:focus-visible { outline: none; }
+.glass-sheet-scroll { mask-image: linear-gradient(to bottom, transparent, #000 1rem); }
+.glass-sheet[data-closing] { animation: sheet-pop-out 0.18s ease-in forwards; }
+.glass-sheet[data-closing]::backdrop { animation: sheet-fade-out 0.22s ease-in forwards; }
+.glass-sheet-footer {
+  border-top: 1px solid var(--glass-line);
+  background: linear-gradient(to bottom, transparent, var(--glass-bg) 40%);
+}
+
+@media (max-width: 639px) {
+  .glass-sheet {
+    margin: auto 0 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - max(2.5rem, env(safe-area-inset-top) + 1rem));
+    border-radius: 30px 30px 0 0;
+    border-bottom: 0;
+    animation: sheet-up 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .glass-sheet[data-closing] { animation: sheet-down 0.24s cubic-bezier(0.4, 0, 1, 1) forwards; }
+  .glass-sheet-footer { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+}
+
+/* iOS keeps scrolling the page under a modal dialog otherwise. */
+html:has(.glass-sheet[open]) { overflow: hidden; }
+
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@keyframes sheet-down { to { transform: translateY(100%); } }
+@keyframes sheet-pop { from { opacity: 0; transform: translateY(12px) scale(0.97); } }
+@keyframes sheet-pop-out { to { opacity: 0; transform: translateY(8px) scale(0.98); } }
+@keyframes sheet-fade { from { opacity: 0; } }
+@keyframes sheet-fade-out { to { opacity: 0; } }
+
+/* The one big call to action: solid pill with a soft top sheen and a glow. */
+.cta-glow {
+  background-color: var(--solid);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0) 55%);
+  color: var(--solid-fg);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    inset 0 -1px 0 rgb(0 0 0 / 0.2),
+    0 10px 28px -10px rgb(0 0 0 / 0.55),
+    0 2px 6px -2px rgb(0 0 0 / 0.25);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+.cta-glow:hover { background-color: var(--solid-hover); }
+.cta-glow:active { transform: scale(0.97); }
+.cta-glow .cta-arrow { transition: transform 0.2s ease; }
+.cta-glow:hover .cta-arrow { transform: translate(2px, -2px); }
+@media (prefers-color-scheme: dark) {
+  .cta-glow {
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.9), rgb(255 255 255 / 0) 60%);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.9),
+      inset 0 -1px 0 rgb(0 0 0 / 0.12),
+      0 10px 32px -10px rgb(255 255 255 / 0.28);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
