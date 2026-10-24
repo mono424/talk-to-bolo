@@ -51,6 +51,19 @@ export const qMaterialsPage = (db: Db, courseId: string, page: number, size: num
 
 export const qMaterial = (db: Db, materialId: string) => db.query('material').where({ id: materialId }).build();
 
+/** A course's homework, newest first. */
+export const qHomeworkList = (db: Db, courseId: string) =>
+  db.query('homework').where({ course: courseId }).orderBy('updated_at', 'desc').build();
+
+export const qHomework = (db: Db, homeworkId: string) => db.query('homework').where({ id: homeworkId }).build();
+
+/** The homework answering one sheet, if the student started it. */
+export const qSheetHomework = (db: Db, sheetId: string) => db.query('homework').where({ sheet: sheetId }).limit(1).build();
+
+/** The parts of a homework with their answers, in sheet order. */
+export const qAnswers = (db: Db, homeworkId: string) =>
+  db.query('answer').where({ homework: homeworkId }).orderBy('position', 'asc').build();
+
 /** A course's sources (bCourses courses, web pages that import material by themselves). */
 export const qFetchers = (db: Db, courseId: string) =>
   db.query('fetcher').where({ course: courseId }).orderBy('created_at', 'asc').build();

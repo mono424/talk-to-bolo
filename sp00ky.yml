@@ -102,6 +102,7 @@ apps:
         # PDF upload (the file is the request body) and the viewer's download.
         - /api/materials/*
         - /api/fetchers/*
+        - /api/answers/*
         # The consent page of an AI client connection, and its redirect.
         - /api/oauth/*
         # OAuth for AI clients: discovery, registration, authorize, token.
@@ -109,8 +110,9 @@ apps:
         - /.well-known/oauth*
         # The MCP server AI clients call.
         - /mcp
-        # Images inside lectures: <img> cannot send the session token.
+        # Images inside lectures and answers: <img> cannot send the session token.
         - /material-assets/*
+        - /answer-images/*
     env:
       # Agent Memory (the course knowledge graph). AGENT_MEMORY_URL must be
       # the full Context URL, ending /api/v1/<context id>: without the context

@@ -4,15 +4,9 @@ import { Download, Minus, Plus } from 'lucide-solid';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import type { schema } from '../schema.gen';
 import { fetchPdf } from '../lib/api';
+import { loadPdfjs } from '../lib/pdfjs';
 import { Button, IconButton, Loader } from './ui';
 
-// pdf.js is large: it loads the first time a PDF is opened.
-let pdfjs: Promise<typeof import('pdfjs-dist')> | null = null;
-const loadPdfjs = () =>
-  (pdfjs ??= Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')]).then(([lib, worker]) => {
-    lib.GlobalWorkerOptions.workerSrc = worker.default;
-    return lib;
-  }));
 
 const ZOOMS = [1, 1.25, 1.5, 2, 3];
 

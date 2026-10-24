@@ -6,6 +6,7 @@ import { handleMcp } from './mcp';
 import { approveOAuthConsent, getOAuthConsent, handleOAuth, oauthOrigin } from './oauth';
 import { jobs } from './jobs';
 import { fetcherRoutes } from './fetch/routes';
+import { loadAnswerImage, storeAnswerImage } from './answers';
 import {
   buildMissingGraphs,
   createApiKey,
@@ -143,6 +144,23 @@ app.get('/api/courses/:id/graph', async (c) => {
     buildMissingGraphs(c.env, c.var.caller.userId, graph.course).catch((err) => console.error('[memory] graph builds', err)),
   );
   return c.json(graph);
+});
+
+// ── Homework (answers.ts) ─────────────────────────────────────────────────
+
+// An image pasted into one of the user's answers; the body is the image.
+app.post('/api/answers/:id/images', async (c) => {
+  const id = await storeAnswerImage(c.env, c.var.caller.userId, c.req.param('id'), c.req.raw.body);
+  return c.json({ id });
+});
+
+// Public by unguessable id, like lecture images: <img> cannot send the token.
+app.get('/answer-images/:id', async (c) => {
+  const row = await loadAnswerImage(c.env, c.req.param('id'));
+  if (!row) return c.notFound();
+  return new Response(fromBase64(row.b64), {
+    headers: { 'content-type': row.mime, 'cache-control': 'private, max-age=86400', 'access-control-allow-origin': '*' },
+  });
 });
 
 // ── Sources (fetch/routes.ts) ─────────────────────────────────────────────

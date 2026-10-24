@@ -98,6 +98,7 @@ DEFINE EVENT OVERWRITE course_deleted ON TABLE course WHEN $event = "DELETE" THE
   DELETE material WHERE course = $before.id;
   DELETE call WHERE course = $before.id;
   DELETE fetcher WHERE course = $before.id;
+  DELETE homework WHERE course = $before.id;
 };
 
 -- ##################################################################
@@ -171,6 +172,7 @@ DEFINE FIELD OVERWRITE updated_at ON TABLE material TYPE datetime VALUE time::no
 DEFINE INDEX OVERWRITE material_course ON TABLE material FIELDS course;
 
 DEFINE EVENT OVERWRITE material_deleted ON TABLE material WHEN $event = "DELETE" THEN {
+  UPDATE homework SET sheet = NONE WHERE sheet = $before.id;
   DELETE chunk WHERE material = $before.id;
   DELETE asset WHERE material = $before.id;
   DELETE source_part WHERE material = $before.id;
@@ -259,6 +261,67 @@ DEFINE FIELD OVERWRITE at ON TABLE turn_source TYPE int;
 DEFINE FIELD OVERWRITE created_at ON TABLE turn_source TYPE datetime DEFAULT time::now();
 
 DEFINE INDEX OVERWRITE turn_source_call ON TABLE turn_source FIELDS call, seq;
+
+-- ##################################################################
+-- HOMEWORK
+--
+-- The student's answers to an exercise sheet (a material), written in the
+-- app: one `homework` per sheet and one `answer` per part of it, in sheet
+-- order. The app splits the sheet into parts (shared/homework.ts) and creates
+-- both itself; an answer row per part keeps edits on two devices apart.
+-- ##################################################################
+
+DEFINE TABLE OVERWRITE homework SCHEMAFULL
+  PERMISSIONS
+    FOR select, update, delete WHERE owner = $auth.id
+    FOR create WHERE owner = $auth.id AND course.owner = $auth.id;
+
+DEFINE FIELD OVERWRITE owner ON TABLE homework TYPE record<user> READONLY;
+DEFINE FIELD OVERWRITE course ON TABLE homework TYPE record<course> READONLY; -- @parent
+-- The exercise sheet. NONE once the sheet is deleted: the answers stay.
+DEFINE FIELD OVERWRITE sheet ON TABLE homework TYPE option<record<material>>;
+DEFINE FIELD OVERWRITE title ON TABLE homework TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD OVERWRITE created_at ON TABLE homework TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE updated_at ON TABLE homework TYPE datetime VALUE time::now();
+
+DEFINE INDEX OVERWRITE homework_course ON TABLE homework FIELDS course;
+
+DEFINE EVENT OVERWRITE homework_deleted ON TABLE homework WHEN $event = "DELETE" THEN {
+  DELETE answer WHERE homework = $before.id;
+};
+
+-- One part of the sheet and the student's answer to it.
+DEFINE TABLE OVERWRITE answer SCHEMAFULL
+  PERMISSIONS
+    FOR select, update, delete WHERE owner = $auth.id
+    FOR create WHERE owner = $auth.id AND homework.owner = $auth.id;
+
+DEFINE FIELD OVERWRITE owner ON TABLE answer TYPE record<user> READONLY;
+DEFINE FIELD OVERWRITE homework ON TABLE answer TYPE record<homework> READONLY; -- @parent
+-- Order on the sheet, and the part's stable key there ("1.b.ii").
+DEFINE FIELD OVERWRITE position ON TABLE answer TYPE int;
+DEFINE FIELD OVERWRITE key ON TABLE answer TYPE string;
+DEFINE FIELD OVERWRITE question ON TABLE answer TYPE string;
+DEFINE FIELD OVERWRITE question_title ON TABLE answer TYPE option<string>;
+-- The margin label within the question: "b (ii)", "(c)", "" for a whole question.
+DEFINE FIELD OVERWRITE label ON TABLE answer TYPE string;
+DEFINE FIELD OVERWRITE points ON TABLE answer TYPE option<float>;
+-- The exercise: its own text, and the introduction above it.
+DEFINE FIELD OVERWRITE prompt ON TABLE answer TYPE string DEFAULT '';
+DEFINE FIELD OVERWRITE context ON TABLE answer TYPE option<string>;
+-- Where the exercise is on a PDF sheet: the page, the label its excerpt
+-- starts at, and once found, the excerpt itself as JSON
+-- ([{ page, top, bottom }], fractions of the page height).
+DEFINE FIELD OVERWRITE page ON TABLE answer TYPE option<int>;
+DEFINE FIELD OVERWRITE anchor ON TABLE answer TYPE option<string>;
+DEFINE FIELD OVERWRITE anchor_page ON TABLE answer TYPE option<int>;
+DEFINE FIELD OVERWRITE region ON TABLE answer TYPE option<string>;
+-- The answer, as Markdown with $math$. Pasted images are `answer-image:<id>`.
+DEFINE FIELD OVERWRITE content ON TABLE answer TYPE string DEFAULT '';
+DEFINE FIELD OVERWRITE created_at ON TABLE answer TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE updated_at ON TABLE answer TYPE datetime VALUE time::now();
+
+DEFINE INDEX OVERWRITE answer_homework ON TABLE answer FIELDS homework, position;
 
 -- ##################################################################
 -- SOURCES

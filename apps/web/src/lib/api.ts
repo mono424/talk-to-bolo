@@ -12,6 +12,7 @@ export const API_URL = (import.meta.env.VITE_API_URL?.trim() || (import.meta.env
 export const MCP_URL = `${API_URL}/mcp`;
 
 export const assetUrl = (id: string) => `${API_URL}/material-assets/${encodeURIComponent(id)}`;
+export const answerImageUrl = (id: string) => `${API_URL}/answer-images/${encodeURIComponent(id)}`;
 
 export class ApiError extends Error {
   constructor(
@@ -255,3 +256,13 @@ export const updateSource = (
 /** The hockeymask mapping a source runs: its own, or the template for its settings. */
 export const sourceMapping = (db: Db, fetcherId: string) =>
   api<{ custom: boolean; mapping: unknown }>(db, `/api/fetchers/${encodeURIComponent(fetcherId)}/mapping`);
+
+// ── Homework ──────────────────────────────────────────────────────────────
+
+/** Stores an image pasted into an answer; the answer refers to it as `answer-image:<key>`. */
+export const uploadAnswerImage = (db: Db, answerId: string, file: Blob) =>
+  api<{ id: string }>(db, `/api/answers/${encodeURIComponent(answerId)}/images`, {
+    method: 'POST',
+    headers: { 'content-type': file.type || 'application/octet-stream' },
+    body: file,
+  });

@@ -4,6 +4,67 @@
 export const schema = {
   tables: [
     /**
+     * `answer` table.
+     *
+     * Relationships:
+     * - `homework` → `homework` (one)
+     * - `owner` → `user` (one)
+     *
+     * @example
+     * const rows = useQuery(() => db.query('answer').orderBy('id', 'asc').limit(20).build());
+     */
+    {
+      name: 'answer' as const,
+      columns: {
+        /**
+         * `id` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        id: { type: 'string' as const, recordId: true, optional: false },
+        anchor: { type: 'string' as const, optional: true },
+        anchor_page: { type: 'number' as const, optional: true },
+        content: { type: 'string' as const, optional: false },
+        context: { type: 'string' as const, optional: true },
+        /**
+         * `created_at` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        created_at: { type: 'string' as const, dateTime: true, optional: false },
+        /**
+         * `homework` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         *
+         * `@parent` — auto-populated server-side from the auth context. Do not write from client code.
+         */
+        homework: { type: 'string' as const, recordId: true, optional: false },
+        key: { type: 'string' as const, optional: false },
+        label: { type: 'string' as const, optional: false },
+        /**
+         * `owner` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        owner: { type: 'string' as const, recordId: true, optional: false },
+        page: { type: 'number' as const, optional: true },
+        points: { type: 'number' as const, optional: true },
+        position: { type: 'number' as const, optional: false },
+        prompt: { type: 'string' as const, optional: false },
+        question: { type: 'string' as const, optional: false },
+        question_title: { type: 'string' as const, optional: true },
+        region: { type: 'string' as const, optional: true },
+        /**
+         * `updated_at?` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        updated_at: { type: 'string' as const, dateTime: true, optional: true },
+      },
+      primaryKey: ['id'] as const
+    },
+    /**
      * `api_key` table.
      *
      * Relationships:
@@ -160,6 +221,7 @@ export const schema = {
      * - `owner` → `user` (one)
      * - `calls` → `call` (many)
      * - `fetchers` → `fetcher` (many)
+     * - `homeworks` → `homework` (many)
      * - `materials` → `material` (many)
      *
      * @example
@@ -201,6 +263,7 @@ export const schema = {
         updated_at: { type: 'string' as const, dateTime: true, optional: true },
         calls: { type: 'string' as const, array: true, optional: true },
         fetchers: { type: 'string' as const, array: true, optional: true },
+        homeworks: { type: 'string' as const, array: true, optional: true },
         materials: { type: 'string' as const, array: true, optional: true },
       },
       primaryKey: ['id'] as const
@@ -345,6 +408,64 @@ export const schema = {
       primaryKey: ['id'] as const
     },
     /**
+     * `homework` table.
+     *
+     * Relationships:
+     * - `course` → `course` (one)
+     * - `owner` → `user` (one)
+     * - `sheet` → `material` (one)
+     * - `answers` → `answer` (many)
+     *
+     * @example
+     * const rows = useQuery(() => db.query('homework').orderBy('id', 'asc').limit(20).build());
+     */
+    {
+      name: 'homework' as const,
+      columns: {
+        /**
+         * `id` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        id: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `course` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         *
+         * `@parent` — auto-populated server-side from the auth context. Do not write from client code.
+         */
+        course: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `created_at` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        created_at: { type: 'string' as const, dateTime: true, optional: false },
+        /**
+         * `owner` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        owner: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `sheet?` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        sheet: { type: 'string' as const, recordId: true, optional: true },
+        title: { type: 'string' as const, optional: false },
+        /**
+         * `updated_at?` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        updated_at: { type: 'string' as const, dateTime: true, optional: true },
+        answers: { type: 'string' as const, array: true, optional: true },
+      },
+      primaryKey: ['id'] as const
+    },
+    /**
      * `job` table.
      *
      * Relationships:
@@ -409,6 +530,7 @@ export const schema = {
      * - `fetcher` → `fetcher` (one)
      * - `owner` → `user` (one)
      * - `calls` → `call` (many)
+     * - `homeworks` → `homework` (many)
      * - `jobs` → `job` (many)
      * - `turn_sources` → `turn_source` (many)
      *
@@ -479,6 +601,7 @@ export const schema = {
          */
         updated_at: { type: 'string' as const, dateTime: true, optional: true },
         calls: { type: 'string' as const, array: true, optional: true },
+        homeworks: { type: 'string' as const, array: true, optional: true },
         jobs: { type: 'string' as const, array: true, optional: true },
         turn_sources: { type: 'string' as const, array: true, optional: true },
       },
@@ -544,12 +667,14 @@ export const schema = {
      * `user` table.
      *
      * Relationships:
+     * - `answers` → `answer` (many)
      * - `api_keys` → `api_key` (many)
      * - `calls` → `call` (many)
      * - `call_turns` → `call_turn` (many)
      * - `courses` → `course` (many)
      * - `fetch_runs` → `fetch_run` (many)
      * - `fetchers` → `fetcher` (many)
+     * - `homeworks` → `homework` (many)
      * - `materials` → `material` (many)
      * - `turn_sources` → `turn_source` (many)
      *
@@ -574,12 +699,14 @@ export const schema = {
         email: { type: 'string' as const, optional: false },
         name: { type: 'string' as const, optional: false },
         password: { type: 'string' as const, optional: false },
+        answers: { type: 'string' as const, array: true, optional: true },
         api_keys: { type: 'string' as const, array: true, optional: true },
         calls: { type: 'string' as const, array: true, optional: true },
         call_turns: { type: 'string' as const, array: true, optional: true },
         courses: { type: 'string' as const, array: true, optional: true },
         fetch_runs: { type: 'string' as const, array: true, optional: true },
         fetchers: { type: 'string' as const, array: true, optional: true },
+        homeworks: { type: 'string' as const, array: true, optional: true },
         materials: { type: 'string' as const, array: true, optional: true },
         turn_sources: { type: 'string' as const, array: true, optional: true },
       },
@@ -587,6 +714,18 @@ export const schema = {
     },
   ],
   relationships: [
+    {
+      from: 'answer' as const,
+      field: 'homework' as const,
+      to: 'homework' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'answer' as const,
+      field: 'owner' as const,
+      to: 'user' as const,
+      cardinality: 'one' as const
+    },
     {
       from: 'api_key' as const,
       field: 'owner' as const,
@@ -655,6 +794,12 @@ export const schema = {
     },
     {
       from: 'course' as const,
+      field: 'homeworks' as const,
+      to: 'homework' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'course' as const,
       field: 'materials' as const,
       to: 'material' as const,
       cardinality: 'many' as const
@@ -696,6 +841,30 @@ export const schema = {
       cardinality: 'many' as const
     },
     {
+      from: 'homework' as const,
+      field: 'course' as const,
+      to: 'course' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'homework' as const,
+      field: 'owner' as const,
+      to: 'user' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'homework' as const,
+      field: 'sheet' as const,
+      to: 'material' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'homework' as const,
+      field: 'answers' as const,
+      to: 'answer' as const,
+      cardinality: 'many' as const
+    },
+    {
       from: 'job' as const,
       field: 'assigned_to' as const,
       to: 'material' as const,
@@ -727,6 +896,12 @@ export const schema = {
     },
     {
       from: 'material' as const,
+      field: 'homeworks' as const,
+      to: 'homework' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'material' as const,
       field: 'jobs' as const,
       to: 'job' as const,
       cardinality: 'many' as const
@@ -754,6 +929,12 @@ export const schema = {
       field: 'owner' as const,
       to: 'user' as const,
       cardinality: 'one' as const
+    },
+    {
+      from: 'user' as const,
+      field: 'answers' as const,
+      to: 'answer' as const,
+      cardinality: 'many' as const
     },
     {
       from: 'user' as const,
@@ -789,6 +970,12 @@ export const schema = {
       from: 'user' as const,
       field: 'fetchers' as const,
       to: 'fetcher' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'user' as const,
+      field: 'homeworks' as const,
+      to: 'homework' as const,
       cardinality: 'many' as const
     },
     {
@@ -956,6 +1143,7 @@ DEFINE EVENT OVERWRITE course_deleted ON TABLE course WHEN $event = "DELETE" THE
   DELETE material WHERE course = $before.id;
   DELETE call WHERE course = $before.id;
   DELETE fetcher WHERE course = $before.id;
+  DELETE homework WHERE course = $before.id;
 };
 
 -- ##################################################################
@@ -1009,6 +1197,7 @@ DEFINE FIELD OVERWRITE updated_at ON TABLE material TYPE option<datetime>;
 DEFINE INDEX OVERWRITE material_course ON TABLE material FIELDS course;
 
 DEFINE EVENT OVERWRITE material_deleted ON TABLE material WHEN $event = "DELETE" THEN {
+  UPDATE homework SET sheet = NONE WHERE sheet = $before.id;
   DELETE chunk WHERE material = $before.id;
   DELETE asset WHERE material = $before.id;
   DELETE source_part WHERE material = $before.id;
@@ -1091,6 +1280,65 @@ DEFINE FIELD OVERWRITE at ON TABLE turn_source TYPE option<int>;
 DEFINE FIELD OVERWRITE created_at ON TABLE turn_source TYPE option<datetime> DEFAULT time::now();
 
 DEFINE INDEX OVERWRITE turn_source_call ON TABLE turn_source FIELDS call, seq;
+
+-- ##################################################################
+-- HOMEWORK
+--
+-- The student's answers to an exercise sheet (a material), written in the
+-- app: one \`homework\` per sheet and one \`answer\` per part of it, in sheet
+-- order. The app splits the sheet into parts (shared/homework.ts) and creates
+-- both itself; an answer row per part keeps edits on two devices apart.
+-- ##################################################################
+
+DEFINE TABLE OVERWRITE homework SCHEMAFULL
+PERMISSIONS FOR select, create, update, delete WHERE true;
+
+DEFINE FIELD OVERWRITE owner ON TABLE homework TYPE option<record<user> READONLY>;
+DEFINE FIELD OVERWRITE course ON TABLE homework TYPE option<record<course> READONLY>;
+ -- @parent
+-- The exercise sheet. NONE once the sheet is deleted: the answers stay.
+DEFINE FIELD OVERWRITE sheet ON TABLE homework TYPE option<record<material>>;
+DEFINE FIELD OVERWRITE title ON TABLE homework TYPE option<string> ASSERT string::len($value) > 0;
+DEFINE FIELD OVERWRITE created_at ON TABLE homework TYPE option<datetime> DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE updated_at ON TABLE homework TYPE option<datetime>;
+
+DEFINE INDEX OVERWRITE homework_course ON TABLE homework FIELDS course;
+
+DEFINE EVENT OVERWRITE homework_deleted ON TABLE homework WHEN $event = "DELETE" THEN {
+  DELETE answer WHERE homework = $before.id;
+};
+
+-- One part of the sheet and the student's answer to it.
+DEFINE TABLE OVERWRITE answer SCHEMAFULL
+PERMISSIONS FOR select, create, update, delete WHERE true;
+
+DEFINE FIELD OVERWRITE owner ON TABLE answer TYPE option<record<user> READONLY>;
+DEFINE FIELD OVERWRITE homework ON TABLE answer TYPE option<record<homework> READONLY>;
+ -- @parent
+-- Order on the sheet, and the part's stable key there ("1.b.ii").
+DEFINE FIELD OVERWRITE position ON TABLE answer TYPE option<int>;
+DEFINE FIELD OVERWRITE key ON TABLE answer TYPE option<string>;
+DEFINE FIELD OVERWRITE question ON TABLE answer TYPE option<string>;
+DEFINE FIELD OVERWRITE question_title ON TABLE answer TYPE option<string>;
+-- The margin label within the question: "b (ii)", "(c)", "" for a whole question.
+DEFINE FIELD OVERWRITE label ON TABLE answer TYPE option<string>;
+DEFINE FIELD OVERWRITE points ON TABLE answer TYPE option<float>;
+-- The exercise: its own text, and the introduction above it.
+DEFINE FIELD OVERWRITE prompt ON TABLE answer TYPE option<string> DEFAULT '';
+DEFINE FIELD OVERWRITE context ON TABLE answer TYPE option<string>;
+-- Where the exercise is on a PDF sheet: the page, the label its excerpt
+-- starts at, and once found, the excerpt itself as JSON
+-- ([{ page, top, bottom }], fractions of the page height).
+DEFINE FIELD OVERWRITE page ON TABLE answer TYPE option<int>;
+DEFINE FIELD OVERWRITE anchor ON TABLE answer TYPE option<string>;
+DEFINE FIELD OVERWRITE anchor_page ON TABLE answer TYPE option<int>;
+DEFINE FIELD OVERWRITE region ON TABLE answer TYPE option<string>;
+-- The answer, as Markdown with $math$. Pasted images are \`answer-image:<id>\`.
+DEFINE FIELD OVERWRITE content ON TABLE answer TYPE option<string> DEFAULT '';
+DEFINE FIELD OVERWRITE created_at ON TABLE answer TYPE option<datetime> DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE updated_at ON TABLE answer TYPE option<datetime>;
+
+DEFINE INDEX OVERWRITE answer_homework ON TABLE answer FIELDS homework, position;
 
 -- ##################################################################
 -- SOURCES
@@ -1420,12 +1668,14 @@ DEFINE FIELD _00_rv ON TABLE _00_query TYPE int DEFAULT 0 PERMISSIONS FOR select
 DEFINE FIELD _00_rv ON TABLE _00_schema TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE _00_stream_processor_state TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE _00_user_feature TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
+DEFINE FIELD _00_rv ON TABLE answer TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE api_key TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE call TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE call_turn TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE course TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE fetch_run TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE fetcher TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
+DEFINE FIELD _00_rv ON TABLE homework TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE job TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE material TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE turn_source TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
@@ -1435,6 +1685,20 @@ DEFINE FIELD _00_rv ON TABLE user TYPE int DEFAULT 0 PERMISSIONS FOR select, cre
 -- ==================================================
 -- AUTO-GENERATED SP00KY EVENTS
 -- ==================================================
+
+-- Table: answer Client Mutation
+DEFINE EVENT OVERWRITE _00_answer_client_mutation ON TABLE answer
+WHEN $before != $after AND $event != "DELETE"
+THEN {
+    -- No-op for now. Client mutation sync logic moved to DBSP.
+};
+
+-- Table: answer Client Deletion
+DEFINE EVENT OVERWRITE _00_answer_client_delete ON TABLE answer
+WHEN $event = "DELETE"
+THEN {
+    -- No-op for now.
+};
 
 -- Table: api_key Client Mutation
 DEFINE EVENT OVERWRITE _00_api_key_client_mutation ON TABLE api_key
@@ -1515,6 +1779,20 @@ THEN {
 
 -- Table: fetcher Client Deletion
 DEFINE EVENT OVERWRITE _00_fetcher_client_delete ON TABLE fetcher
+WHEN $event = "DELETE"
+THEN {
+    -- No-op for now.
+};
+
+-- Table: homework Client Mutation
+DEFINE EVENT OVERWRITE _00_homework_client_mutation ON TABLE homework
+WHEN $before != $after AND $event != "DELETE"
+THEN {
+    -- No-op for now. Client mutation sync logic moved to DBSP.
+};
+
+-- Table: homework Client Deletion
+DEFINE EVENT OVERWRITE _00_homework_client_delete ON TABLE homework
 WHEN $event = "DELETE"
 THEN {
     -- No-op for now.

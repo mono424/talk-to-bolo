@@ -232,6 +232,24 @@ SITE_URL=https://mono424.github.io BASE_PATH=/talk-to-bolo PUBLIC_APP_URL= pnpm 
 
 Landing page photo: [Sanket Mishra on Unsplash](https://unsplash.com/photos/a-girl-sitting-on-a-bench-using-a-laptop-vvE2GOnGudg).
 
+## Homework
+
+**Answer** on any material opens a homework document for it (`homework`
+and one `answer` row per part). `shared/homework.ts` splits the sheet into
+parts: questions ("Question 2", "Problem 3", a numbered heading), lettered
+parts ("Part (b)", "(c)") and roman sub-parts ("(ii)"), with points, page and
+the introduction each part builds on. The app creates the rows itself.
+
+The homework page (`apps/web/src/routes/Homework.tsx`) is one document of
+answers with quiet margin labels per part. The exercise of the active part
+shows beside it (on phones, pinned above the keyboard): for a PDF sheet a crop
+of the page itself, located once from the text layer
+(`apps/web/src/lib/sheet-regions.ts`) and saved as `answer.region`; otherwise
+the part's text. Answers are Markdown with KaTeX math, saved as you type;
+pasted images go to the `materials` bucket through `/api/answers/:id/images`
+and are served at `/answer-images/:id`. Export PDF prints the answers in sheet
+order. ChatGPT reads homework through the `get_homework` MCP tool.
+
 ## LaTeX material
 
 A material of kind `tex` keeps its LaTeX source as written (upload a `.tex`

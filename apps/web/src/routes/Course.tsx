@@ -1,15 +1,15 @@
 import { A, useNavigate, useParams } from '@solidjs/router';
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { FileCode2, FileText, FileType2, Folder, PenLine, Plus, Radar, Settings2, Trash2, Upload, Waypoints } from 'lucide-solid';
+import { FileCode2, FileText, FileType2, Folder, NotebookPen, PenLine, Plus, Radar, Settings2, Trash2, Upload, Waypoints } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { ApiError, uploadPdf } from '../lib/api';
 import { reindexMaterial } from '../lib/jobs';
 import { idKey, newId, whenSynced } from '../lib/ids';
 import { COURSE_COLORS, courseColor, LANGUAGES, type CourseColor } from '../lib/palette';
-import { qMaterialsPage, useCourse } from '../lib/query';
-import { Button, buttonClass, Field, IconButton, inputClass, PageLoader, StatusText } from '../components/ui';
+import { qHomeworkList, qMaterialsPage, useCourse } from '../lib/query';
+import { Button, buttonClass, Field, formatDate, IconButton, inputClass, PageLoader, StatusText } from '../components/ui';
 import { scrollParent, VirtualList } from '../components/VirtualList';
 import { CourseSearch } from '../components/CourseSearch';
 import { Sheet } from '../components/Sheet';
@@ -154,6 +154,7 @@ export default function CoursePage() {
             />
           </div>
 
+          <HomeworkSection courseId={c().id} courseKey={params.courseKey ?? ''} />
           <SourcesSection courseId={c().id} onOpen={setOpenSource} />
           <Show when={addingSource()}>
             <AddSourceSheet courseId={c().id} onClose={() => setAddingSource(false)} />
@@ -473,5 +474,29 @@ function CourseSettings(props: { course: CourseRow }) {
         </Sheet>
       </Show>
     </>
+  );
+}
+
+/** The course's homework: the sheets the student is answering. Nothing when none. */
+function HomeworkSection(props: { courseId: string; courseKey: string }) {
+  const db = useDb<typeof schema>();
+  const homework = useQuery(() => qHomeworkList(db, props.courseId));
+  return (
+    <Show when={(homework.data() ?? []).length > 0}>
+      <section class="-mx-3 mb-5">
+        <h2 class="px-3 pb-1 text-[13px] text-muted">Homework</h2>
+        <For each={homework.data() ?? []}>
+          {(h) => (
+            <A href={`/courses/${props.courseKey}/homework/${idKey(h.id)}`} class="flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-soft">
+              <span class="shrink-0 text-faint">
+                <NotebookPen size={18} stroke-width={1.6} />
+              </span>
+              <span class="min-w-0 flex-1 truncate text-[15px]">{h.title}</span>
+              <span class="shrink-0 text-[13px] text-faint">{formatDate(h.updated_at)}</span>
+            </A>
+          )}
+        </For>
+      </section>
+    </Show>
   );
 }

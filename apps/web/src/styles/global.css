@@ -366,3 +366,24 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Homework answers (routes/Homework.tsx): lecture typography, tighter. */
+.lecture.answer { max-width: none; }
+.lecture.answer > :last-child { margin-bottom: 0; }
+.sheet-excerpt canvas { border-radius: 6px; }
+
+/* Export PDF prints only the homework's answers. */
+.homework-print { display: none; }
+@media print {
+  @page { margin: 18mm 16mm; }
+  body > :not(.homework-print) { display: none !important; }
+  .homework-print { display: block; color: #000; background: #fff; }
+  .homework-print-body { font-size: 11pt; line-height: 1.5; }
+  .homework-print-body h1 { font-size: 17pt; font-weight: 600; margin: 0 0 14pt; }
+  .homework-print-body h2 { font-size: 13pt; font-weight: 600; margin: 16pt 0 6pt; break-after: avoid; }
+  .homework-print-body h3 { font-size: 11pt; font-weight: 600; margin: 10pt 0 4pt; break-after: avoid; }
+  .homework-print-body h3 span { font-weight: 400; color: #555; }
+  .homework-print-body .unanswered { color: #888; font-style: italic; }
+  .homework-print-body .lecture { max-width: none; font-size: 11pt; }
+  .homework-print-body .math-display { overflow: visible; }
+}

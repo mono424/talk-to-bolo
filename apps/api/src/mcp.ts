@@ -467,6 +467,48 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
       }),
   );
 
+  // ── Homework: the student's own answers to an exercise sheet ───────────
+
+  server.registerTool(
+    'get_homework',
+    {
+      title: 'Read homework answers',
+      description:
+        "Reads the student's homework in TalkToBolo: without homework_id, the homework of a course; with it, each part of the exercise sheet with its text, points and the student's current answer. Use it to help with homework the way a good tutor does: ask what they tried, point to the lecture section, find the mistake in their draft, give the next hint. Do not write finished answers for them unless they explicitly ask for one.",
+      inputSchema: z.object({
+        course_id: z.string().optional(),
+        homework_id: z.string().optional().describe('A homework:... id from the list.'),
+      }),
+      annotations: READ,
+      _meta: meta('Reading your homework…', 'Homework read'),
+    },
+    ({ course_id, homework_id }) =>
+      run(async () => {
+        if (homework_id) {
+          const id = recordId('homework', homework_id);
+          const hw = await user.query<{ id: string; title: string; course: string; sheet?: string | null } | null>(
+            'SELECT id, title, course, sheet FROM ONLY type::record($id)', { id },
+          );
+          if (!hw) return fail('Homework not found.');
+          const parts = await user.query<unknown[]>(
+            `SELECT key, question, question_title, label, points, page, prompt, context, content AS answer
+               FROM answer WHERE homework = type::record($id) ORDER BY position`,
+            { id },
+          );
+          return text({ ...hw, sheet_url: hw.sheet ? materialUrl(hw.course, hw.sheet) : null, parts });
+        }
+        if (!course_id) return fail('Pass course_id to list homework, or homework_id to read one.');
+        const rows = await user.query<unknown[]>(
+          `SELECT id, title, sheet, updated_at,
+             count((SELECT id FROM answer WHERE homework = $parent.id)) AS parts,
+             count((SELECT id FROM answer WHERE homework = $parent.id AND string::len(string::trim(content)) > 0)) AS answered
+           FROM homework WHERE course = type::record($course) ORDER BY updated_at DESC`,
+          { course: recordId('course', course_id) },
+        );
+        return text(rows ?? []);
+      }),
+  );
+
   // ── Sources: material that comes in by itself ──────────────────────────
 
   server.registerTool(

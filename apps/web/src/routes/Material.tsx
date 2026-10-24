@@ -1,13 +1,15 @@
-import { A, useParams, useSearchParams } from '@solidjs/router';
+import { A, useNavigate, useParams, useSearchParams } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, lazy, Show, Suspense, type JSX } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { Download, Pencil, Waypoints } from 'lucide-solid';
+import { Download, NotebookPen, Pencil, Waypoints } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { PROGRESS_JOB, reindexMaterial, saveLectureProgress } from '../lib/jobs';
 import { chunkMarkdown, chunkPages, lectureMarkdown } from '../../../../shared/lecture';
-import { idString, whenSynced } from '../lib/ids';
+import { idKey, idString, whenSynced } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
-import { firstRow, qMaterial, qMaterialJobs } from '../lib/query';
+import { firstRow, qMaterial, qMaterialJobs, qSheetHomework } from '../lib/query';
+import { createHomework } from '../lib/homework';
+import { useAuth } from '../lib/auth';
 import { Button, buttonClass, inputClass, Loader, PageLoader, StatusText } from '../components/ui';
 import { HeaderActions, SideActions } from '../components/HeaderSlot';
 import { LecturePlace } from '../components/LecturePlace';
@@ -146,6 +148,7 @@ export default function MaterialPage() {
                   >
                     <Waypoints size={14} stroke-width={1.75} /> <span class="hidden sm:inline">Graph</span>
                   </A>
+                  <AnswerButton material={m()} courseKey={params.courseKey ?? ''} />
                 </Show>
                 <Show
                   when={editing()}
@@ -287,4 +290,35 @@ function downloadTex(title: string, content: string) {
   a.download = `${title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'document'}.tex`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Opens the homework answering this sheet, starting it the first time. */
+function AnswerButton(props: { material: { id: unknown; course: unknown; title: string; kind: string; content: string }; courseKey: string }) {
+  const db = useDb<typeof schema>();
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const homework = firstRow(useQuery(() => qSheetHomework(db, idString(props.material.id))));
+  const [busy, setBusy] = createSignal(false);
+  const open = async () => {
+    const existing = homework.data();
+    if (existing) return navigate(`/courses/${props.courseKey}/homework/${idKey(existing.id)}`);
+    const owner = auth.userId();
+    if (!owner || busy()) return;
+    setBusy(true);
+    try {
+      const id = await createHomework(db, {
+        owner,
+        course: idString(props.material.course),
+        sheet: { id: idString(props.material.id), title: props.material.title, kind: props.material.kind, content: props.material.content },
+      });
+      navigate(`/courses/${props.courseKey}/homework/${idKey(id)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button variant="soft" size="sm" class="max-sm:w-11 max-sm:px-0" onClick={open} disabled={busy()} title="Write your answers to this sheet">
+      <NotebookPen size={14} stroke-width={1.75} /> <span class="hidden sm:inline">{homework.data() ? 'My answers' : 'Answer'}</span>
+    </Button>
+  );
 }

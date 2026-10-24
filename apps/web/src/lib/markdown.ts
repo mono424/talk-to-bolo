@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { markdownMacros } from '../../../../shared/latex';
-import { assetUrl } from './api';
+import { answerImageUrl, assetUrl } from './api';
 
 const marked = new Marked({ gfm: true, breaks: false });
 
@@ -11,12 +11,16 @@ const marked = new Marked({ gfm: true, breaks: false });
 // markdown, so the text stays independent of where the API is hosted. They
 // resolve to the API's asset route at render time.
 const ASSET_REF = /^asset:([A-Za-z0-9_-]+)$/;
+// Images pasted into a homework answer (apps/api/src/answers.ts).
+const ANSWER_IMAGE_REF = /^answer-image:([A-Za-z0-9_-]+)$/;
 
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'IMG') {
     const src = node.getAttribute('src') ?? '';
     const m = ASSET_REF.exec(src);
     if (m) node.setAttribute('src', assetUrl(m[1]));
+    const a = ANSWER_IMAGE_REF.exec(src);
+    if (a) node.setAttribute('src', answerImageUrl(a[1]));
     node.setAttribute('loading', 'lazy');
   }
   if (node.tagName === 'A') {
@@ -81,7 +85,7 @@ export function renderMarkdown(md: string): string {
   const { text, math } = extractMath(md ?? '');
   const html = DOMPurify.sanitize(marked.parse(text, { async: false }) as string, {
     ADD_URI_SAFE_ATTR: ['src'],
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|asset):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|asset|answer-image):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
   });
   if (!math.length) return html;
   // A converted LaTeX document carries its \newcommands (shared/latex.ts);

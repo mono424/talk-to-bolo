@@ -16,6 +16,7 @@ import SessionPage from './routes/Session';
 import SessionsPage from './routes/Sessions';
 import SettingsPage from './routes/Settings';
 import ConnectPage from './routes/Connect';
+import HomeworkPage from './routes/Homework';
 
 // three.js is large: the graph view loads it when opened.
 const GraphPage = lazy(() => import('./routes/Graph'));
@@ -108,6 +109,7 @@ export default function App() {
           <Route path="/courses/:courseKey" component={perParam('courseKey', CoursePage)} />
           <Route path="/courses/:courseKey/graph" component={perParam('courseKey', GraphPage)} />
           <Route path="/courses/:courseKey/materials/:materialKey" component={perParam('materialKey', MaterialPage)} />
+          <Route path="/courses/:courseKey/homework/:homeworkKey" component={perParam('homeworkKey', HomeworkPage)} />
           {/* Study sessions live in the `call` table; links from ChatGPT use these paths. */}
           <Route path="/calls" component={SessionsPage} />
           <Route path="/calls/:callKey" component={perParam('callKey', SessionPage)} />
