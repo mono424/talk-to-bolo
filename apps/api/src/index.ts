@@ -136,11 +136,10 @@ app.post('/api/courses/:id/search', async (c) => {
 // Lectures without a knowledge graph yet start building one.
 app.get('/api/courses/:id/graph', async (c) => {
   const graph = await courseGraph(c.env, c.var.caller.userId, c.req.param('id'));
-  const building = await buildMissingGraphs(c.env, c.var.caller.userId, graph.course).catch((err) => {
-    console.error('[memory] graph builds', err);
-    return 0;
-  });
-  return c.json({ ...graph, building });
+  c.executionCtx.waitUntil(
+    buildMissingGraphs(c.env, c.var.caller.userId, graph.course).catch((err) => console.error('[memory] graph builds', err)),
+  );
+  return c.json(graph);
 });
 
 // ── API keys (for the MCP server) ─────────────────────────────────────────
@@ -181,7 +180,7 @@ app.on('GET', ['/assets/:id', '/material-assets/:id'], async (c) => {
 
 // ── MCP ───────────────────────────────────────────────────────────────────
 
-app.all('/mcp', (c) => handleMcp(c.req.raw, c.env));
+app.all('/mcp', (c) => handleMcp(c.req.raw, c.env, c.executionCtx));
 
 // ── Jobs ──────────────────────────────────────────────────────────────────
 
