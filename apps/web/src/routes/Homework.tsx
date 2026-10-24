@@ -2,7 +2,7 @@ import { A, useParams } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { ExternalLink, FileDown, ImagePlus, X } from 'lucide-solid';
+import { ExternalLink, FileDown, Maximize2, Minimize2, X } from 'lucide-solid';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { schema } from '../schema.gen';
 import { fetchPdf, materialPath, uploadAnswerImage } from '../lib/api';
@@ -11,16 +11,19 @@ import { renderMarkdown } from '../lib/markdown';
 import { loadPdfjs } from '../lib/pdfjs';
 import { firstRow, qAnswers, qHomework, qMaterial } from '../lib/query';
 import { locateParts, parseRegion } from '../lib/sheet-regions';
-import { Button, PageLoader } from '../components/ui';
-import { HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
+import { Button, PageLoader, Segmented } from '../components/ui';
+import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
+import { PdfViewer } from '../components/PdfViewer';
 import { SheetExcerpt } from '../components/SheetExcerpt';
 
 /**
  * Doing homework: every answer of an exercise sheet in one document, part by
- * part in sheet order. A quiet label in the margin says which part an answer
- * is for; the exercise of the part being written shows beside it (on a
- * phone, pinned above the keyboard), as an excerpt of the sheet itself.
- * Answers are Markdown with $math$, saved as you type, and print as a PDF.
+ * part in sheet order, with the whole window (no sidebars). A quiet label in
+ * the margin says which part an answer is for. Beside the answers, in a panel
+ * as wide as you drag it, the exercise of the part being written: cut from
+ * the sheet, or the whole page around it, or the entire sheet. On a phone it
+ * is pinned above the keyboard. Answers are free text, Markdown with $math$
+ * and pasted images, saved as you type, and print as a PDF.
  */
 
 type AnswerRow = TableModel<GetTable<typeof schema, 'answer'>>;
@@ -28,25 +31,7 @@ type MaterialRow = TableModel<GetTable<typeof schema, 'material'>>;
 
 const SAVE_DELAY_MS = 500;
 
-/** Keys above the keyboard and under the active answer: what is tedious to type. */
-const SNIPPETS: { label: string; before: string; after?: string; title: string }[] = [
-  { label: '$x$', before: '$', after: '$', title: 'Math' },
-  { label: '$$', before: '\n$$\n', after: '\n$$\n', title: 'Display math' },
-  { label: 'x²', before: '^{', after: '}', title: 'Superscript' },
-  { label: 'xₙ', before: '_{', after: '}', title: 'Subscript' },
-  { label: 'a/b', before: '\\frac{', after: '}{}', title: 'Fraction' },
-  { label: '√', before: '\\sqrt{', after: '}', title: 'Square root' },
-  { label: 'λ', before: '\\lambda ', title: 'lambda' },
-  { label: 'π', before: '\\pi ', title: 'pi' },
-  { label: 'Δ', before: '\\Delta ', title: 'Delta' },
-  { label: 'ε', before: '\\varepsilon ', title: 'epsilon' },
-  { label: 'τ', before: '\\tau ', title: 'tau' },
-  { label: '·', before: '\\cdot ', title: 'Times dot' },
-  { label: '×', before: '\\times ', title: 'Times' },
-  { label: '°', before: '^\\circ', title: 'Degrees' },
-  { label: '→', before: '\\to ', title: 'Arrow' },
-  { label: '≈', before: '\\approx ', title: 'Approximately' },
-];
+const PANEL_WIDTH_KEY = 'homework-panel-width';
 
 export default function HomeworkPage() {
   const params = useParams();
@@ -237,18 +222,11 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
   // ── The exercise beside (or above) the active answer ───────────────────
 
   const [showExercise, setShowExercise] = createSignal(true);
+  // exercise: the part, cut from the sheet (`expanded`: its whole page). sheet: the entire sheet.
+  const [mode, setMode] = createSignal<'exercise' | 'sheet'>('exercise');
+  const [expanded, setExpanded] = createSignal(false);
   const current = createMemo(() => props.answers.find((a) => idString(a.id) === active()) ?? props.answers[0] ?? null);
-  const [railTop, setRailTop] = createSignal(0);
-  let docEl!: HTMLDivElement;
-
-  // Beside the active answer, kept in view while it is long.
-  createEffect(() => {
-    const a = current();
-    if (!a || !wide()) return;
-    const el = blocks.get(idString(a.id));
-    if (!el) return;
-    setRailTop(Math.max(0, el.offsetTop - 6));
-  });
+  const hasPdf = () => props.sheet?.kind === 'pdf' && !!props.sheet.source_size;
 
   onMount(() => {
     const key = (e: KeyboardEvent) => {
@@ -261,45 +239,77 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
     onCleanup(() => window.removeEventListener('keydown', key));
   });
 
+  // Wide screens: the panel's width, dragged at its edge and remembered.
+  const [panelWidth, setPanelWidth] = createSignal(
+    Number(localStorage.getItem(PANEL_WIDTH_KEY)) || Math.round(Math.min(820, Math.max(440, window.innerWidth * 0.46))),
+  );
+  let resize: { x: number; w: number } | null = null;
+  const clampWidth = (w: number) => Math.round(Math.min(window.innerWidth * 0.7, Math.max(360, w)));
+
   // Phones: how much room the pinned exercise takes (drag its handle).
-  const [pinnedHeight, setPinnedHeight] = createSignal(190);
+  const [pinnedHeight, setPinnedHeight] = createSignal(240);
   const [folded, setFolded] = createSignal(false);
   let drag: { y: number; h: number; moved: boolean } | null = null;
 
   const answered = () => props.answers.filter((a) => text(a).trim()).length;
+  const partName = (a: AnswerRow) => [a.question, a.label].filter(Boolean).join(' ') || 'Answer';
+  const pageOf = (a: AnswerRow) => parseRegion(a.region)[0]?.page ?? a.page ?? a.anchor_page ?? 1;
 
-  const exercise = (a: AnswerRow, compact: boolean): JSX.Element => (
-    <div class={`overflow-hidden rounded-xl border border-line bg-surface ${compact ? '' : 'shadow-[0_18px_40px_-20px_rgb(0_0_0/0.22)]'}`}>
-      <div class="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[11.5px] text-muted">
-        <span class="min-w-0 flex-1 truncate">
-          {[a.question, a.label].filter(Boolean).join(' ')}
-          {a.points ? ` · ${a.points} ${a.points === 1 ? 'point' : 'points'}` : ''}
-        </span>
-        <Show when={props.sheet}>
-          {(sheet) => (
-            <A href={materialPath(idString(sheet().course), idString(sheet().id), a.page ?? a.anchor_page)} class="inline-flex items-center gap-1 hover:text-fg">
-              Page {a.page ?? a.anchor_page ?? 1} <ExternalLink size={11} stroke-width={1.75} />
-            </A>
-          )}
-        </Show>
-        <button type="button" class="-mr-1 inline-flex h-6 w-6 items-center justify-center rounded-full hover:bg-soft hover:text-fg" aria-label="Hide the exercise (⌘E)" onClick={() => setShowExercise(false)}>
-          <X size={13} stroke-width={1.9} />
-        </button>
-      </div>
-      <Show when={!(compact && folded())}>
-        <div class={`p-2 ${compact ? 'overflow-y-auto overscroll-contain' : ''}`} style={compact ? { 'max-height': `${pinnedHeight()}px` } : undefined}>
-          <SheetExcerpt pdf={pdf()} segments={parseRegion(a.region)} prompt={a.prompt} context={a.context} />
-        </div>
+  const panelHeader = (a: AnswerRow, compact: boolean): JSX.Element => (
+    <div class="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2 text-[12px] text-muted">
+      <Show when={!compact && hasPdf()}>
+        <Segmented
+          label="Show"
+          value={mode()}
+          options={[
+            { value: 'exercise', label: 'Exercise' },
+            { value: 'sheet', label: 'Whole sheet' },
+          ]}
+          onChange={setMode}
+        />
       </Show>
+      <span class="min-w-0 flex-1 truncate">
+        {partName(a)}
+        {a.points ? ` · ${a.points} ${a.points === 1 ? 'point' : 'points'}` : ''}
+        {hasPdf() ? ` · page ${pageOf(a)}` : ''}
+      </span>
+      <Show when={hasPdf() && (compact || mode() === 'exercise')}>
+        <button
+          type="button"
+          class="inline-flex h-7 items-center gap-1 rounded-full px-2 hover:bg-soft hover:text-fg"
+          title={expanded() ? 'Only this part' : 'The whole page around it'}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded() ? <Minimize2 size={13} stroke-width={1.9} /> : <Maximize2 size={13} stroke-width={1.9} />}
+          <span class="hidden sm:inline">{expanded() ? 'Less' : 'Page'}</span>
+        </button>
+      </Show>
+      <Show when={compact && props.sheet}>
+        {(sheet) => (
+          <A href={materialPath(idString(sheet().course), idString(sheet().id), pageOf(a))} class="inline-flex h-7 items-center gap-1 rounded-full px-2 hover:bg-soft hover:text-fg" title="Open the sheet">
+            <ExternalLink size={13} stroke-width={1.9} />
+          </A>
+        )}
+      </Show>
+      <button type="button" class="-mr-1 inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-soft hover:text-fg" aria-label="Hide the exercise (⌘E)" onClick={() => setShowExercise(false)}>
+        <X size={14} stroke-width={1.9} />
+      </button>
     </div>
   );
 
+  const excerpt = (a: AnswerRow) => (
+    <SheetExcerpt pdf={pdf()} segments={parseRegion(a.region)} prompt={a.prompt} context={a.context} expanded={expanded()} />
+  );
+
   return (
-    <div class="mx-auto w-full max-w-6xl px-3 pb-24 sm:px-6">
+    <div class="w-full px-3 pb-24 sm:px-6">
+      <Focus />
       <HeaderTitle>
         <div class="flex min-w-0 items-baseline gap-2.5">
+          <A href={`/courses/${props.courseKey}`} class="shrink-0 text-[14px] text-muted hover:text-fg">Course</A>
+          <span class="text-faint">/</span>
           <h1 class="min-w-0 truncate text-[16px] font-semibold tracking-tight sm:text-[17px]">{props.title}</h1>
-          <span class="shrink-0 text-[12px] text-muted">
+          <span class="hidden shrink-0 text-[12px] text-muted sm:inline">
             {pending() > 0 || Object.keys(drafts()).length ? 'Saving…' : `${answered()} of ${props.answers.length} answered · saved`}
           </span>
         </div>
@@ -321,7 +331,14 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
               class={active() ? 'fixed inset-x-0 z-30 px-2 pt-2' : 'pt-2'}
               style={active() ? { top: `${viewport().top}px` } : undefined}
             >
-              {exercise(a(), true)}
+              <div class="overflow-hidden rounded-xl border border-line bg-surface shadow-[0_10px_30px_-18px_rgb(0_0_0/0.3)]">
+                {panelHeader(a(), true)}
+                <Show when={!folded()}>
+                  <div class="overflow-y-auto overscroll-contain p-2" style={{ 'max-height': `${pinnedHeight()}px` }}>
+                    {excerpt(a())}
+                  </div>
+                </Show>
+              </div>
               <div
                 class="flex touch-none justify-center py-1.5"
                 onPointerDown={(e) => {
@@ -335,7 +352,7 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
                   if (!drag.moved) return;
                   const h = drag.h + dy;
                   setFolded(h < 50);
-                  setPinnedHeight(Math.min(viewport().height * 0.6, Math.max(60, h)));
+                  setPinnedHeight(Math.min(viewport().height * 0.65, Math.max(80, h)));
                 }}
                 onPointerUp={() => {
                   // A tap folds or unfolds; a drag resizes.
@@ -347,7 +364,7 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
               </div>
             </div>
             <Show when={active()}>
-              <div aria-hidden="true" style={{ height: `${(folded() ? 36 : pinnedHeight() + 46) + 12}px` }} />
+              <div aria-hidden="true" style={{ height: `${(folded() ? 40 : pinnedHeight() + 56) + 12}px` }} />
             </Show>
           </>
         )}
@@ -357,8 +374,9 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
         <p class="mx-auto mt-3 max-w-3xl rounded-xl bg-soft px-3.5 py-2 text-[13px] text-muted">{notice()}</p>
       </Show>
 
-      <div class="relative mt-4 grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-8">
-        <div ref={docEl} class="relative min-w-0 max-w-3xl">
+      <div class="relative mt-4 flex items-start gap-0">
+        <div class="relative min-w-0 flex-1">
+          <div class="mx-auto max-w-3xl">
           {/* By position, not by row: a saved answer syncing back must not rebuild its editor. */}
           <Index each={props.answers} fallback={<p class="py-10 text-center text-muted">This sheet has no parts to answer.</p>}>
             {(row, i) => {
@@ -405,13 +423,20 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
                           class="block w-full resize-none overflow-hidden bg-transparent text-[16px] leading-relaxed outline-none placeholder:text-faint sm:text-[15px]"
                           rows={1}
                           value={text(a())}
-                          placeholder="Answer… $math$ works, paste images"
+                          placeholder="Write your answer. $…$ for math; paste or drop images."
                           aria-label={`Answer to ${[a().question, a().label].filter(Boolean).join(' ')}`}
                           onInput={(e) => {
                             edit(id, e.currentTarget.value);
                             autosize(e.currentTarget);
                           }}
                           onBlur={() => save(id)}
+                          onDrop={(e) => {
+                            const files = [...(e.dataTransfer?.files ?? [])];
+                            if (files.some((f) => f.type.startsWith('image/'))) {
+                              e.preventDefault();
+                              void addImages(id, files);
+                            }
+                          }}
                           onPaste={(e) => {
                             const files = [...(e.clipboardData?.files ?? [])];
                             if (files.some((f) => f.type.startsWith('image/'))) {
@@ -439,7 +464,6 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
                         <Show when={/[$\\*_#![`|]/.test(text(a()))}>
                           <div class="lecture answer mt-2 border-t border-dashed border-line pt-2 text-[15px]" innerHTML={renderMarkdown(text(a()))} />
                         </Show>
-                        <Keys onKey={(s) => insert(id, s.before, s.after)} onImages={(files) => void addImages(id, files)} />
                       </Show>
                     </div>
                   </div>
@@ -447,16 +471,41 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
               );
             }}
           </Index>
+          </div>
         </div>
 
-        {/* Wide screens: the exercise beside the active answer. */}
+        {/* Wide screens: the panel beside the answers, as wide as it is dragged. */}
         <Show when={wide() && showExercise() && current()}>
           {(a) => (
-            <div class="relative">
-              <div class="sticky top-4 transition-[margin] duration-200" style={{ 'margin-top': `${railTop()}px` }}>
-                {exercise(a(), false)}
-              </div>
-            </div>
+            <>
+              <div
+                class="sticky top-3 mx-3 h-[calc(100dvh-7.5rem)] w-2 shrink-0 cursor-col-resize touch-none rounded-full transition-colors hover:bg-line"
+                title="Drag to resize"
+                onPointerDown={(e) => {
+                  resize = { x: e.clientX, w: panelWidth() };
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                }}
+                onPointerMove={(e) => resize && setPanelWidth(clampWidth(resize.w - (e.clientX - resize.x)))}
+                onPointerUp={() => {
+                  resize = null;
+                  localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth()));
+                }}
+              />
+              <aside
+                class="sticky top-3 flex h-[calc(100dvh-7.5rem)] shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface"
+                style={{ width: `${panelWidth()}px` }}
+              >
+                {panelHeader(a(), false)}
+                <div class="scroll-quiet min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+                  <Show
+                    when={mode() === 'sheet' && hasPdf() && props.sheet}
+                    fallback={excerpt(a())}
+                  >
+                    {(sheet) => <PdfViewer materialId={idString(sheet().id)} size={sheet().source_size} fileName={sheet().source_name} page={pageOf(a())} />}
+                  </Show>
+                </div>
+              </aside>
+            </>
           )}
         </Show>
       </div>
@@ -471,48 +520,6 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
 function autosize(el: HTMLTextAreaElement) {
   el.style.height = 'auto';
   el.style.height = `${el.scrollHeight}px`;
-}
-
-/** Math and images, one tap away: under the active answer, and above a phone's keyboard. */
-function Keys(props: { onKey: (s: (typeof SNIPPETS)[number]) => void; onImages: (files: File[]) => void }) {
-  let input!: HTMLInputElement;
-  return (
-    <div class="scroll-quiet -mx-1 mt-2 flex gap-1 overflow-x-auto pb-1" onMouseDown={(e) => e.preventDefault()}>
-      <For each={SNIPPETS}>
-        {(s) => (
-          <button
-            type="button"
-            title={s.title}
-            class="h-9 shrink-0 rounded-lg bg-soft px-2.5 font-serif text-[14px] text-muted transition-colors hover:bg-hover hover:text-fg md:h-7 md:text-[13px]"
-            onClick={() => props.onKey(s)}
-          >
-            {s.label}
-          </button>
-        )}
-      </For>
-      <button
-        type="button"
-        title="Add an image"
-        class="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg bg-soft px-2.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-fg md:h-7 md:text-[12px]"
-        onClick={() => input.click()}
-      >
-        <ImagePlus size={14} stroke-width={1.75} /> Image
-      </button>
-      <input
-        ref={input}
-        type="file"
-        accept="image/*"
-        class="sr-only"
-        tabindex="-1"
-        multiple
-        onChange={(e) => {
-          const files = [...(e.currentTarget.files ?? [])];
-          e.currentTarget.value = '';
-          if (files.length) props.onImages(files);
-        }}
-      />
-    </div>
-  );
 }
 
 /** What Export PDF prints: the answers in sheet order, under their part labels. */
