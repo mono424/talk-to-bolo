@@ -6,7 +6,8 @@ import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { idKey, newId } from '../lib/ids';
 import { courseColor } from '../lib/palette';
-import { qApiKeys, qAttention, qCourses } from '../lib/query';
+import { qAttention, qCourses } from '../lib/query';
+import { useChatGPTGuide } from '../components/ChatGPTGuide';
 import { Button, buttonClass, Card, greeting, NoticeCard } from '../components/ui';
 
 export default function Home() {
@@ -15,9 +16,7 @@ export default function Home() {
   const uid = () => auth.userId();
   const courses = useQuery(() => (uid() ? qCourses(db, uid()!) : null));
   const attention = useQuery(() => (uid() ? qAttention(db, uid()!) : null));
-  // A ChatGPT connection is a key row too (see Settings).
-  const keys = useQuery(() => (uid() ? qApiKeys(db, uid()!) : null));
-  const connected = () => (keys.data() ?? []).some((k) => !k.revoked_at);
+  const guide = useChatGPTGuide();
   const [dismissed, setDismissed] = createSignal<string[]>([]);
 
   const failed = () => (attention.data() ?? []).filter((m) => m.status === 'failed' && !dismissed().includes(m.id));
@@ -31,16 +30,14 @@ export default function Home() {
       </h1>
       <p class="mt-1.5 text-[16px] text-muted">Add your lecture material, then study it with ChatGPT.</p>
 
-      <Show when={(courses.data() ?? []).length > 0 && keys.data() && !connected()}>
+      <Show when={(courses.data() ?? []).length > 0 && !guide.connected()}>
         <NoticeCard
           class="mt-8"
           icon={<AudioLines size={20} stroke-width={1.75} />}
           title="Study by voice in ChatGPT"
           description="Connect once, then ask ChatGPT voice for your course. Your progress stays in sync."
         >
-          <A href="/settings" class={buttonClass('solid')}>
-            Connect ChatGPT
-          </A>
+          <Button onClick={guide.open}>Connect ChatGPT</Button>
         </NoticeCard>
       </Show>
 

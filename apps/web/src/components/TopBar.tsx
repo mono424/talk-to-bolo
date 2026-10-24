@@ -2,6 +2,8 @@ import { A } from '@solidjs/router';
 import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { LogOut, Menu, MessageCircle, X } from 'lucide-solid';
 import { useAuth } from '../lib/auth';
+import { useChatGPTGuide } from './ChatGPTGuide';
+import { Dot } from './ui';
 import { HeaderSlot } from './HeaderSlot';
 
 /** Bolo, the approved TalkToBolo mark. */
@@ -15,6 +17,7 @@ export function Logo(props: { class?: string }) {
 
 export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
   const auth = useAuth();
+  const guide = useChatGPTGuide();
   const [menu, setMenu] = createSignal(false);
   const initial = () => auth.user()?.name?.trim().charAt(0).toUpperCase() || '?';
 
@@ -51,7 +54,21 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
           Wide windows end it at the recent sessions column, clear of the account menu above it. */}
       <HeaderSlot class="flex min-w-0 flex-1 items-center gap-2 md:pointer-events-none md:absolute md:inset-y-0 md:left-[288px] md:right-0 xl:right-[288px] xl:[--account-w:0px]" />
 
-      <div ref={account} class="relative ml-auto shrink-0">
+      <div ref={account} class="relative ml-auto flex shrink-0 items-center gap-2">
+        {/* The way back to the ChatGPT guide: prominent until a connection exists. */}
+        <button
+          type="button"
+          onClick={guide.open}
+          class={`inline-flex h-11 items-center justify-center gap-2 rounded-full px-3.5 text-[14px] font-medium transition-colors md:h-10 ${
+            guide.connected() ? 'bg-soft text-fg hover:bg-hover' : 'bg-solid text-solid-fg hover:bg-solid-hover'
+          }`}
+          aria-label={guide.connected() ? 'ChatGPT connected: how to study' : 'Connect ChatGPT'}
+        >
+          <Show when={guide.connected()} fallback={<MessageCircle size={17} stroke-width={1.8} />}>
+            <Dot tone="ready" />
+          </Show>
+          <span class={guide.connected() ? 'hidden sm:inline' : ''}>{guide.connected() ? 'ChatGPT' : 'Connect ChatGPT'}</span>
+        </button>
         <button
           type="button"
           onClick={() => setMenu(!menu())}

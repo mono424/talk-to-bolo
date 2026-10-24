@@ -4,6 +4,7 @@ import { Sp00kyProvider } from '@spooky-sync/client-solid';
 import { dbConfig } from './db';
 import { AuthProvider, useAuth } from './lib/auth';
 import { AuthScreen } from './components/AuthScreen';
+import { ChatGPTGuideProvider } from './components/ChatGPTGuide';
 import { HeaderSlotProvider } from './components/HeaderSlot';
 import { RecentSessions, Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
@@ -40,14 +41,16 @@ function Layout(props: RouteSectionProps) {
     <Show when={auth.userId()} fallback={<AuthScreen />}>
       <div class="app-viewport h-dvh">
         <div class="flex h-full flex-col overflow-hidden bg-surface md:rounded-[22px] md:border md:border-line md:shadow-frame">
-          <HeaderSlotProvider>
-            <TopBar menuOpen={menuOpen()} onMenu={() => setMenuOpen(!menuOpen())} />
-            <div class="relative flex min-h-0 flex-1">
-              <Sidebar open={menuOpen()} onClose={() => setMenuOpen(false)} />
-              <main ref={main} class="scroll-quiet min-w-0 flex-1 overflow-y-auto overscroll-contain">{props.children}</main>
-              <RecentSessions />
-            </div>
-          </HeaderSlotProvider>
+          <ChatGPTGuideProvider>
+            <HeaderSlotProvider>
+              <TopBar menuOpen={menuOpen()} onMenu={() => setMenuOpen(!menuOpen())} />
+              <div class="relative flex min-h-0 flex-1">
+                <Sidebar open={menuOpen()} onClose={() => setMenuOpen(false)} />
+                <main ref={main} class="scroll-quiet min-w-0 flex-1 overflow-y-auto overscroll-contain">{props.children}</main>
+                <RecentSessions />
+              </div>
+            </HeaderSlotProvider>
+          </ChatGPTGuideProvider>
         </div>
       </div>
     </Show>

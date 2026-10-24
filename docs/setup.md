@@ -330,9 +330,12 @@ Worker's `APP_ORIGIN` (step 2).
 
 ## Using the MCP server
 
-Open **ChatGPT** from the account menu in the app. **Connect ChatGPT** copies
-the server address and opens ChatGPT Plugins. Choose **Add custom MCP server**,
-paste the address, select OAuth, then create and install the plugin. ChatGPT
+**Connect ChatGPT** in the app's top bar opens a step by step guide (it also
+opens by itself once per account and browser until a connection exists). It
+copies the server address and opens ChatGPT Plugins. Choose **Add custom MCP
+server**, fill in the name, description and address the guide shows, select
+OAuth, then create and install the plugin. The guide turns to connected as soon
+as the account approval on `/connect` creates the connection. ChatGPT
 does not document a prefilled install link for arbitrary custom MCP servers.
 Set it up once in a browser; the plugin then also works in the ChatGPT apps on
 iOS and Android.

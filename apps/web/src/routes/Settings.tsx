@@ -1,37 +1,19 @@
-import { createSignal, For, Show } from 'solid-js';
+import { For, Show } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { ArrowUpRight, AudioLines, Check, Copy, MessageCircle } from 'lucide-solid';
+import { AudioLines, MessageCircle } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { MCP_URL } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { qApiKeys } from '../lib/query';
+import { CopyField, useChatGPTGuide, VOICE_PROMPTS } from '../components/ChatGPTGuide';
 import { Button, Card, Dot, formatDate } from '../components/ui';
-
-/** What to say to ChatGPT voice once TalkToBolo is connected. */
-const VOICE_PROMPTS = [
-  'What should I study today on TalkToBolo?',
-  'Continue my lecture where I left off.',
-  'Quiz me on what I have covered so far.',
-  'Save this session to TalkToBolo.',
-];
 
 /** Connecting ChatGPT to the MCP server, and the connections made so far. */
 export default function SettingsPage() {
   const db = useDb<typeof schema>();
   const auth = useAuth();
   const keys = useQuery(() => (auth.userId() ? qApiKeys(db, auth.userId()!) : null));
-  const [chatgptSetup, setChatgptSetup] = createSignal(false);
-  const [addressCopied, setAddressCopied] = createSignal(false);
-
-  const mcpUrl = MCP_URL;
-
-  const connectChatGPT = () => {
-    setChatgptSetup(true);
-    // Open during the click so browsers do not block the new tab while the
-    // asynchronous clipboard operation is pending. The address is public.
-    window.open('https://chatgpt.com/plugins', '_blank', 'noopener,noreferrer');
-    void navigator.clipboard.writeText(mcpUrl).then(() => setAddressCopied(true)).catch(() => setAddressCopied(false));
-  };
+  const guide = useChatGPTGuide();
 
   return (
     <div class="mx-auto w-full min-w-0 max-w-3xl px-4 py-7 sm:px-8 sm:py-14">
@@ -47,28 +29,16 @@ export default function SettingsPage() {
           Connect ChatGPT, then sign in to TalkToBolo and approve access. No API key to copy.
         </p>
         <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <Button onClick={connectChatGPT}>
-            <MessageCircle size={17} stroke-width={1.8} /> Connect ChatGPT <ArrowUpRight size={15} />
+          <Button onClick={guide.open}>
+            <MessageCircle size={17} stroke-width={1.8} /> {guide.connected() ? 'Show the setup guide' : 'Connect ChatGPT'}
           </Button>
         </div>
         <p class="mt-3 text-[13px] leading-relaxed text-muted">
-          ChatGPT needs a short setup in its Plugins page, once, in a browser.
+          A short setup in ChatGPT's Plugins page, once, in a browser. The guide walks you through it.
         </p>
-        <Show when={chatgptSetup()}>
-          <div class="mt-5 rounded-2xl bg-soft p-4" role="region" aria-label="ChatGPT connection setup">
-            <p class="text-[14px] font-medium" role="status">{addressCopied() ? 'Server address copied.' : 'Copy the server address below.'}</p>
-            <ol class="mt-2 list-decimal space-y-1.5 pl-5 text-[14px] leading-relaxed text-muted">
-              <li>In ChatGPT Plugins, choose the plus button, then Add custom MCP server.</li>
-              <li>Name it TalkToBolo, paste the server address and choose OAuth.</li>
-              <li>Create the plugin, connect your TalkToBolo account and approve access.</li>
-              <li>That is it: TalkToBolo is now in the ChatGPT app on your phone too.</li>
-            </ol>
-            <div class="mt-3"><CopyLine text={mcpUrl} /></div>
-            <p class="mt-3 text-[13px] leading-relaxed text-muted">
-              Custom MCP servers depend on your ChatGPT plan, and a workspace admin may need to allow them.
-            </p>
-          </div>
-        </Show>
+        <div class="mt-5">
+          <CopyField label="Server URL" text={MCP_URL} mono />
+        </div>
       </Card>
 
       <Card class="mt-4 p-4 sm:p-6">
@@ -117,32 +87,6 @@ export default function SettingsPage() {
           </For>
         </ul>
       </Card>
-    </div>
-  );
-}
-
-function CopyLine(props: { text: string }) {
-  const [copied, setCopied] = createSignal(false);
-  return (
-    <div class="flex w-full min-w-0 items-start gap-2 rounded-2xl bg-soft p-2.5 sm:px-3.5">
-      <pre class="min-w-0 flex-1 self-center overflow-x-auto whitespace-pre-wrap break-all font-mono text-[12px] leading-relaxed">
-        {props.text}
-      </pre>
-      <button
-        type="button"
-        class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface hover:text-fg sm:h-9 sm:w-9"
-        aria-label={copied() ? 'Copied' : 'Copy to clipboard'}
-        title={copied() ? 'Copied' : 'Copy to clipboard'}
-        onClick={async () => {
-          await navigator.clipboard.writeText(props.text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-      >
-        <Show when={copied()} fallback={<Copy size={16} stroke-width={1.75} />}>
-          <Check size={17} stroke-width={1.75} class="text-green" />
-        </Show>
-      </button>
     </div>
   );
 }
