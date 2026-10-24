@@ -289,7 +289,7 @@ function EditableTitle(props: { value: string; onSave: (v: string) => void }) {
     <Show
       when={editing()}
       fallback={
-        <h1 class="cursor-text break-words text-[22px] font-semibold leading-tight tracking-tight sm:text-[30px]" onClick={() => setEditing(true)} title="Click to rename">
+        <h1 class="cursor-text break-words text-[22px] max-sm:truncate font-semibold leading-tight tracking-tight sm:text-[30px]" onClick={() => setEditing(true)} title="Click to rename">
           {props.value}
         </h1>
       }

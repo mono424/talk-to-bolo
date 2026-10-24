@@ -157,7 +157,7 @@ export default function MaterialPage() {
             when={editing()}
             fallback={
               <article class={`mx-auto w-full min-w-0 px-4 pb-12 pt-6 sm:px-8 sm:pt-5 ${isPdf() ? 'max-w-5xl' : 'max-w-3xl'}`}>
-                <h1 class="break-words text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]">{m().title}</h1>
+                <h1 class="break-words text-[22px] font-semibold leading-tight tracking-tight sm:text-[30px]">{m().title}</h1>
                 <Show when={meta()}>
                   <p class="mt-1.5 break-words text-[14px] text-muted">{meta()}</p>
                 </Show>
