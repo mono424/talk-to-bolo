@@ -1,7 +1,7 @@
 import { A, useNavigate, useParams } from '@solidjs/router';
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { FileText, FileType2, Folder, PenLine, Plus, Settings2, Trash2, Upload, X } from 'lucide-solid';
+import { FileText, FileType2, Folder, PenLine, Plus, Settings2, Trash2, Upload } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { ApiError, uploadPdf } from '../lib/api';
@@ -12,6 +12,7 @@ import { qMaterialsPage, useCourse } from '../lib/query';
 import { Button, Field, IconButton, inputClass, StatusText } from '../components/ui';
 import { scrollParent, VirtualList } from '../components/VirtualList';
 import { CourseSearch } from '../components/CourseSearch';
+import { Sheet } from '../components/Sheet';
 
 export default function CoursePage() {
   const params = useParams();
@@ -157,22 +158,22 @@ export default function CoursePage() {
                 aria-hidden="true"
                 onClick={() => scroller()?.scrollTo({ top: 0, behavior: 'smooth' })}
               >
-                <Folder size={20} stroke-width={1.6} class="shrink-0" style={{ color: courseColor(c().color) }} fill={courseColor(c().color)} fill-opacity="0.18" />
-                <span class="truncate text-[17px] font-semibold tracking-tight">{c().title}</span>
+                <Folder size={20} stroke-width={1.6} class="h-[18px] w-[18px] shrink-0 sm:h-5 sm:w-5" style={{ color: courseColor(c().color) }} fill={courseColor(c().color)} fill-opacity="0.18" />
+                <span class="truncate text-[16px] font-semibold tracking-tight sm:text-[17px]">{c().title}</span>
               </div>
-              <div class="pointer-events-auto relative ml-auto flex shrink-0 items-center gap-1">
+              <div class="pointer-events-auto relative ml-auto flex shrink-0 items-center gap-2 sm:gap-1">
                 <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} />
                 <CourseSettings course={c()} />
               </div>
             </div>
             {/* Pulled up beside the actions; it scrolls away under the pinned row. Tall,
                 so the search starts well down the window. */}
-            <div class="-mt-11 min-h-[max(5rem,calc(33dvh-3rem))] md:-mt-10">
-              <div ref={largeTitle} class="flex origin-top-left items-start gap-3 pr-24 sm:gap-4 sm:pr-32">
+            <div class="-mt-11 min-h-[max(4.5rem,calc(20dvh-3rem))] sm:min-h-[max(5rem,calc(33dvh-3rem))] md:-mt-10">
+              <div ref={largeTitle} class="flex origin-top-left items-start gap-2.5 pr-[6.5rem] pt-2 sm:gap-4 sm:pr-32 sm:pt-0">
                 <Folder
                   size={28}
                   stroke-width={1.6}
-                  class="mt-1 shrink-0"
+                  class="mt-[3px] h-[22px] w-[22px] shrink-0 sm:mt-1 sm:h-7 sm:w-7"
                   style={{ color: courseColor(c().color) }}
                   fill={courseColor(c().color)}
                   fill-opacity="0.18"
@@ -183,7 +184,7 @@ export default function CoursePage() {
                 </div>
               </div>
               <Show when={c().description}>
-                <p class="max-w-2xl break-words pb-12 pl-10 pt-1.5 text-[16px] text-muted sm:pb-16 sm:pl-11">{c().description}</p>
+                <p class="max-w-2xl break-words pb-5 pl-8 pt-1 text-[15px] leading-snug text-muted sm:pb-16 sm:pl-11 sm:pt-1.5 sm:text-[16px]">{c().description}</p>
               </Show>
             </div>
             <div ref={searchBox} class="mt-3">
@@ -222,8 +223,14 @@ export default function CoursePage() {
                   key={(m) => m.id}
                   empty={
                     <div class="mx-3 mt-1 rounded-2xl border border-dashed border-line px-4 py-8 text-center sm:px-6 sm:py-10">
-                      <p class="text-[15px] font-medium">Drop lecture files here</p>
-                      <p class="mt-1 text-[14px] text-muted">PDF slides and scripts, Markdown or text notes</p>
+                      <p class="text-[15px] font-medium">
+                        <span class="sm:hidden">No lecture material yet</span>
+                        <span class="max-sm:hidden">Drop lecture files here</span>
+                      </p>
+                      <p class="mt-1 text-[14px] text-muted">
+                        <span class="sm:hidden">Tap + to add PDF slides, Markdown or text notes</span>
+                        <span class="max-sm:hidden">PDF slides and scripts, Markdown or text notes</span>
+                      </p>
                     </div>
                   }
                 >
@@ -282,13 +289,13 @@ function EditableTitle(props: { value: string; onSave: (v: string) => void }) {
     <Show
       when={editing()}
       fallback={
-        <h1 class="cursor-text break-words text-[28px] font-semibold leading-tight tracking-tight sm:text-[30px]" onClick={() => setEditing(true)} title="Click to rename">
+        <h1 class="cursor-text break-words text-[22px] font-semibold leading-tight tracking-tight sm:text-[30px]" onClick={() => setEditing(true)} title="Click to rename">
           {props.value}
         </h1>
       }
     >
       <input
-        class="-mx-2 w-full min-w-0 max-w-2xl rounded-xl bg-soft px-2 text-[28px] font-semibold leading-tight tracking-tight outline-none sm:text-[30px]"
+        class="-mx-2 w-full min-w-0 max-w-2xl rounded-xl bg-soft px-2 text-[22px] font-semibold leading-tight tracking-tight outline-none sm:text-[30px]"
         value={props.value}
         aria-label="Course name"
         ref={(el) => queueMicrotask(() => el.select())}
@@ -314,7 +321,7 @@ function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () =>
   return (
     <div class="relative">
       <Button variant="soft" size="sm" aria-label="Add material" aria-haspopup="menu" aria-expanded={open()} onClick={() => setOpen(!open())}>
-        <Plus size={16} stroke-width={1.9} />
+        <Plus size={18} stroke-width={1.9} class="sm:h-4 sm:w-4" />
         <span class="hidden sm:inline">Add</span>
       </Button>
       {/* Outside the menu, so closing the menu cannot drop the file picker's result. */}
@@ -407,90 +414,73 @@ function CourseSettings(props: { course: CourseRow }) {
   const db = useDb<typeof schema>();
   const navigate = useNavigate();
   const save = (patch: Record<string, unknown>) => db.update('course', props.course.id, patch);
-  let dialog!: HTMLDialogElement;
-
-  // Text fields save on change, which fires on blur: blur before closing.
-  const close = () => {
-    (document.activeElement as HTMLElement | null)?.blur();
-    dialog.close();
-  };
+  const [open, setOpen] = createSignal(false);
 
   return (
     <>
-      <IconButton label="Course settings" onClick={() => dialog.showModal()}>
+      <IconButton label="Course settings" onClick={() => setOpen(true)}>
         <Settings2 size={20} stroke-width={1.75} />
       </IconButton>
-      <dialog
-        ref={dialog}
-        aria-labelledby="course-settings-title"
-        class="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-[20px] border border-line bg-surface p-0 text-fg shadow-frame backdrop:bg-black/30"
-        onCancel={(e) => {
-          e.preventDefault();
-          close();
-        }}
-        onClick={(e) => e.target === dialog && close()}
-      >
-        <div class="space-y-4 p-5">
-          <div class="-mr-2 -mt-1 flex items-center gap-3">
-            <h2 id="course-settings-title" class="flex-1 text-[17px] font-semibold">Course settings</h2>
-            <IconButton label="Close" onClick={close}>
-              <X size={18} stroke-width={1.75} />
-            </IconButton>
-          </div>
-          <Field label="The tutor speaks">
-            <select class={inputClass} value={props.course.language} onChange={(e) => save({ language: e.currentTarget.value })}>
-              <For each={LANGUAGES}>{(l) => <option value={l.code}>{l.label}</option>}</For>
-            </select>
-          </Field>
-          <Field label="Notes for the tutor" hint="ChatGPT follows them in every study session of this course.">
-            <textarea
-              class={`${inputClass} min-h-24 resize-y text-[16px] sm:text-[14px]`}
-              placeholder="e.g. The exam is oral. Push me on proofs."
-              value={props.course.tutor_notes ?? ''}
-              onChange={(e) => save({ tutor_notes: e.currentTarget.value.trim() || undefined })}
-            />
-          </Field>
-          <Field label="Description">
-            <textarea
-              class={`${inputClass} min-h-16 resize-y text-[16px] sm:text-[14px]`}
-              value={props.course.description ?? ''}
-              onChange={(e) => save({ description: e.currentTarget.value.trim() || undefined })}
-            />
-          </Field>
-          <div>
-            <span class="mb-1.5 block text-[13px] text-muted">Color</span>
-            <div class="flex flex-wrap gap-1">
-              <For each={Object.keys(COURSE_COLORS) as CourseColor[]}>
-                {(key) => (
-                  <button
-                    type="button"
-                    aria-label={key}
-                    aria-pressed={props.course.color === key}
-                    onClick={() => save({ color: key })}
-                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
-                  >
-                    <span class={`h-7 w-7 rounded-full ring-offset-2 ring-offset-surface ${props.course.color === key ? 'ring-2 ring-fg' : ''}`} style={{ background: COURSE_COLORS[key] }} />
-                  </button>
-                )}
-              </For>
+      <Show when={open()}>
+        <Sheet title="Course settings" maxWidth="28rem" onClose={() => setOpen(false)}>
+          {(close) => (
+            <div class="space-y-4">
+              <Field label="The tutor speaks">
+                <select class={inputClass} value={props.course.language} onChange={(e) => save({ language: e.currentTarget.value })}>
+                  <For each={LANGUAGES}>{(l) => <option value={l.code}>{l.label}</option>}</For>
+                </select>
+              </Field>
+              <Field label="Notes for the tutor" hint="ChatGPT follows them in every study session of this course.">
+                <textarea
+                  class={`${inputClass} min-h-24 resize-y text-[16px] sm:text-[14px]`}
+                  placeholder="e.g. The exam is oral. Push me on proofs."
+                  value={props.course.tutor_notes ?? ''}
+                  onChange={(e) => save({ tutor_notes: e.currentTarget.value.trim() || undefined })}
+                />
+              </Field>
+              <Field label="Description">
+                <textarea
+                  class={`${inputClass} min-h-16 resize-y text-[16px] sm:text-[14px]`}
+                  value={props.course.description ?? ''}
+                  onChange={(e) => save({ description: e.currentTarget.value.trim() || undefined })}
+                />
+              </Field>
+              <div>
+                <span class="mb-1.5 block text-[13px] text-muted">Color</span>
+                <div class="flex flex-wrap gap-1">
+                  <For each={Object.keys(COURSE_COLORS) as CourseColor[]}>
+                    {(key) => (
+                      <button
+                        type="button"
+                        aria-label={key}
+                        aria-pressed={props.course.color === key}
+                        onClick={() => save({ color: key })}
+                        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+                      >
+                        <span class={`h-7 w-7 rounded-full ring-offset-2 ring-offset-surface ${props.course.color === key ? 'ring-2 ring-fg' : ''}`} style={{ background: COURSE_COLORS[key] }} />
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                class="-ml-3 text-red"
+                onClick={async () => {
+                  if (confirm(`Delete “${props.course.title}” with all its material and study sessions? This cannot be undone.`)) {
+                    close();
+                    await db.delete('course', props.course.id);
+                    navigate('/');
+                  }
+                }}
+              >
+                Delete course
+              </Button>
             </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            class="-ml-3 text-red"
-            onClick={async () => {
-              if (confirm(`Delete “${props.course.title}” with all its material and study sessions? This cannot be undone.`)) {
-                close();
-                await db.delete('course', props.course.id);
-                navigate('/');
-              }
-            }}
-          >
-            Delete course
-          </Button>
-        </div>
-      </dialog>
+          )}
+        </Sheet>
+      </Show>
     </>
   );
 }
