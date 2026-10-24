@@ -63,13 +63,14 @@ function Frame(props: ParentProps) {
     <>
       <TopBar menuOpen={menuOpen()} onMenu={() => setMenuOpen(!menuOpen())} />
       <div class="relative flex min-h-0 flex-1">
-        <Show when={!focused()}>
+        {/* In focus the sidebars fold away (.side-fold), still mounted so their live queries stay. */}
+        <div class={`side-fold ${focused() ? 'md:w-0 md:opacity-0' : 'md:w-[288px]'}`} inert={focused()}>
           <Sidebar open={menuOpen()} onClose={() => setMenuOpen(false)} />
-        </Show>
+        </div>
         <main ref={main} class="scroll-quiet min-w-0 flex-1 overflow-y-auto overscroll-contain">{props.children}</main>
-        <Show when={!focused()}>
+        <div class={`side-fold justify-end ${focused() ? 'w-0 opacity-0' : 'xl:w-[288px]'}`} inert={focused()}>
           <RecentSessions />
-        </Show>
+        </div>
       </div>
     </>
   );

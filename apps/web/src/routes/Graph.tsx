@@ -297,7 +297,7 @@ export default function GraphPage() {
       {/* The whole window: back, the graph's name and the view in the top bar. */}
       <Focus />
       <HeaderTitle>
-        <div class="flex min-w-0 items-center gap-1.5 sm:-ml-2 sm:gap-2">
+        <div class="focus-in flex min-w-0 items-center gap-1.5 sm:-ml-2 sm:gap-2">
           <A
             href={`/courses/${params.courseKey}`}
             class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-soft hover:text-fg md:h-10 md:w-10"
@@ -313,7 +313,7 @@ export default function GraphPage() {
         </div>
       </HeaderTitle>
       <HeaderEndActions>
-        <ViewToggle dims={dims()} onChange={setDims} class="max-sm:hidden" />
+        <ViewToggle dims={dims()} onChange={setDims} class="focus-in max-sm:hidden" />
       </HeaderEndActions>
 
       {/* The lectures over the scene, and on phones the view, which the top bar has no room for. */}

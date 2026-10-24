@@ -204,6 +204,17 @@ button, a, input, select, textarea { scroll-margin-block: 1rem; }
 }
 .dot-breathe { animation: breathe 1.6s ease-in-out infinite; }
 
+/* The sidebars fold away while a page is in focus (the graph), and its title slides in. */
+.side-fold { display: flex; flex-shrink: 0; }
+@media (min-width: 768px) {
+  .side-fold {
+    overflow: hidden;
+    transition: width 0.34s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.22s ease-out;
+  }
+}
+@keyframes focus-in { from { opacity: 0; transform: translateX(-6px); } }
+.focus-in { animation: focus-in 0.3s cubic-bezier(0.32, 0.72, 0, 1) both; }
+
 /*
  * A page's controls in the top bar (components/HeaderSlot.tsx), lined up with
  * the page's centered column (--page-column, the lecture's 48rem) but never
