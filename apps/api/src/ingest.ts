@@ -43,12 +43,12 @@ type Stop = typeof STOP;
  *
  *   PDF:  extract images -> read the pages' text layer as markdown -> save
  *   all:  chunk the markdown -> embed with Workers AI -> write the search index
- *         -> the course knowledge graph in Agent Memory, when configured
- *         -> its concepts into the course's concept map (the graph view)
  *
- * A memory-only run (`memoryOnly`) does just the last two for a ready
- * material. Agent Memory failing never fails the material: it stays ready,
- * without a graph (`memory_rev` 0).
+ * The material is ready then, and a memory-only run (`memoryOnly`) follows
+ * for the rest: the course knowledge graph in Agent Memory, when configured,
+ * and its concepts in the course's concept map (the graph view). Agent
+ * Memory can take long or be over quota, so it never holds up or fails the
+ * material: it stays ready, without a graph (`memory_rev` 0).
  *
  * Progress is written to `material.status_detail`, which the web app shows
  * live through sync. A newer upload or edit bumps `index_rev`; this run then
@@ -223,7 +223,7 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
       // the first section. All sections are uploaded first, so Agent Memory
       // extracts them side by side, then read back once all are ready.
       const graphs: SectionGraph[] = [];
-      let withMemory = memoryConfigured(this.env);
+      let withMemory = memoryOnly && memoryConfigured(this.env);
       if (withMemory) {
         try {
           const ids: string[] = [];
@@ -325,7 +325,8 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
           console.error(`[ingest] ${materialId} concept map failed`, err);
         }
       }
-      if (memoryOnly) await this.nextGraph(step, event.instanceId);
+      // A fresh material's graph comes next, in its own run.
+      await this.nextGraph(step, event.instanceId, memoryOnly ? null : meta);
       return { ok: true, chunks: total, ...(memoryOnly ? { memoryOnly: true } : {}) };
     } catch (err) {
       if (memoryOnly) {
@@ -349,10 +350,13 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
     }
   }
 
-  /** A graph build hands its place to the next lecture still without a graph. */
-  private async nextGraph(step: WorkflowStep, self: string) {
+  /**
+   * A graph build hands its place to the next lecture still without a graph;
+   * a fresh material puts its own course first.
+   */
+  private async nextGraph(step: WorkflowStep, self: string, fresh: { owner: string; course: string } | null = null) {
     try {
-      await step.do('next graph build', RETRY, () => buildMissingGraphs(this.env, null, null, self));
+      await step.do('next graph build', RETRY, () => buildMissingGraphs(this.env, fresh?.owner ?? null, fresh?.course ?? null, self));
     } catch (err) {
       console.error('[ingest] next graph build', err);
     }
