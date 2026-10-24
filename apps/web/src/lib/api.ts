@@ -139,7 +139,7 @@ export function fetchPdf(db: Db, materialId: string, size: number | null | undef
 export interface SearchHit {
   material: string;
   materialTitle: string;
-  materialKind: 'text' | 'markdown' | 'pdf';
+  materialKind: 'text' | 'markdown' | 'pdf' | 'tex';
   position: number;
   rev: number;
   heading: string | null;
@@ -210,6 +210,8 @@ export interface SourceSettings {
   canvas_course?: string;
   include?: string;
   import_pages?: boolean;
+  /** Also import LaTeX sources (.tex). */
+  import_tex?: boolean;
   /** A bCourses access token, sent to the API only, which seals it. */
   token?: string;
 }
@@ -226,7 +228,7 @@ export type PreviewStatus = 'new' | 'changed' | 'imported' | 'dismissed';
 export interface SourcePreview {
   /** Everything the source lists, before the mapping filters it. */
   listed: number;
-  items: { id: string; title: string; kind: 'pdf' | 'markdown'; link: string; status: PreviewStatus }[];
+  items: { id: string; title: string; kind: 'pdf' | 'markdown' | 'tex'; link: string; status: PreviewStatus }[];
   total: number;
   issues: string[];
 }
@@ -247,7 +249,7 @@ export const createSource = (db: Db, input: SourceSettings & { course: string; n
 export const updateSource = (
   db: Db,
   fetcherId: string,
-  patch: { name?: string; include?: string; import_pages?: boolean; every_hours?: number; token?: string; mapping?: string | null },
+  patch: { name?: string; include?: string; import_pages?: boolean; import_tex?: boolean; every_hours?: number; token?: string; mapping?: string | null },
 ) => api<{ ok: true }>(db, `/api/fetchers/${encodeURIComponent(fetcherId)}`, { method: 'POST', body: JSON.stringify(patch) });
 
 /** The hockeymask mapping a source runs: its own, or the template for its settings. */

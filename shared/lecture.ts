@@ -5,6 +5,17 @@
  * heading path it sits under. Deterministic, so every workflow step that
  * re-chunks the same content gets the same list.
  */
+import { latexToMarkdown } from './latex';
+
+/**
+ * The Markdown of a material, whatever its kind: LaTeX source (`tex`) is
+ * converted, everything else already is Markdown. Sections, search and the
+ * tutor all read this.
+ */
+export function lectureMarkdown(kind: string, content: string): string {
+  return kind === 'tex' ? latexToMarkdown(content ?? '') : (content ?? '');
+}
+
 export interface Chunk {
   heading: string | null;
   text: string;

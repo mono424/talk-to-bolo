@@ -37,6 +37,8 @@ export interface FetcherRow {
   canvas_course?: string | null;
   include?: string | null;
   import_pages: boolean;
+  /** Also import LaTeX sources (.tex) the source lists. */
+  import_tex?: boolean;
   enabled: boolean;
   every_hours: number;
   mapping?: string | null;
@@ -46,10 +48,11 @@ export interface FetcherRow {
 }
 
 /** What decides what a source reads and imports. */
-export type SourceSettings = Pick<FetcherRow, 'kind' | 'url' | 'canvas_course' | 'include' | 'import_pages' | 'mapping'>;
+export type SourceSettings = Pick<FetcherRow, 'kind' | 'url' | 'canvas_course' | 'include' | 'import_pages' | 'import_tex' | 'mapping'>;
 
 /** Checks and normalizes settings as typed by the student. */
 export function normalizeSettings(raw: Partial<Record<keyof SourceSettings, unknown>>): SourceSettings {
+  const import_tex = raw.import_tex === true;
   const kind = raw.kind === 'canvas' ? 'canvas' : raw.kind === 'web' ? 'web' : null;
   if (!kind) throw new BadRequest('Choose bCourses or a web page.');
   const include = typeof raw.include === 'string' && raw.include.trim() ? raw.include.trim().slice(0, 300) : null;
@@ -57,16 +60,16 @@ export function normalizeSettings(raw: Partial<Record<keyof SourceSettings, unkn
   if (mapping && mapping.length > 100_000) throw new BadRequest('The mapping is too long.');
   const import_pages = raw.import_pages === true;
   if (kind === 'canvas') {
-    return { kind, url: canvasBase(typeof raw.url === 'string' ? raw.url : null), canvas_course: canvasCourseId(raw.canvas_course), include, import_pages, mapping };
+    return { kind, url: canvasBase(typeof raw.url === 'string' ? raw.url : null), canvas_course: canvasCourseId(raw.canvas_course), include, import_pages, import_tex, mapping };
   }
   if (typeof raw.url !== 'string' || !raw.url.trim()) throw new BadRequest('Paste the address of the course page.');
   const typed = raw.url.trim();
-  return { kind, url: publicUrl(/^https?:\/\//i.test(typed) ? typed : `https://${typed}`, 'The page address').href, canvas_course: null, include, import_pages, mapping };
+  return { kind, url: publicUrl(/^https?:\/\//i.test(typed) ? typed : `https://${typed}`, 'The page address').href, canvas_course: null, include, import_pages, import_tex, mapping };
 }
 
 /** The compiled mapping of a source: its own, or the template for its settings. */
 export function sourcePlan(s: SourceSettings): Plan {
-  return compileMapping(s.mapping ?? templateMapping({ system: s.kind, include: s.include, importPages: s.import_pages }));
+  return compileMapping(s.mapping ?? templateMapping({ system: s.kind, include: s.include, importPages: s.import_pages, importTex: s.import_tex }));
 }
 
 export async function getFetcher(env: Env, id: string): Promise<FetcherRow | null> {
@@ -168,7 +171,7 @@ export async function planImports(env: Env, fetcherId: string | null, imports: I
       continue;
     }
     let version = item.version;
-    if (!version && l.version && opts.heads && item.kind === 'pdf' && heads < MAX_HEADS) {
+    if (!version && l.version && opts.heads && item.kind !== 'markdown' && heads < MAX_HEADS) {
       heads++;
       version = await linkVersion(item.url);
     }
@@ -194,27 +197,46 @@ export async function previewSource(env: Env, s: SourceSettings, token: string |
 
 // ── Importing ─────────────────────────────────────────────────────────────
 
-async function download(f: FetcherRow, item: ImportRow, token: string | null): Promise<{ bytes: Uint8Array; name: string; version: string | null }> {
+const MAX_TEX_BYTES = 2 * 1024 * 1024;
+
+/** The original's response, and a version for it when the item has none. */
+async function fetchOriginal(f: FetcherRow, item: ImportRow, token: string | null, accept: string): Promise<{ res: Response; version: string | null }> {
   const res = f.kind === 'canvas'
     ? await canvasClient(f, token).download(item.url)
-    : (await safeFetch(item.url, { accept: 'application/pdf,*/*' })).res;
+    : (await safeFetch(item.url, { accept })).res;
   if (!res.ok) {
     await res.body?.cancel();
     throw new BadRequest(`Download failed (${res.status}).`);
   }
-  const bytes = await readLimited(res.body, MAX_PDF_BYTES);
-  validatePdf(bytes);
   const etag = res.headers.get('etag');
   const modified = res.headers.get('last-modified');
   const version = item.version ?? (etag ? `etag:${etag.replace(/^W\//, '')}` : modified ? `modified:${modified}|${res.headers.get('content-length') ?? ''}` : null);
+  return { res, version };
+}
+
+async function download(f: FetcherRow, item: ImportRow, token: string | null): Promise<{ bytes: Uint8Array; name: string; version: string | null }> {
+  const { res, version } = await fetchOriginal(f, item, token, 'application/pdf,*/*');
+  const bytes = await readLimited(res.body, MAX_PDF_BYTES);
+  validatePdf(bytes);
   const name = `${item.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'lecture'}.pdf`;
   return { bytes, name, version };
 }
 
-async function pageText(f: FetcherRow, item: ImportRow, token: string | null): Promise<string> {
+/** The text of a page (as Markdown) or of a LaTeX file (as written). */
+async function textOf(f: FetcherRow, item: ImportRow, token: string | null): Promise<{ content: string; version: string | null }> {
+  if (item.kind === 'tex') {
+    const { res, version } = await fetchOriginal(f, item, token, 'text/x-tex,text/plain,*/*');
+    if (/html/i.test(res.headers.get('content-type') ?? '')) {
+      await res.body?.cancel();
+      throw new BadRequest('The file is a web page, not LaTeX source.');
+    }
+    const content = new TextDecoder().decode(await readLimited(res.body, MAX_TEX_BYTES));
+    if (content.includes('\u0000') || !content.trim()) throw new BadRequest('The file is not LaTeX source.');
+    return { content, version };
+  }
   const markdown = f.kind === 'canvas' ? (await canvasClient(f, token).page(item.url)).markdown : (await fetchPage(item.url)).markdown;
   if (!markdown.trim()) throw new BadRequest('The page has no text to import.');
-  return markdown;
+  return { content: markdown, version: item.version };
 }
 
 /** CREATE as the API, tolerating a sync hook that fails after the row committed (see material-create.ts). */
@@ -271,9 +293,9 @@ export async function importItem(env: Env, fetcherId: string, item: PlannedItem)
       await createMaterialRow(env, { ...base, content: '' });
       await storePdfAndIngest(env, { id, owner: f.owner }, file.bytes, file.name);
     } else {
-      const markdown = await pageText(f, item, token);
-      await record(id, item.version);
-      await createMaterialRow(env, { ...base, content: markdown });
+      const text = await textOf(f, item, token);
+      await record(id, text.version);
+      await createMaterialRow(env, { ...base, content: text.content });
       await startIngest(env, id);
     }
     return 'created';
@@ -283,15 +305,15 @@ export async function importItem(env: Env, fetcherId: string, item: PlannedItem)
   if (entry.version === item.version) return 'updated'; // a retried step
   const material = await db.query<{ id: string; kind: string } | null>('SELECT id, kind FROM ONLY type::record($id)', { id: entry.material });
   if (!material) return 'skipped';
-  if ((material.kind === 'pdf') !== (item.kind === 'pdf')) throw new BadRequest('The original changed its type. Delete the material to import it again.');
+  if (material.kind !== item.kind) throw new BadRequest('The original changed its type. Delete the material to import it again.');
   if (item.kind === 'pdf') {
     const file = await download(f, item, token);
     await storePdfAndIngest(env, { id: material.id, owner: f.owner }, file.bytes, file.name, { replace: true });
     await record(material.id, file.version);
   } else {
-    const markdown = await pageText(f, item, token);
-    await db.query('UPDATE type::record($id) SET content = $content', { id: material.id, content: markdown });
-    await record(material.id, item.version);
+    const text = await textOf(f, item, token);
+    await db.query('UPDATE type::record($id) SET content = $content', { id: material.id, content: text.content });
+    await record(material.id, text.version);
     await startIngest(env, material.id);
   }
   return 'updated';

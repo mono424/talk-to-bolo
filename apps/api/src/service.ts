@@ -17,7 +17,8 @@ export interface MaterialRow {
   owner: string;
   course: string;
   title: string;
-  kind: 'text' | 'markdown' | 'pdf';
+  /** tex: LaTeX source, indexed through its Markdown (shared/latex.ts). */
+  kind: 'text' | 'markdown' | 'pdf' | 'tex';
   content: string;
   status: 'pending' | 'processing' | 'ready' | 'failed';
   page_count?: number | null;

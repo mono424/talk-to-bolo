@@ -51,7 +51,7 @@ export interface SourceRow {
 export interface ImportRow {
   external_id: string;
   title: string;
-  kind: 'pdf' | 'markdown';
+  kind: 'pdf' | 'markdown' | 'tex';
   url: string;
   link: string | null;
   version: string | null;
@@ -70,7 +70,7 @@ export const TARGETS = TargetSchema.parse({
       fields: [
         field('external_id', 'string', false, 'Stable id of the item in its source.'),
         field('title', 'string', false, 'Title of the new material.'),
-        field('kind', 'string', false, '`pdf` or `markdown`.'),
+        field('kind', 'string', false, '`pdf`, `markdown` (a page) or `tex` (LaTeX source).'),
         field('url', 'string', false, 'Where to download it.'),
         field('link', 'string', true, 'Where a person opens it.'),
         field('version', 'string', true, 'Changes when the item changes; null if unknown.'),
@@ -96,6 +96,8 @@ export interface TemplateOptions {
   include?: string | null;
   /** Import pages (Canvas pages, the web page itself) as Markdown too, not only PDFs. */
   importPages?: boolean;
+  /** Import LaTeX sources (.tex) too. */
+  importTex?: boolean;
 }
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -106,7 +108,8 @@ export const includeWords = (include: string | null | undefined) =>
 /** The mapping a fetcher uses unless it has its own: PDFs (and pages), filtered by name. */
 export function templateMapping(opts: TemplateOptions): MappingVersionInput {
   const pdf = { any: { of: [{ path: 'content_type', eq: 'application/pdf' }, { path: 'ext', eq: 'pdf' }] } };
-  const kinds = opts.importPages ? { any: { of: [{ path: 'kind', eq: 'page' }, pdf] } } : pdf;
+  const tex = { path: 'ext', eq: 'tex' };
+  const kinds = { any: { of: [pdf, ...(opts.importPages ? [{ path: 'kind', eq: 'page' }] : []), ...(opts.importTex ? [tex] : [])] } };
   const words = includeWords(opts.include);
   const conds = [kinds, ...(words.length ? [{ path: 'match_text', matches: words.map(escapeRegex).join('|') }] : [])];
   return {
@@ -133,13 +136,16 @@ export function templateMapping(opts: TemplateOptions): MappingVersionInput {
             key: 'import.title',
             pipeline: [
               { op: 'extract', path: 'name' },
-              { op: 'replace', pattern: '\\.[pP][dD][fF]$', with: '', regex: true },
+              { op: 'replace', pattern: '\\.([pP][dD][fF]|[tT][eE][xX])$', with: '', regex: true },
               { op: 'trim' },
               { op: 'blank_to_null' },
               { op: 'default', value: 'Untitled' },
             ],
           },
-          { key: 'import.kind', pipeline: [{ op: 'when', cases: [{ cond: { path: 'kind', eq: 'page' }, then: 'markdown' }], else: 'pdf' }] },
+          {
+            key: 'import.kind',
+            pipeline: [{ op: 'when', cases: [{ cond: { path: 'kind', eq: 'page' }, then: 'markdown' }, { cond: tex, then: 'tex' }], else: 'pdf' }],
+          },
           { key: 'import.url', pipeline: [{ op: 'extract', path: 'url' }] },
           { key: 'import.link', pipeline: [{ op: 'extract', path: 'link' }] },
           { key: 'import.version', pipeline: [{ op: 'extract', path: 'updated_at' }] },
@@ -192,7 +198,7 @@ export async function runMapping(plan: Plan, rows: SourceRow[], now = new Date()
       const v = r[`import.${k}`] ?? r[k];
       return v === null || v === undefined ? null : String(v);
     };
-    const kind = get('kind') === 'markdown' ? 'markdown' : 'pdf';
+    const kind = get('kind') === 'markdown' ? 'markdown' : get('kind') === 'tex' ? 'tex' : 'pdf';
     return {
       external_id: get('external_id') ?? '',
       title: (get('title') ?? 'Untitled').slice(0, 200),

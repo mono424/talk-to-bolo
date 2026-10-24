@@ -121,6 +121,17 @@ test('the template mapping keeps PDFs (and pages), filtered by name', async () =
   assert.equal(imports[0].version, '2026-10-01T00:00:00Z');
 });
 
+test('LaTeX sources are imported as tex when asked', async () => {
+  const rows = [
+    row({ id: 'https://a.example/hw-1.pdf', name: 'Homework 1', kind: 'link', ext: 'pdf', url: 'https://a.example/hw-1.pdf' }),
+    row({ id: 'https://a.example/hw-1.tex', name: 'hw-1.tex', kind: 'link', ext: 'tex', url: 'https://a.example/hw-1.tex' }),
+  ];
+  const kinds = async (importTex: boolean) =>
+    (await runMapping(compileMapping(templateMapping({ system: 'web', importTex })), rows)).imports.map((i) => `${i.title} ${i.kind}`);
+  assert.deepEqual(await kinds(false), ['Homework 1 pdf']);
+  assert.deepEqual(await kinds(true), ['Homework 1 pdf', 'hw-1 tex']);
+});
+
 test('a custom mapping must compile against the import target', async () => {
   assert.throws(() => compileMapping('{'), /not a valid hockeymask document/);
   assert.throws(
@@ -151,7 +162,7 @@ test('a custom mapping must compile against the import target', async () => {
 
 test('settings are checked and normalized', () => {
   assert.deepEqual(normalizeSettings({ kind: 'canvas', canvas_course: 'https://bcourses.berkeley.edu/courses/1234567/modules' }), {
-    kind: 'canvas', url: 'https://bcourses.berkeley.edu', canvas_course: '1234567', include: null, import_pages: false, mapping: null,
+    kind: 'canvas', url: 'https://bcourses.berkeley.edu', canvas_course: '1234567', include: null, import_pages: false, import_tex: false, mapping: null,
   });
   assert.equal(normalizeSettings({ kind: 'web', url: 'cs61a.org/fa26' }).url, 'https://cs61a.org/fa26');
   assert.throws(() => normalizeSettings({ kind: 'canvas', canvas_course: 'abc' }), /Pick a bCourses course/);
@@ -250,9 +261,14 @@ test('a web source imports new PDFs, replaces changed ones and respects deletion
       if (path === '/') {
         return new Response(
           `<title>Course</title><h2>Week 1</h2><a href="/l1.pdf">Lecture 1</a> <a href="/hw.pdf">Homework</a>
-           <h2>Week 2</h2><a href="/l2.pdf">Lecture 2</a> <a href="/notes.docx">Lecture notes</a>`,
+           <h2>Week 2</h2><a href="/l2.pdf">Lecture 2</a> <a href="/notes.docx">Lecture notes</a> <a href="/hw-1.tex">LaTeX template</a>`,
           { headers: { 'content-type': 'text/html' } },
         );
+      }
+      if (path === '/hw-1.tex') {
+        return new Response('\\documentclass{article}\\begin{document}\\section*{Problem 1}Show $x^2 \\ge 0$.\\end{document}', {
+          headers: { 'content-type': 'text/x-tex', etag: '"tex1"' },
+        });
       }
       const etag = path === '/l1.pdf' ? `"${lecture1}"` : '"same"';
       if (req.method === 'HEAD') return new Response(null, { headers: { etag } });
@@ -345,6 +361,19 @@ test('a web source imports new PDFs, replaces changed ones and respects deletion
     assert.deepEqual(await root.query('SELECT VALUE id FROM fetcher_secret'), []);
     const kept = await a.user.query<{ fetcher?: string }[]>('SELECT fetcher FROM material');
     assert.deepEqual(kept.map((m) => m.fetcher ?? null), [null]);
+
+    // LaTeX sources come in as tex material, kept as written.
+    const tex = await createSource(env, a.user, a.id, {
+      course: 'course:ka', kind: 'web', url: 'https://course.example.edu/', include: 'template', import_tex: true,
+    });
+    const texPlan = (await planRun(env, tex.id))!;
+    assert.deepEqual(texPlan.items.map((i) => [i.title, i.kind]), [['LaTeX template', 'tex']]);
+    assert.equal(await importItem(env, tex.id, texPlan.items[0]), 'created');
+    const texMaterial = await a.user.query<{ kind: string; content: string }>(
+      'SELECT kind, content FROM ONLY material WHERE fetcher = type::record($f) LIMIT 1', { f: tex.id },
+    );
+    assert.equal(texMaterial.kind, 'tex');
+    assert.match(texMaterial.content, /\\section\*\{Problem 1\}/);
   } finally {
     await root.query(`REMOVE NAMESPACE ${namespace};`).catch(() => {});
   }

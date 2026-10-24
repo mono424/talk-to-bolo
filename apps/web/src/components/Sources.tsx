@@ -139,7 +139,7 @@ function PreviewList(props: { preview: SourcePreview }) {
           <For each={props.preview.items}>
             {(i) => (
               <li class="flex items-center gap-2 rounded-lg px-1 py-1.5 text-[14px]">
-                <span class="w-12 shrink-0 text-[12px] uppercase text-faint">{i.kind === 'pdf' ? 'PDF' : 'Page'}</span>
+                <span class="w-12 shrink-0 text-[12px] uppercase text-faint">{i.kind === 'pdf' ? 'PDF' : i.kind === 'tex' ? 'TeX' : 'Page'}</span>
                 <a href={i.link} target="_blank" rel="noopener noreferrer" class="min-w-0 flex-1 truncate hover:underline">
                   {i.title}
                 </a>
@@ -174,6 +174,7 @@ export function AddSourceSheet(props: { courseId: string; onClose: () => void })
   const [pageUrl, setPageUrl] = createSignal('');
   const [include, setInclude] = createSignal('');
   const [pages, setPages] = createSignal(false);
+  const [tex, setTex] = createSignal(false);
   const [every, setEvery] = createSignal('6');
   const [preview, setPreview] = createSignal<SourcePreview | null>(null);
   const [busy, setBusy] = createSignal<'courses' | 'preview' | 'save' | null>(null);
@@ -181,8 +182,8 @@ export function AddSourceSheet(props: { courseId: string; onClose: () => void })
 
   const settings = () =>
     kind() === 'canvas'
-      ? { kind: 'canvas' as const, url: canvasUrl(), canvas_course: canvasCourse(), token: token().trim(), include: include(), import_pages: pages() }
-      : { kind: 'web' as const, url: pageUrl().trim(), include: include(), import_pages: pages() };
+      ? { kind: 'canvas' as const, url: canvasUrl(), canvas_course: canvasCourse(), token: token().trim(), include: include(), import_pages: pages(), import_tex: tex() }
+      : { kind: 'web' as const, url: pageUrl().trim(), include: include(), import_pages: pages(), import_tex: tex() };
   const ready = () => (kind() === 'canvas' ? !!token().trim() && !!canvasCourse() : !!pageUrl().trim());
 
   const attempt = async (what: 'courses' | 'preview' | 'save', fn: () => Promise<void>) => {
@@ -324,6 +325,9 @@ export function AddSourceSheet(props: { courseId: string; onClose: () => void })
           <Checkbox checked={pages()} onChange={(v) => (setPages(v), setPreview(null))}>
             {kind() === 'canvas' ? 'Also import bCourses pages as notes' : "Also import the page's own text as notes"}
           </Checkbox>
+          <Checkbox checked={tex()} onChange={(v) => (setTex(v), setPreview(null))}>
+            Also import LaTeX sources (.tex)
+          </Checkbox>
           <Field label="Check for new material">
             <select class={inputClass} value={every()} onChange={(e) => setEvery(e.currentTarget.value)}>
               <For each={EVERY}>{(o) => <option value={o.value}>{o.label}</option>}</For>
@@ -352,6 +356,7 @@ export function SourceSheet(props: { fetcher: FetcherRow; onClose: () => void })
   const [name, setName] = createSignal(props.fetcher.name);
   const [include, setInclude] = createSignal(props.fetcher.include ?? '');
   const [pages, setPages] = createSignal(props.fetcher.import_pages);
+  const [tex, setTex] = createSignal(props.fetcher.import_tex ?? false);
   const [every, setEvery] = createSignal(String(props.fetcher.every_hours));
   const [token, setToken] = createSignal('');
   const [preview, setPreview] = createSignal<SourcePreview | null>(null);
@@ -375,6 +380,7 @@ export function SourceSheet(props: { fetcher: FetcherRow; onClose: () => void })
     ...(name().trim() && name().trim() !== props.fetcher.name ? { name: name().trim() } : {}),
     ...(include() !== (props.fetcher.include ?? '') ? { include: include() } : {}),
     ...(pages() !== props.fetcher.import_pages ? { import_pages: pages() } : {}),
+    ...(tex() !== (props.fetcher.import_tex ?? false) ? { import_tex: tex() } : {}),
     ...(Number(every()) !== props.fetcher.every_hours ? { every_hours: Number(every()) } : {}),
     ...(token().trim() ? { token: token().trim() } : {}),
   });
@@ -405,7 +411,7 @@ export function SourceSheet(props: { fetcher: FetcherRow; onClose: () => void })
           <Button
             variant="soft"
             disabled={busy() !== null}
-            onClick={() => attempt('preview', async () => void setPreview(await previewSource(db, { fetcher: id, include: include(), import_pages: pages(), ...(token().trim() ? { token: token().trim() } : {}) })))}
+            onClick={() => attempt('preview', async () => void setPreview(await previewSource(db, { fetcher: id, include: include(), import_pages: pages(), import_tex: tex(), ...(token().trim() ? { token: token().trim() } : {}) })))}
           >
             <Show when={busy() === 'preview'} fallback="Preview">
               <Loader size={4} label="Loading the preview" />
@@ -460,6 +466,9 @@ export function SourceSheet(props: { fetcher: FetcherRow; onClose: () => void })
             </Field>
             <Checkbox checked={pages()} onChange={setPages}>
               {f().kind === 'canvas' ? 'Also import bCourses pages as notes' : "Also import the page's own text as notes"}
+            </Checkbox>
+            <Checkbox checked={tex()} onChange={setTex}>
+              Also import LaTeX sources (.tex)
             </Checkbox>
           </Show>
           <Field label="Check for new material">

@@ -196,6 +196,30 @@ button, a, input, select, textarea { scroll-margin-block: 1rem; }
 .lecture td { border: 1px solid var(--line); padding: 0.45em 0.75em; text-align: left; }
 .lecture th { background: var(--soft); font-weight: 600; }
 .lecture hr { border: 0; border-top: 1px solid var(--line); margin: 2em 0; }
+.lecture .math-display { margin: 0 0 1em; overflow-x: auto; overflow-y: hidden; max-width: 100%; }
+.lecture .katex { font-size: 1.08em; }
+/* Formulas keep their own wrapping rules inside a lecture. */
+.lecture .katex,
+.lecture .katex * { overflow-wrap: normal; }
+
+/* The LaTeX editor (components/TexEditor.tsx). */
+.tex-editor .cm-editor {
+  height: 100%;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  font-size: 13px;
+}
+.tex-editor .cm-editor.cm-focused { outline: none; border-color: var(--line-strong); box-shadow: 0 0 0 4px var(--soft); }
+.tex-editor .cm-scroller { font-family: var(--font-mono); line-height: 1.6; border-radius: 14px; }
+.tex-editor .cm-gutters { background: var(--soft); color: var(--faint); border-right: 1px solid var(--line); border-radius: 14px 0 0 14px; }
+.tex-editor .cm-activeLine,
+.tex-editor .cm-activeLineGutter { background: color-mix(in srgb, var(--soft) 70%, transparent); }
+.tex-editor .cm-cursor { border-left-color: var(--fg); }
+.tex-editor .cm-selectionBackground,
+.tex-editor .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--blue) 22%, transparent) !important; }
+@media (max-width: 767px) { .tex-editor .cm-editor { font-size: 16px; } }
 
 /* A running state's dot breathes; nothing else moves on its own. */
 @keyframes breathe {

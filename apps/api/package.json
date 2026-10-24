@@ -11,7 +11,7 @@
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
-    "@hockeymask/core": "^0.1.0",
+    "@hockeymask/core": "^0.1.1",
     "@modelcontextprotocol/server": "^2.3.1",
     "fast-png": "^8.0.0",
     "hono": "^4.13.13",

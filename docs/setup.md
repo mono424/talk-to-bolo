@@ -232,6 +232,19 @@ SITE_URL=https://mono424.github.io BASE_PATH=/talk-to-bolo PUBLIC_APP_URL= pnpm 
 
 Landing page photo: [Sanket Mishra on Unsplash](https://unsplash.com/photos/a-girl-sitting-on-a-bench-using-a-laptop-vvE2GOnGudg).
 
+## LaTeX material
+
+A material of kind `tex` keeps its LaTeX source as written (upload a `.tex`
+file, import one from a source, or `add_material` with `format: latex`). The
+app shows it rendered and edits it in a LaTeX editor (CodeMirror, with a live
+preview, `apps/web/src/components/TexEditor.tsx`). Everything else reads its
+Markdown: `shared/latex.ts` converts sections, lists, theorem-like
+environments, tables and verbatim, keeps every kind of math as LaTeX, and
+turns `\newcommand`s into KaTeX macros. The search index, the tutor's
+sections and the lecture place all use that conversion (`lectureMarkdown` in
+`shared/lecture.ts`), on the server and in the browser alike. Math in every
+material and recap renders with KaTeX (`apps/web/src/lib/markdown.ts`).
+
 ## Sources (bCourses and course websites)
 
 A course can have sources (the `fetcher` table) that bring material in by
@@ -244,6 +257,9 @@ ChatGPT. Two kinds:
   Files tab from students are read through their Modules instead.
 - **Course website**: one public https page. Every link on it is a candidate
   (http links are fetched over https), and its own text can be imported too.
+
+Either kind can also import LaTeX sources (`.tex`, "Also import LaTeX
+sources"), as `tex` material.
 
 How a check runs (`apps/api/src/fetch`):
 

@@ -300,6 +300,7 @@ export const schema = {
         every_hours: { type: 'number' as const, optional: false },
         has_token: { type: 'boolean' as const, optional: false },
         import_pages: { type: 'boolean' as const, optional: false },
+        import_tex: { type: 'boolean' as const, optional: true },
         imported_count: { type: 'number' as const, optional: false },
         include: { type: 'string' as const, optional: true },
         kind: { type: 'string' as const, optional: false },
@@ -968,10 +969,11 @@ DEFINE FIELD OVERWRITE owner ON TABLE material TYPE option<record<user> READONLY
 DEFINE FIELD OVERWRITE course ON TABLE material TYPE option<record<course> READONLY>;
  -- @parent
 DEFINE FIELD OVERWRITE title ON TABLE material TYPE option<string> ASSERT string::len($value) > 0;
--- Where the content came from: typed/pasted text, a markdown file, or a PDF
--- that the API converted to markdown + images.
-DEFINE FIELD OVERWRITE kind ON TABLE material TYPE option<string> ASSERT $value IN ['text', 'markdown', 'pdf'] PERMISSIONS FOR update WHERE false;
--- The lecture itself, as markdown. Images extracted from a PDF are referenced
+-- Where the content came from: typed/pasted text, a markdown file, a PDF
+-- that the API converted to markdown + images, or LaTeX source (\`tex\`, kept
+-- as written and indexed through its Markdown, shared/latex.ts).
+DEFINE FIELD OVERWRITE kind ON TABLE material TYPE option<string> ASSERT $value IN ['text', 'markdown', 'pdf', 'tex'] PERMISSIONS FOR update WHERE false;
+-- The lecture itself, as markdown (LaTeX for \`tex\`). Images extracted from a PDF are referenced
 -- as \`![caption](asset:<id>)\`. Can be long, so the sync engine only carries
 -- the record and the client fetches the body directly (@opaque).
 -- @opaque
@@ -1118,6 +1120,10 @@ DEFINE FIELD OVERWRITE canvas_course ON TABLE fetcher TYPE option<string> PERMIS
 DEFINE FIELD OVERWRITE include ON TABLE fetcher TYPE option<string>;
 -- Also import pages (Canvas pages, the web page's own text) as Markdown.
 DEFINE FIELD OVERWRITE import_pages ON TABLE fetcher TYPE option<bool> DEFAULT false;
+-- Also import LaTeX sources (.tex) as \`tex\` material. Optional: sources from
+-- before it existed have none (false), and a plain bool would make every
+-- UPDATE of such a row fail to coerce NONE.
+DEFINE FIELD OVERWRITE import_tex ON TABLE fetcher TYPE option<bool> DEFAULT false;
 DEFINE FIELD OVERWRITE enabled ON TABLE fetcher TYPE option<bool> DEFAULT true;
 -- Hours between scheduled checks.
 DEFINE FIELD OVERWRITE every_hours ON TABLE fetcher TYPE option<int> DEFAULT 6 ASSERT $value >= 1 AND $value <= 168;

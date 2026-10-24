@@ -70,7 +70,7 @@ fetcherRoutes.post('/preview', async (c) => {
 });
 
 const pickSettings = (b: Body) =>
-  Object.fromEntries((['include', 'import_pages', 'mapping'] as const).filter((k) => k in b).map((k) => [k, b[k]]));
+  Object.fromEntries((['include', 'import_pages', 'import_tex', 'mapping'] as const).filter((k) => k in b).map((k) => [k, b[k]]));
 
 /**
  * Adds a source to a course and starts its first check. `user` is the
@@ -87,7 +87,7 @@ export async function createSource(env: Env, user: Surreal, userId: string, body
   const rows = await user.query<unknown[]>(
     `CREATE type::record($id) CONTENT {
        owner: $auth.id, course: type::record($course), kind: $kind, name: $name, url: $url,
-       canvas_course: $canvas_course, include: $include, import_pages: $import_pages,
+       canvas_course: $canvas_course, include: $include, import_pages: $import_pages, import_tex: $import_tex,
        every_hours: $every_hours, enabled: true
      } RETURN id`,
     { id, course: course.id, name, ...s, mapping: undefined, every_hours: everyHours(body.every_hours) },
@@ -120,6 +120,7 @@ fetcherRoutes.post('/:id', async (c) => {
   if (typeof body.name === 'string' && body.name.trim()) patch.name = body.name.trim().slice(0, 120);
   if ('include' in body) patch.include = s.include;
   if ('import_pages' in body) patch.import_pages = s.import_pages;
+  if ('import_tex' in body) patch.import_tex = s.import_tex;
   if ('every_hours' in body) patch.every_hours = everyHours(body.every_hours, f.every_hours);
   if (typeof body.enabled === 'boolean') patch.enabled = body.enabled;
   if (t) patch.enabled = true;
@@ -144,6 +145,6 @@ async function updateFetcher(env: Env, id: string, patch: Record<string, unknown
 // The mapping a source runs, for the advanced editor: its own, or the template.
 fetcherRoutes.get('/:id/mapping', async (c) => {
   const f = await getOwnedFetcher(c.env, c.var.caller.userId, c.req.param('id'));
-  const doc = f.mapping ? JSON.parse(f.mapping) : templateMapping({ system: f.kind, include: f.include, importPages: f.import_pages });
+  const doc = f.mapping ? JSON.parse(f.mapping) : templateMapping({ system: f.kind, include: f.include, importPages: f.import_pages, importTex: f.import_tex });
   return c.json({ custom: !!f.mapping, mapping: doc });
 });

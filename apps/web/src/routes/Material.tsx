@@ -1,10 +1,10 @@
 import { A, useParams, useSearchParams } from '@solidjs/router';
-import { createEffect, createMemo, createSignal, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, lazy, Show, Suspense, type JSX } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { Pencil, Waypoints } from 'lucide-solid';
+import { Download, Pencil, Waypoints } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { PROGRESS_JOB, reindexMaterial, saveLectureProgress } from '../lib/jobs';
-import { chunkMarkdown, chunkPages } from '../../../../shared/lecture';
+import { chunkMarkdown, chunkPages, lectureMarkdown } from '../../../../shared/lecture';
 import { idString, whenSynced } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { firstRow, qMaterial, qMaterialJobs } from '../lib/query';
@@ -12,6 +12,9 @@ import { Button, buttonClass, inputClass, Loader, PageLoader, StatusText } from 
 import { HeaderActions, SideActions } from '../components/HeaderSlot';
 import { LecturePlace } from '../components/LecturePlace';
 import { PdfViewer } from '../components/PdfViewer';
+
+// CodeMirror is large: the LaTeX editor loads when a .tex material is edited.
+const TexEditor = lazy(() => import('../components/TexEditor'));
 
 export default function MaterialPage() {
   const params = useParams();
@@ -22,6 +25,8 @@ export default function MaterialPage() {
   const progressJobs = useQuery(() => qMaterialJobs(db, `material:${params.materialKey}`, PROGRESS_JOB));
   // A PDF shows the original; its text is derived from it, for the tutor and search.
   const isPdf = () => material.data()?.kind === 'pdf';
+  // LaTeX source: shown rendered, edited as source.
+  const isTex = () => material.data()?.kind === 'tex';
   // ?page=N from a citation link.
   const page = () => Number(Array.isArray(search.page) ? search.page[0] : search.page) || null;
 
@@ -34,9 +39,11 @@ export default function MaterialPage() {
   const [progressJob, setProgressJob] = createSignal<string | null>(null);
   const [progressError, setProgressError] = createSignal<string | null>(null);
 
-  const html = createMemo(() => renderMarkdown(material.data()?.content ?? ''));
-  const sections = createMemo(() => chunkMarkdown(material.data()?.content ?? ''));
-  const sectionPages = createMemo(() => chunkPages(material.data()?.content ?? '', sections()));
+  // The Markdown sections and search use: LaTeX is converted (shared/latex.ts).
+  const text = createMemo(() => lectureMarkdown(material.data()?.kind ?? 'markdown', material.data()?.content ?? ''));
+  const html = createMemo(() => renderMarkdown(text()));
+  const sections = createMemo(() => chunkMarkdown(text()));
+  const sectionPages = createMemo(() => chunkPages(text(), sections()));
   const progressVersion = createMemo(() => {
     const m = material.data();
     return m ? `${m.id}:${m.index_rev}:${m.learned_through}` : '';
@@ -125,7 +132,7 @@ export default function MaterialPage() {
         <div class="min-h-full min-w-0">
           <HeaderActions>
             {/* Lined up with the lecture column below it (the editor is wider). */}
-            <div class="header-column flex min-w-0 flex-1 items-center gap-2" style={{ '--page-column': editing() ? '56rem' : isPdf() ? '64rem' : '48rem' }}>
+            <div class="header-column flex min-w-0 flex-1 items-center gap-2" style={{ '--page-column': editing() ? (isTex() ? '80rem' : '56rem') : isPdf() ? '64rem' : '48rem' }}>
               <span class="pointer-events-auto hidden min-w-0 truncate md:inline-flex">
                 <StatusText status={m().status} detail={m().status_detail} />
               </span>
@@ -170,13 +177,19 @@ export default function MaterialPage() {
             fallback={
               <article class={`mx-auto w-full min-w-0 px-4 pb-12 pt-6 sm:px-8 sm:pt-5 ${isPdf() ? 'max-w-5xl' : 'max-w-3xl'}`}>
                 <h1 class="break-words text-[22px] font-semibold leading-tight tracking-tight sm:text-[30px]">{m().title}</h1>
-                <Show when={meta() || m().source_url}>
+                <Show when={meta() || m().source_url || isTex()}>
                   <p class="mt-1.5 break-words text-[14px] text-muted">
                     {meta()}
+                    <Show when={isTex()}>
+                      {meta() ? ' · ' : ''}
+                      <button type="button" class="inline-flex items-center gap-1 underline decoration-line-strong underline-offset-2 hover:text-fg" onClick={() => downloadTex(m().title, m().content)}>
+                        <Download size={13} stroke-width={1.75} /> Download .tex
+                      </button>
+                    </Show>
                     <Show when={m().source_url}>
                       {(url) => (
                         <>
-                          {meta() ? ' · ' : ''}
+                          {meta() || isTex() ? ' · ' : ''}
                           <a href={url()} target="_blank" rel="noopener noreferrer" class="underline decoration-line-strong underline-offset-2 hover:text-fg">
                             Open the original
                           </a>
@@ -228,21 +241,35 @@ export default function MaterialPage() {
               </article>
             }
           >
-            <div class="mx-auto w-full min-w-0 max-w-4xl space-y-3 px-4 py-6 sm:px-8 sm:pb-8 sm:pt-5">
+            <div class={`mx-auto w-full min-w-0 space-y-3 px-4 py-6 sm:px-8 sm:pb-8 sm:pt-5 ${isTex() ? 'max-w-7xl' : 'max-w-4xl'}`}>
               <input class={`${inputClass} text-[18px] font-semibold`} value={title()} onInput={(e) => setTitle(e.currentTarget.value)} aria-label="Title" />
               <Show
                 when={!isPdf()}
                 fallback={<p class="text-[13px] text-muted">The PDF is kept as uploaded. Its text comes from the file, so only the title can change.</p>}
               >
-                <textarea
-                  class={`${inputClass} min-h-[65dvh] resize-y font-mono text-[16px] leading-relaxed sm:min-h-[70vh] sm:text-[13px]`}
-                  value={draft()}
-                  onInput={(e) => setDraft(e.currentTarget.value)}
-                  aria-label="Content (Markdown)"
-                />
-                <p class="text-[13px] text-muted">
-                  Markdown. Saving rebuilds the search index the tutor uses. Images look like ![caption](asset:…); keep those lines to keep the image.
-                </p>
+                <Show
+                  when={isTex()}
+                  fallback={
+                    <>
+                      <textarea
+                        class={`${inputClass} min-h-[65dvh] resize-y font-mono text-[16px] leading-relaxed sm:min-h-[70vh] sm:text-[13px]`}
+                        value={draft()}
+                        onInput={(e) => setDraft(e.currentTarget.value)}
+                        aria-label="Content (Markdown)"
+                      />
+                      <p class="text-[13px] text-muted">
+                        Markdown. Saving rebuilds the search index the tutor uses. Images look like ![caption](asset:…); keep those lines to keep the image.
+                      </p>
+                    </>
+                  }
+                >
+                  <Suspense fallback={<div class="flex justify-center py-16"><Loader size={6} label="Opening the editor" /></div>}>
+                    <TexEditor value={draft()} onChange={setDraft} />
+                  </Suspense>
+                  <p class="text-[13px] text-muted">
+                    LaTeX. The preview shows what the tutor reads. Saving rebuilds the search index; \newcommand macros work in the math.
+                  </p>
+                </Show>
               </Show>
             </div>
           </Show>
@@ -250,4 +277,14 @@ export default function MaterialPage() {
       )}
     </Show>
   );
+}
+
+/** Saves a LaTeX material's source as a .tex file. */
+function downloadTex(title: string, content: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: 'text/x-tex' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'document'}.tex`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

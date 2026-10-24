@@ -1,6 +1,6 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import type { Env } from './env';
-import { chunkMarkdown, chunkPages, embedText } from './chunk';
+import { chunkMarkdown, chunkPages, embedText, lectureMarkdown } from './chunk';
 import { extractPageImages, loadPdf, pageCount, pagesToMarkdown, type PageImageRef } from './pdf';
 import { buildMissingGraphs, embed, ensureServerSchema, type MaterialRow } from './service';
 import { Surreal, UserError, toBase64 } from './surreal';
@@ -172,7 +172,7 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
         const m = await current();
         if (!m) return STOP;
         if (!memoryOnly) await progress('Building the search index');
-        return chunkMarkdown(m.content).length;
+        return chunkMarkdown(lectureMarkdown(m.kind, m.content)).length;
       });
       if (total === STOP) return stopped;
 
@@ -182,8 +182,9 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
           const m = await current();
           if (!m) return STOP;
           await progress(`Indexing sections ${from + 1}-${to} of ${total}`);
-          const all = chunkMarkdown(m.content);
-          const pages = chunkPages(m.content, all).slice(from, to);
+          const text = lectureMarkdown(m.kind, m.content);
+          const all = chunkMarkdown(text);
+          const pages = chunkPages(text, all).slice(from, to);
           const chunks = all.slice(from, to);
           for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
             const batch = chunks.slice(i, i + EMBED_BATCH);
@@ -233,7 +234,7 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
               const m = await current();
               if (!m) return STOP;
               await progress(`Building the knowledge graph, sections ${from + 1}-${to} of ${total}`);
-              const chunks = chunkMarkdown(m.content);
+              const chunks = chunkMarkdown(lectureMarkdown(m.kind, m.content));
               const out: string[] = [];
               for (let position = from; position < to; position++) {
                 const id = await indexMemorySection(this.env, m, position, chunks[position]);
@@ -274,7 +275,7 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
             const batch = await step.do(`memory concepts ${from}-${to}`, MEMORY_RETRY, async (): Promise<SectionGraph[] | Stop> => {
               const m = await current();
               if (!m) return STOP;
-              const chunks = chunkMarkdown(m.content);
+              const chunks = chunkMarkdown(lectureMarkdown(m.kind, m.content));
               const out: SectionGraph[] = [];
               for (let position = from; position < to; position++) out.push(await sectionGraph(this.env, m, position, chunks[position]));
               return out;

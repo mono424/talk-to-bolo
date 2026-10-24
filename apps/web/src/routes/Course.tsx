@@ -1,7 +1,7 @@
 import { A, useNavigate, useParams } from '@solidjs/router';
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { FileText, FileType2, Folder, PenLine, Plus, Radar, Settings2, Trash2, Upload, Waypoints } from 'lucide-solid';
+import { FileCode2, FileText, FileType2, Folder, PenLine, Plus, Radar, Settings2, Trash2, Upload, Waypoints } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { ApiError, uploadPdf } from '../lib/api';
@@ -59,7 +59,7 @@ export default function CoursePage() {
     if (!uid) return;
     setNotice(null);
     for (const file of Array.from(files)) {
-      const name = file.name.replace(/\.(pdf|md|markdown|txt)$/i, '');
+      const name = file.name.replace(/\.(pdf|md|markdown|txt|tex)$/i, '');
       if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
         const id = newId('material');
         await db.create(id, { owner: uid, course: courseId(), title: name, kind: 'pdf', content: '', status: 'pending' });
@@ -75,15 +75,17 @@ export default function CoursePage() {
             }
           }
         })();
+      } else if (/\.tex$/i.test(file.name) || file.type === 'text/x-tex' || file.type === 'application/x-tex') {
+        await addText(name, await file.text(), 'tex');
       } else if (/\.(md|markdown|txt)$/i.test(file.name) || file.type.startsWith('text/')) {
         await addText(name, await file.text(), /\.txt$/i.test(file.name) ? 'text' : 'markdown');
       } else {
-        setNotice(`${file.name} was skipped: add PDFs, Markdown or text files.`);
+        setNotice(`${file.name} was skipped: add PDFs, LaTeX, Markdown or text files.`);
       }
     }
   }
 
-  async function addText(title: string, content: string, kind: 'text' | 'markdown') {
+  async function addText(title: string, content: string, kind: 'text' | 'markdown' | 'tex') {
     const uid = auth.userId();
     if (!uid || !content.trim()) return;
     const id = newId('material');
@@ -196,7 +198,7 @@ export default function CoursePage() {
                       </p>
                       <p class="mt-1 text-[14px] text-muted">
                         <span class="sm:hidden">Tap + to add PDF slides, Markdown or text notes</span>
-                        <span class="max-sm:hidden">PDF slides and scripts, Markdown or text notes</span>
+                        <span class="max-sm:hidden">PDF slides and scripts, LaTeX, Markdown or text notes</span>
                       </p>
                     </div>
                   }
@@ -204,7 +206,13 @@ export default function CoursePage() {
                   {(m) => (
                     <div class="group flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-soft">
                       <span class="shrink-0 text-faint">
-                        {m().kind === 'pdf' ? <FileType2 size={18} stroke-width={1.6} /> : <FileText size={18} stroke-width={1.6} />}
+                        {m().kind === 'pdf' ? (
+                          <FileType2 size={18} stroke-width={1.6} />
+                        ) : m().kind === 'tex' ? (
+                          <FileCode2 size={18} stroke-width={1.6} />
+                        ) : (
+                          <FileText size={18} stroke-width={1.6} />
+                        )}
                       </span>
                       <A href={`/courses/${params.courseKey}/materials/${idKey(m().id)}`} class="min-w-0 flex-1">
                         <span class="block truncate text-[15px]">{m().title}</span>
@@ -298,7 +306,7 @@ function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () =>
         class="sr-only"
         tabindex="-1"
         multiple
-        accept="application/pdf,.pdf,.md,.markdown,.txt,text/plain,text/markdown"
+        accept="application/pdf,.pdf,.tex,.md,.markdown,.txt,text/plain,text/markdown,text/x-tex"
         onChange={(e) => {
           if (e.currentTarget.files?.length) props.onFiles(e.currentTarget.files);
           e.currentTarget.value = '';

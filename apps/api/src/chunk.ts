@@ -1,1 +1,1 @@
-export { chunkMarkdown, chunkPages, cleanForIndex, embedText, type Chunk, type ChunkPages } from '../../../shared/lecture';
+export { chunkMarkdown, chunkPages, cleanForIndex, embedText, lectureMarkdown, type Chunk, type ChunkPages } from '../../../shared/lecture';

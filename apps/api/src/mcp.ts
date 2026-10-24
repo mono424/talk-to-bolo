@@ -323,23 +323,24 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
     {
       title: 'Add lecture material',
       description:
-        'Adds Markdown or plain-text lecture material to a course (notes, a script, a summary). It is indexed for the tutor automatically; use add_pdf for PDF files.',
+        'Adds Markdown, plain-text or LaTeX lecture material to a course (notes, a script, a summary, a problem set). It is indexed for the tutor automatically; use add_pdf for PDF files.',
       inputSchema: z.object({
         course_id: z.string(),
         title: z.string().min(1),
-        content: z.string().min(1).describe('The material as Markdown.'),
+        content: z.string().min(1).describe('The material as Markdown, or as LaTeX source with format latex.'),
+        format: z.enum(['markdown', 'latex']).optional().describe('latex: content is LaTeX source (a .tex file); the app renders it and keeps the source editable.'),
       }),
       annotations: WRITE,
       _meta: meta('Adding material…', 'Material added'),
     },
-    ({ course_id, title, content }) =>
+    ({ course_id, title, content, format }) =>
       run(async () => {
         const id = `material:k${crypto.randomUUID().replaceAll('-', '')}`;
         const rows = await createMaterial(user,
           `CREATE type::record($id) CONTENT {
-             owner: $auth.id, course: type::record($course), title: $title, kind: 'markdown', content: $content
+             owner: $auth.id, course: type::record($course), title: $title, kind: $kind, content: $content
            } RETURN id`,
-          { id, course: recordId('course', course_id), title, content: toInternal(content) },
+          { id, course: recordId('course', course_id), title, kind: format === 'latex' ? 'tex' : 'markdown', content: format === 'latex' ? content : toInternal(content) },
         );
         if (!rows?.length) return fail('Course not found.');
         await startIngest(env, id);
@@ -351,7 +352,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
     'update_material',
     {
       title: 'Replace lecture material',
-      description: "Replaces a material's title and/or its whole Markdown content. For small changes use edit_material. The content of a PDF cannot be replaced, only its title.",
+      description: "Replaces a material's title and/or its whole content (Markdown, or LaTeX for a tex material). For small changes use edit_material. The content of a PDF cannot be replaced, only its title.",
       inputSchema: z.object({
         material_id: z.string(),
         title: z.string().min(1).optional(),
@@ -481,7 +482,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
     ({ course_id }) =>
       run(async () => {
         const rows = await user.query<unknown[]>(
-          `SELECT id, name, kind, url, include, import_pages, enabled, every_hours, status, last_error, imported_count, last_run_at, next_run_at
+          `SELECT id, name, kind, url, include, import_pages, import_tex, enabled, every_hours, status, last_error, imported_count, last_run_at, next_run_at
              FROM fetcher WHERE course = type::record($course) ORDER BY created_at`,
           { course: recordId('course', course_id) },
         );
@@ -500,16 +501,17 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
         url: z.string().url().describe('The https page that links the lecture files, e.g. the course schedule.'),
         contains: z.string().optional().describe('Comma-separated words: only files whose name or URL contains one, e.g. "lecture, slides".'),
         include_page_text: z.boolean().optional().describe("Also import the page's own text as Markdown material."),
+        include_latex: z.boolean().optional().describe('Also import linked LaTeX sources (.tex), such as homework templates.'),
         every_hours: z.number().int().min(1).max(168).optional(),
       }),
       // Reads the page it is given, and imports from it on a schedule.
       annotations: { ...WRITE, openWorldHint: true },
       _meta: meta('Adding the source…', 'Source added'),
     },
-    ({ course_id, url, contains, include_page_text, every_hours }) =>
+    ({ course_id, url, contains, include_page_text, include_latex, every_hours }) =>
       run(async () => {
         const source = await createSource(env, user, userId, {
-          course: course_id, kind: 'web', url, include: contains, import_pages: include_page_text === true, every_hours,
+          course: course_id, kind: 'web', url, include: contains, import_pages: include_page_text === true, import_tex: include_latex === true, every_hours,
         });
         return text({ ...source, status: 'checking', note: 'The first check runs now; list_materials shows the imported files as they arrive.' });
       }),
