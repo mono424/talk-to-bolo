@@ -79,6 +79,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /jobs/graphs/backfill:
+    post:
+      summary: >-
+        Start the knowledge graph build of every ready material that has none
+        for its current text. Run by the `graph-backfill` schedule; belongs
+        to no single material.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: The number of builds started.
   /jobs/materials/progress:
     post:
       summary: Record the last lecture section the student reached.

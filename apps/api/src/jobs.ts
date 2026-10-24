@@ -3,7 +3,7 @@ import type { AppEnv, Env } from './env';
 import { bearer, safeEqual } from './auth';
 import { setLectureProgress } from './progress';
 import { BadRequest, NotFound, Surreal, recordId } from './surreal';
-import { startIngest, startMemoryBuild, type MaterialRow } from './service';
+import { buildMissingGraphs, startIngest, startMemoryBuild, type MaterialRow } from './service';
 
 /**
  * Background work the web app asks for by writing a row to the `job` outbox
@@ -49,6 +49,10 @@ jobs.post('/materials/memory', async (c) => {
   const material = await jobMaterial(c.env, body.id);
   return c.json({ ok: true, ...(await startMemoryBuild(c.env, material, body.force === true)) });
 });
+
+// Starts the knowledge graph build of every ready material without one
+// (schedule `graph-backfill` in sp00ky.yml).
+jobs.post('/graphs/backfill', async (c) => c.json({ ok: true, started: await buildMissingGraphs(c.env, null) }));
 
 // Records the last lecture section the student reached.
 jobs.post('/materials/progress', async (c) => {

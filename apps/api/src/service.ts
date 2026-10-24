@@ -205,11 +205,10 @@ export async function markFailed(env: Env, materialId: string, message: string) 
     .catch((err) => console.error('[ingest] could not mark failed', err));
 }
 
-async function launch(env: Env, materialId: string, rev: number, convert: boolean, memoryOnly = false, once = false) {
+async function launch(env: Env, materialId: string, rev: number, convert: boolean, memoryOnly = false) {
   const key = materialId.slice(materialId.indexOf(':') + 1);
   await env.INGEST.create({
-    // `once`: one automatic graph build per revision, however often it is asked for.
-    id: once ? `${key}-${rev}-graph` : `${key}-${rev}-${memoryOnly ? 'm' : ''}${Date.now().toString(36)}`,
+    id: `${key}-${rev}-${memoryOnly ? 'm' : ''}${Date.now().toString(36)}`,
     params: { materialId, rev, convert, ...(memoryOnly ? { memoryOnly } : {}) },
   });
 }
@@ -228,28 +227,31 @@ export async function startMemoryBuild(env: Env, material: MaterialRow, force = 
   return { started: true, rev };
 }
 
+const GRAPH_BATCH = 100;
+
 /**
- * Starts the graph build of each ready material of a course (or of all the
- * user's courses) that has none for its current text, e.g. material processed
- * before Agent Memory was set up. Runs once per revision: a run already
- * started (or failed) is left alone.
+ * Starts the graph build of each ready material of a course, of all a user's
+ * courses, or of everyone's (`ownerId` null), that has none for its current
+ * text, e.g. material processed before Agent Memory was set up. Runs once per
+ * revision: a run already started (or failed) is left alone.
  */
-export async function buildMissingGraphs(env: Env, ownerId: string, courseId: string | null): Promise<number> {
+export async function buildMissingGraphs(env: Env, ownerId: string | null, courseId: string | null = null): Promise<number> {
   if (!memoryConfigured(env)) return 0;
   const rows = await Surreal.system(env).query<{ id: string; index_rev: number }[]>(
-    `SELECT id, index_rev FROM material WHERE owner = type::record($owner)
+    `SELECT id, index_rev FROM material WHERE ($owner = NONE OR owner = type::record($owner))
        AND ($course = NONE OR course = type::record($course))
        AND status = 'ready' AND chunk_count > 0 AND (memory_rev ?? 0) != index_rev`,
-    { owner: ownerId, ...(courseId ? { course: recordId('course', courseId) } : {}) },
+    { ...(ownerId ? { owner: ownerId } : {}), ...(courseId ? { course: recordId('course', courseId) } : {}) },
   );
+  const runs = (rows ?? []).map((m) => ({
+    id: `${m.id.slice(m.id.indexOf(':') + 1)}-${m.index_rev}-graph`,
+    params: { materialId: m.id, rev: m.index_rev, convert: false, memoryOnly: true },
+  }));
+  // One call per hundred: starting them one by one outlasts a request. The
+  // array form skips ids that already exist instead of failing.
   let started = 0;
-  for (const m of rows ?? []) {
-    try {
-      await launch(env, m.id, m.index_rev, false, true, true);
-      started++;
-    } catch (err) {
-      if (!/already exists|already_exists|duplicate/i.test(String(err))) console.error('[memory] graph build could not start', err);
-    }
+  for (let i = 0; i < runs.length; i += GRAPH_BATCH) {
+    started += (await env.INGEST.createBatch(runs.slice(i, i + GRAPH_BATCH))).length;
   }
   return started;
 }

@@ -604,6 +604,10 @@ export const schema = {
     "api": {
       outboxTable: 'job' as const,
       routes: {
+        "/jobs/graphs/backfill": {
+          args: {
+          }
+        },
         "/jobs/materials/index": {
           args: {
             "id": {
