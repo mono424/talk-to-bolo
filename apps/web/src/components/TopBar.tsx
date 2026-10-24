@@ -59,13 +59,17 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
         <button
           type="button"
           onClick={guide.open}
-          class={`inline-flex h-11 items-center justify-center gap-2 rounded-full px-3.5 text-[14px] font-medium transition-colors md:h-10 ${
-            guide.connected() ? 'bg-soft text-fg hover:bg-hover' : 'bg-solid text-solid-fg hover:bg-solid-hover'
+          class={`relative inline-flex h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full text-[14px] font-medium transition-colors md:h-10 ${
+            guide.connected()
+              ? 'w-11 bg-soft text-fg hover:bg-hover sm:w-auto sm:px-3.5'
+              : 'cta-glow px-4 font-semibold'
           }`}
           aria-label={guide.connected() ? 'ChatGPT connected: how to study' : 'Connect ChatGPT'}
         >
-          <Show when={guide.connected()} fallback={<MessageCircle size={17} stroke-width={1.8} />}>
-            <Dot tone="ready" />
+          {/* Connected on a phone: a round icon with a green badge, never a squeezed pill. */}
+          <Show when={guide.connected()} fallback={<MessageCircle size={17} stroke-width={2} />}>
+            <MessageCircle size={18} stroke-width={1.8} class="sm:hidden" />
+            <Dot tone="ready" class="absolute right-2 top-2 ring-2 ring-soft sm:static sm:ring-0" />
           </Show>
           <span class={guide.connected() ? 'hidden sm:inline' : ''}>{guide.connected() ? 'ChatGPT' : 'Connect ChatGPT'}</span>
         </button>
