@@ -1,4 +1,5 @@
 import type { Env } from './env';
+import type { IngestParams } from './ingest';
 import serverSchema from './server-schema.surql';
 import { BadRequest, Conflict, NotFound, Surreal, UserError, recordId, toBase64 } from './surreal';
 import { memoryConfigured } from './memory';
@@ -228,12 +229,34 @@ export async function startMemoryBuild(env: Env, material: MaterialRow, force = 
 }
 
 const GRAPH_BATCH = 100;
+const GRAPH_ATTEMPTS = 4;
+const ACTIVE_RUN = new Set(['queued', 'running', 'paused', 'waiting', 'waitingForPause', 'unknown']);
+
+/**
+ * The id for a new graph build of a material revision, or null while one is
+ * under way or every attempt is used up. A run that ended without a graph
+ * (it failed, or a deploy cut it off) gets another attempt.
+ */
+async function nextGraphRun(env: Env, materialId: string, rev: number): Promise<string | null> {
+  const key = materialId.slice(materialId.indexOf(':') + 1);
+  for (let n = 0; n < GRAPH_ATTEMPTS; n++) {
+    const id = `${key}-${rev}-graph${n ? `-${n}` : ''}`;
+    let status: string;
+    try {
+      status = (await (await env.INGEST.get(id)).status()).status;
+    } catch {
+      return id; // No such run yet.
+    }
+    if (ACTIVE_RUN.has(status)) return null;
+  }
+  return null;
+}
 
 /**
  * Starts the graph build of each ready material of a course, of all a user's
  * courses, or of everyone's (`ownerId` null), that has none for its current
- * text, e.g. material processed before Agent Memory was set up. Runs once per
- * revision: a run already started (or failed) is left alone.
+ * text, e.g. material processed before Agent Memory was set up. A build
+ * under way is left alone.
  */
 export async function buildMissingGraphs(env: Env, ownerId: string | null, courseId: string | null = null): Promise<number> {
   if (!memoryConfigured(env)) return 0;
@@ -243,10 +266,13 @@ export async function buildMissingGraphs(env: Env, ownerId: string | null, cours
        AND status = 'ready' AND chunk_count > 0 AND (memory_rev ?? 0) != index_rev`,
     { ...(ownerId ? { owner: ownerId } : {}), ...(courseId ? { course: recordId('course', courseId) } : {}) },
   );
-  const runs = (rows ?? []).map((m) => ({
-    id: `${m.id.slice(m.id.indexOf(':') + 1)}-${m.index_rev}-graph`,
-    params: { materialId: m.id, rev: m.index_rev, convert: false, memoryOnly: true },
-  }));
+  const runs: WorkflowInstanceCreateOptions<IngestParams>[] = [];
+  for (let i = 0; i < (rows ?? []).length; i += 20) {
+    const ids = await Promise.all(rows.slice(i, i + 20).map((m) => nextGraphRun(env, m.id, m.index_rev)));
+    rows.slice(i, i + 20).forEach((m, j) => {
+      if (ids[j]) runs.push({ id: ids[j]!, params: { materialId: m.id, rev: m.index_rev, convert: false, memoryOnly: true } });
+    });
+  }
   // One call per hundred: starting them one by one outlasts a request. The
   // array form skips ids that already exist instead of failing.
   let started = 0;
