@@ -6,6 +6,7 @@ import { handleMcp } from './mcp';
 import { approveOAuthConsent, getOAuthConsent, handleOAuth, oauthOrigin } from './oauth';
 import { jobs } from './jobs';
 import {
+  buildMissingGraphs,
   createApiKey,
   ensureServerSchema,
   getOwnedCourse,
@@ -132,7 +133,15 @@ app.post('/api/courses/:id/search', async (c) => {
 });
 
 // What the student understood, concept by concept, for the graph view.
-app.get('/api/courses/:id/graph', async (c) => c.json(await courseGraph(c.env, c.var.caller.userId, c.req.param('id'))));
+// Lectures without a knowledge graph yet start building one.
+app.get('/api/courses/:id/graph', async (c) => {
+  const graph = await courseGraph(c.env, c.var.caller.userId, c.req.param('id'));
+  const building = await buildMissingGraphs(c.env, c.var.caller.userId, graph.course).catch((err) => {
+    console.error('[memory] graph builds', err);
+    return 0;
+  });
+  return c.json({ ...graph, building });
+});
 
 // ── API keys (for the MCP server) ─────────────────────────────────────────
 

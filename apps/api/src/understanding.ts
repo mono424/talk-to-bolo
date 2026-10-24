@@ -816,6 +816,7 @@ export async function courseGraph(env: Env, ownerId: string, courseId: string, n
   const course = await getOwnedCourse(env, ownerId, courseId);
   const graph = await loadGraph(env, ownerId, course.id);
   return {
+    course: course.id,
     lectures: [...graph.lectures.values()].map((l) => ({ id: l.id, title: l.title })),
     concepts: graph.concepts.map((c) => {
       const a = anchor(graph, c);

@@ -205,10 +205,11 @@ export async function markFailed(env: Env, materialId: string, message: string) 
     .catch((err) => console.error('[ingest] could not mark failed', err));
 }
 
-async function launch(env: Env, materialId: string, rev: number, convert: boolean, memoryOnly = false) {
+async function launch(env: Env, materialId: string, rev: number, convert: boolean, memoryOnly = false, once = false) {
   const key = materialId.slice(materialId.indexOf(':') + 1);
   await env.INGEST.create({
-    id: `${key}-${rev}-${memoryOnly ? 'm' : ''}${Date.now().toString(36)}`,
+    // `once`: one automatic graph build per revision, however often it is asked for.
+    id: once ? `${key}-${rev}-graph` : `${key}-${rev}-${memoryOnly ? 'm' : ''}${Date.now().toString(36)}`,
     params: { materialId, rev, convert, ...(memoryOnly ? { memoryOnly } : {}) },
   });
 }
@@ -225,6 +226,30 @@ export async function startMemoryBuild(env: Env, material: MaterialRow, force = 
   if (!force && material.memory_rev === rev) return { started: false, rev };
   await launch(env, material.id, rev, false, true);
   return { started: true, rev };
+}
+
+/**
+ * Starts the graph build of each ready material of a course that has none for
+ * its current text, e.g. material processed before Agent Memory was set up.
+ * Runs once per revision: a run already started (or failed) is left alone.
+ */
+export async function buildMissingGraphs(env: Env, ownerId: string, courseId: string): Promise<number> {
+  if (!memoryConfigured(env)) return 0;
+  const rows = await Surreal.system(env).query<{ id: string; index_rev: number }[]>(
+    `SELECT id, index_rev FROM material WHERE owner = type::record($owner) AND course = type::record($course)
+       AND status = 'ready' AND chunk_count > 0 AND (memory_rev ?? 0) != index_rev`,
+    { owner: ownerId, course: courseId },
+  );
+  let started = 0;
+  for (const m of rows ?? []) {
+    try {
+      await launch(env, m.id, m.index_rev, false, true, true);
+      started++;
+    } catch (err) {
+      if (!/already exists|already_exists|duplicate/i.test(String(err))) console.error('[memory] graph build could not start', err);
+    }
+  }
+  return started;
 }
 
 /**
