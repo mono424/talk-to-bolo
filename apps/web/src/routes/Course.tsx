@@ -9,10 +9,11 @@ import { reindexMaterial } from '../lib/jobs';
 import { idKey, newId, whenSynced } from '../lib/ids';
 import { COURSE_COLORS, courseColor, LANGUAGES, type CourseColor } from '../lib/palette';
 import { qMaterialsPage, useCourse } from '../lib/query';
-import { Button, Field, IconButton, inputClass, StatusText } from '../components/ui';
+import { Button, Field, IconButton, inputClass, PageLoader, StatusText } from '../components/ui';
 import { scrollParent, VirtualList } from '../components/VirtualList';
 import { CourseSearch } from '../components/CourseSearch';
 import { Sheet } from '../components/Sheet';
+import { HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
 
 export default function CoursePage() {
   const params = useParams();
@@ -26,60 +27,21 @@ export default function CoursePage() {
   const [dragging, setDragging] = createSignal(false);
   const [notice, setNotice] = createSignal<string | null>(null);
 
-  // ── Header: the title shrinks as the page scrolls, then the header sticks ──
-  // Scrolling only changes transforms and opacity, never layout: a header that
-  // changed height would shift the page under the reader and fight the scroll.
-  // CSS sticky pins the action row while the large title scrolls away under
-  // it, and a one-line title fades in there.
+  // ── Header: the course's icon and name sit in the top bar where the logo
+  // was, its actions next to the account menu. The search sticks under it.
 
   const [page, setPage] = createSignal<HTMLElement>();
   const [scroller, setScroller] = createSignal<HTMLElement | null>(null);
-  // How far the header rises before it sticks: everything above the search but the row.
-  const [rise, setRise] = createSignal(0);
-  let header!: HTMLElement;
-  let row!: HTMLDivElement;
-  let rowFill!: HTMLDivElement;
-  let smallTitle!: HTMLDivElement;
-  let largeTitle!: HTMLDivElement;
-  let searchBox!: HTMLDivElement;
-  let fade!: HTMLDivElement;
+  const [scrolled, setScrolled] = createSignal(false);
 
   createEffect(() => {
     const el = page() && scrollParent(page()!);
     setScroller(el ?? null);
     if (!el) return;
-    let frame = 0;
-    const apply = () => {
-      frame = 0;
-      // While the title passes under the row (at least 40px), or all the scroll a short page has.
-      const span = Math.max(1, Math.min(Math.max(largeTitle.offsetHeight, 40), el.scrollHeight - el.clientHeight));
-      const p = Math.min(1, Math.max(0, el.scrollTop / span));
-      const late = Math.max(0, p * 2 - 1);
-      largeTitle.style.opacity = String(Math.max(0, 1 - p * 1.5));
-      largeTitle.style.transform = p ? `scale(${1 - 0.12 * p})` : '';
-      smallTitle.style.opacity = String(late);
-      smallTitle.style.transform = `translateY(${(1 - late) * 6}px)`;
-      smallTitle.style.pointerEvents = late > 0.5 ? 'auto' : 'none';
-      rowFill.style.opacity = String(p);
-      fade.style.opacity = String(p);
-    };
-    const measure = () => {
-      setRise(Math.max(0, searchBox.offsetTop - row.offsetHeight - ROW_PAD));
-      apply();
-    };
-    const onScroll = () => {
-      frame ||= requestAnimationFrame(apply);
-    };
-    const observer = new ResizeObserver(measure);
-    observer.observe(header);
-    observer.observe(row);
-    measure();
+    const onScroll = () => setScrolled(el.scrollTop > 0);
+    onScroll();
     el.addEventListener('scroll', onScroll, { passive: true });
-    onCleanup(() => {
-      observer.disconnect();
-      el.removeEventListener('scroll', onScroll);
-      cancelAnimationFrame(frame);
-    });
+    onCleanup(() => el.removeEventListener('scroll', onScroll));
   });
 
   const write = () => {
@@ -132,7 +94,7 @@ export default function CoursePage() {
   };
 
   return (
-    <Show when={course.data()} fallback={<div class="p-10 text-muted">{course.isLoading() ? '' : 'Course not found.'}</div>}>
+    <Show when={course.data()} fallback={course.isLoading() ? <PageLoader /> : <div class="p-10 text-muted">Course not found.</div>}>
       {(c) => (
         <div
           ref={setPage}
@@ -148,51 +110,35 @@ export default function CoursePage() {
             if (e.dataTransfer?.files.length) void addFiles(e.dataTransfer.files);
           }}
         >
-          <header ref={header} class="sticky z-10 -mx-3 mb-3 bg-surface px-3 pb-3 pt-3 sm:pt-2" style={{ top: `${-rise()}px` }}>
-            {/* Pinned once the header sticks. Lets clicks through to the large title under it. */}
-            <div ref={row} class="pointer-events-none sticky top-0 z-10 flex items-center gap-3 pt-3 sm:gap-4">
-              <div ref={rowFill} class="absolute inset-0 bg-surface opacity-0" />
-              <div
-                ref={smallTitle}
-                class="relative flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 opacity-0"
+          <HeaderTitle>
+            <div class="flex min-w-0 items-center gap-2.5">
+              <Folder
+                size={20}
+                stroke-width={1.6}
+                class="h-[18px] w-[18px] shrink-0 sm:h-5 sm:w-5"
+                style={{ color: courseColor(c().color) }}
+                fill={courseColor(c().color)}
+                fill-opacity="0.18"
                 aria-hidden="true"
-                onClick={() => scroller()?.scrollTo({ top: 0, behavior: 'smooth' })}
-              >
-                <Folder size={20} stroke-width={1.6} class="h-[18px] w-[18px] shrink-0 sm:h-5 sm:w-5" style={{ color: courseColor(c().color) }} fill={courseColor(c().color)} fill-opacity="0.18" />
-                <span class="truncate text-[16px] font-semibold tracking-tight sm:text-[17px]">{c().title}</span>
-              </div>
-              <div class="pointer-events-auto relative ml-auto flex shrink-0 items-center gap-1">
-                <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} />
-                <CourseSettings course={c()} />
-              </div>
+              />
+              <EditableTitle value={c().title} onSave={(title) => db.update('course', c().id, { title })} />
             </div>
-            {/* Pulled up beside the actions; it scrolls away under the pinned row. Tall,
-                so the search starts well down the window. */}
-            <div class="-mt-11 min-h-[max(4.5rem,calc(20dvh-3rem))] sm:min-h-[max(5rem,calc(33dvh-3rem))] md:-mt-10">
-              <div ref={largeTitle} class="flex origin-top-left items-start gap-2.5 pr-20 pt-3 sm:gap-4 sm:pr-32 sm:pt-0">
-                <Folder
-                  size={28}
-                  stroke-width={1.6}
-                  class="mt-[3px] h-[22px] w-[22px] shrink-0 sm:mt-1 sm:h-7 sm:w-7"
-                  style={{ color: courseColor(c().color) }}
-                  fill={courseColor(c().color)}
-                  fill-opacity="0.18"
-                  aria-hidden="true"
-                />
-                <div class="min-w-0 flex-1">
-                  <EditableTitle value={c().title} onSave={(title) => db.update('course', c().id, { title })} />
-                </div>
-              </div>
-              <Show when={c().description}>
-                <p class="max-w-2xl break-words pb-5 pl-8 pt-1 text-[15px] leading-snug text-muted sm:pb-16 sm:pl-11 sm:pt-1.5 sm:text-[16px]">{c().description}</p>
-              </Show>
-            </div>
-            <div ref={searchBox} class="mt-3">
-              <CourseSearch courseId={c().id} />
-            </div>
-            {/* The list fades out as it slides under the header. */}
-            <div ref={fade} class="pointer-events-none absolute inset-x-0 top-full h-6 bg-linear-to-b from-surface to-surface/0 opacity-0" />
-          </header>
+          </HeaderTitle>
+          <HeaderEndActions>
+            <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} />
+            <CourseSettings course={c()} />
+          </HeaderEndActions>
+
+          <Show when={c().description}>
+            <p class="max-w-2xl break-words pt-3 text-[15px] leading-snug text-muted sm:pt-5 sm:text-[16px]">{c().description}</p>
+          </Show>
+          <div class="sticky top-0 z-10 -mx-3 mb-3 bg-surface px-3 pb-3 pt-3 sm:pt-5">
+            <CourseSearch courseId={c().id} />
+            {/* The list fades out as it slides under the search. */}
+            <div
+              class={`pointer-events-none absolute inset-x-0 top-full h-6 bg-linear-to-b from-surface to-surface/0 transition-opacity ${scrolled() ? 'opacity-100' : 'opacity-0'}`}
+            />
+          </div>
 
           {/* Materials */}
           <section class={`-mx-3 rounded-2xl ${dragging() ? 'ring-2 ring-blue/40' : ''}`}>
@@ -289,13 +235,13 @@ function EditableTitle(props: { value: string; onSave: (v: string) => void }) {
     <Show
       when={editing()}
       fallback={
-        <h1 class="cursor-text break-words text-[22px] max-sm:truncate font-semibold leading-tight tracking-tight sm:text-[30px]" onClick={() => setEditing(true)} title="Click to rename">
+        <h1 class="min-w-0 cursor-text truncate text-[16px] font-semibold tracking-tight sm:text-[17px]" onClick={() => setEditing(true)} title="Click to rename">
           {props.value}
         </h1>
       }
     >
       <input
-        class="-mx-2 w-full min-w-0 max-w-2xl rounded-xl bg-soft px-2 text-[22px] font-semibold leading-tight tracking-tight outline-none sm:text-[30px]"
+        class="-mx-2 h-9 w-full min-w-0 rounded-lg bg-soft px-2 text-[16px] font-semibold tracking-tight outline-none sm:text-[17px]"
         value={props.value}
         aria-label="Course name"
         ref={(el) => queueMicrotask(() => el.select())}
@@ -313,7 +259,7 @@ function EditableTitle(props: { value: string; onSave: (v: string) => void }) {
   );
 }
 
-/** Upload files or write notes, from one button in the header. */
+/** Upload files or write notes, from one button in the top bar. */
 function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () => void }) {
   const [open, setOpen] = createSignal(false);
   let input!: HTMLInputElement;
@@ -406,10 +352,7 @@ function TextMaterialForm(props: { onSave: (title: string, content: string) => v
 
 type CourseRow = TableModel<GetTable<typeof schema, 'course'>>;
 
-/** The action row's top padding, which it keeps when pinned. */
-const ROW_PAD = 12;
-
-/** The gear button by the title and the course settings dialog it opens. */
+/** The gear button in the top bar and the course settings dialog it opens. */
 function CourseSettings(props: { course: CourseRow }) {
   const db = useDb<typeof schema>();
   const navigate = useNavigate();

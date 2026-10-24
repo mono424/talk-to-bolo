@@ -19,6 +19,7 @@
     "lucide-solid": "^1.60.0",
     "marked": "^18.1.1",
     "pdfjs-dist": "6.4.299",
+    "punktraster": "^0.1.1",
     "solid-js": "^1.9.17",
     "surrealdb": "2.1.0"
   },

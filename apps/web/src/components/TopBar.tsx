@@ -4,7 +4,7 @@ import { LogOut, Menu, MessageCircle, X } from 'lucide-solid';
 import { useAuth } from '../lib/auth';
 import { useChatGPTGuide } from './ChatGPTGuide';
 import { Dot } from './ui';
-import { HeaderSlot } from './HeaderSlot';
+import { HeaderEndSlot, HeaderSlot, HeaderTitleSlot, useHeaderTitleUsed } from './HeaderSlot';
 
 /** Bolo, the approved TalkToBolo mark. */
 export function Logo(props: { class?: string }) {
@@ -19,6 +19,7 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
   const auth = useAuth();
   const guide = useChatGPTGuide();
   const [menu, setMenu] = createSignal(false);
+  const titled = useHeaderTitleUsed();
   const initial = () => auth.user()?.name?.trim().charAt(0).toUpperCase() || '?';
 
   // How much of the bar's right end the account menu takes: page controls in
@@ -46,15 +47,20 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
       >
         {props.menuOpen ? <X size={20} stroke-width={1.75} /> : <Menu size={20} stroke-width={1.75} />}
       </button>
-      <A href="/" class="mr-1 inline-flex shrink-0 items-center text-fg sm:mr-3" aria-label="TalkToBolo home">
-        <Logo />
-      </A>
+      <Show when={!titled()}>
+        <A href="/" class="mr-1 inline-flex shrink-0 items-center text-fg sm:mr-3" aria-label="TalkToBolo home">
+          <Logo />
+        </A>
+      </Show>
+      {/* A page's own title, in place of the logo: within the sidebar's width beside it. */}
+      <HeaderTitleSlot class="flex min-w-0 items-center empty:hidden md:max-w-[252px]" />
 
       {/* Beside the sidebar, the slot spans the page below it, so pages can line controls up with their content.
           Wide windows end it at the recent sessions column, clear of the account menu above it. */}
       <HeaderSlot class="flex min-w-0 flex-1 items-center gap-2 md:pointer-events-none md:absolute md:inset-y-0 md:left-[288px] md:right-0 xl:right-[288px] xl:[--account-w:0px]" />
 
       <div ref={account} class="relative ml-auto flex shrink-0 items-center gap-2">
+        <HeaderEndSlot class="flex items-center gap-1 empty:hidden" />
         {/* The way back to the ChatGPT guide: prominent until a connection exists. */}
         <button
           type="button"

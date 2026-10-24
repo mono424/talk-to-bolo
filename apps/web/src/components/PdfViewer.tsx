@@ -4,7 +4,7 @@ import { Download, Minus, Plus } from 'lucide-solid';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import type { schema } from '../schema.gen';
 import { fetchPdf } from '../lib/api';
-import { Button, IconButton } from './ui';
+import { Button, IconButton, Loader } from './ui';
 
 // pdf.js is large: it loads the first time a PDF is opened.
 let pdfjs: Promise<typeof import('pdfjs-dist')> | null = null;
@@ -211,9 +211,11 @@ export function PdfViewer(props: { materialId: string; size?: number | null; fil
           when={doc()}
           fallback={
             <div class="flex flex-col items-center gap-3 py-10 text-center">
-              <p class="text-[15px] text-muted" role={error() ? 'alert' : 'status'}>
-                {error() ?? 'Loading the PDF…'}
-              </p>
+              <Show when={error()} fallback={<Loader size={7} pattern="download" label="Loading the PDF" />}>
+                <p class="text-[15px] text-muted" role="alert">
+                  {error()}
+                </p>
+              </Show>
               <Show when={error()}>
                 <Button variant="soft" size="sm" onClick={() => setAttempt((n) => n + 1)}>
                   Try again

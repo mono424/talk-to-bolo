@@ -4,7 +4,7 @@ import { useDb } from '@spooky-sync/client-solid';
 import { FileText, Search, X } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { materialPath, pageLabel, searchCourse, type SearchHit } from '../lib/api';
-import { IconButton, inputClass } from './ui';
+import { IconButton, inputClass, Loader } from './ui';
 
 const excerpt = (text: string, length = 220) => {
   const line = text.replace(/\s+/g, ' ').trim();
@@ -84,7 +84,7 @@ export function CourseSearch(props: { courseId: string }) {
 
       <div role="status" aria-live="polite" class="min-w-0">
         <Show when={busy() && !hits()}>
-          <p class="mt-3 text-[13px] text-muted">Searching…</p>
+          <Loader label="Searching" class="ml-3 mt-4 text-faint" />
         </Show>
         <Show when={error()}>
           <p class="mt-3 break-words text-[13px] text-red">{error()}</p>

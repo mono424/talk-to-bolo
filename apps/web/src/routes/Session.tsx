@@ -9,7 +9,7 @@ import { idKey } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { modeLabel } from '../lib/modes';
 import { firstRow, qCall, qMaterial, qTurnSources, qTurns, useCourse } from '../lib/query';
-import { buttonClass, Dot, formatDate } from '../components/ui';
+import { buttonClass, Dot, formatDate, Loader, PageLoader } from '../components/ui';
 
 /**
  * A past study session (/calls/:callKey): one ChatGPT saved through the MCP
@@ -48,7 +48,7 @@ export default function SessionPage() {
   const recapHtml = createMemo(() => (record.data()?.recap ? renderMarkdown(record.data()!.recap!) : ''));
 
   return (
-    <Show when={record.data()} fallback={<div class="p-10 text-muted">{record.isLoading() ? '' : 'Session not found.'}</div>}>
+    <Show when={record.data()} fallback={record.isLoading() ? <PageLoader /> : <div class="p-10 text-muted">Session not found.</div>}>
       {(call) => (
         <div class="mx-auto w-full min-w-0 max-w-3xl px-4 pb-10 pt-4 sm:px-8 sm:pb-14 sm:pt-5">
           {/* On larger screens the sidebar leads back. */}
@@ -75,9 +75,9 @@ export default function SessionPage() {
           <Show
             when={(turns.data() ?? []).length > 0}
             fallback={
-              <p class="py-8 text-center text-[15px] text-muted">
+              <p class="flex justify-center py-8 text-center text-[15px] text-muted">
                 {turns.isLoading()
-                  ? ''
+                  ? <Loader label="Loading the transcript" />
                   : call().assistant
                     ? `This session took place in ${call().assistant}. Only its recap is kept.`
                     : 'Nothing was said in this call.'}

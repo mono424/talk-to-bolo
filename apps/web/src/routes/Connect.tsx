@@ -5,7 +5,7 @@ import { ArrowUpRight, Link2 } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { Button, buttonClass, Card } from '../components/ui';
+import { Button, buttonClass, Card, Loader } from '../components/ui';
 
 interface Consent {
   requestId: string;
@@ -50,7 +50,7 @@ export default function ConnectPage() {
       <Card class="p-5 sm:p-8">
         <span class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-soft text-muted"><Link2 size={23} stroke-width={1.6} /></span>
         <h1 class="text-[26px] font-semibold leading-tight tracking-tight">Connect your assistant</h1>
-        <Show when={consent.loading}><p class="mt-4 text-[15px] text-muted" role="status">Checking your connection request…</p></Show>
+        <Show when={consent.loading}><Loader size={6} label="Checking your connection request" class="mt-5 text-faint" /></Show>
         <Show when={consent.error}>
           <p class="mt-4 break-words text-[15px] text-red" role="alert">{consent.error?.message ?? 'This connection request has expired.'}</p>
           <A href="/settings" class={`${buttonClass('soft')} mt-5 w-full sm:w-auto`}>Back to ChatGPT settings</A>
@@ -75,7 +75,7 @@ export default function ConnectPage() {
             </p>
             <Show when={error()}><p class="mt-4 break-words text-[14px] text-red" role="alert">{error()}</p></Show>
             <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              <Button disabled={busy()} onClick={() => decide(true)}>{busy() ? 'Connecting…' : 'Allow access'}<ArrowUpRight size={16} /></Button>
+              <Button disabled={busy()} onClick={() => decide(true)}><Show when={busy()} fallback={<>Allow access<ArrowUpRight size={16} /></>}><Loader size={4} label="Connecting" class="text-solid-fg" /></Show></Button>
               <Button variant="ghost" disabled={busy()} onClick={() => decide(false)}>Cancel</Button>
             </div>
           </>}

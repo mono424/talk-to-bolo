@@ -1,5 +1,6 @@
 import type { JSX } from 'solid-js';
 import { Show, splitProps } from 'solid-js';
+import { GridLoader, type GridLoaderProps } from 'punktraster/solid';
 
 // ── Buttons ───────────────────────────────────────────────────────────────
 
@@ -89,6 +90,22 @@ export function NoticeCard(props: {
         </div>
       </div>
     </Card>
+  );
+}
+
+// ── Loading ───────────────────────────────────────────────────────────────
+
+/** The punktraster dot raster, shown instead of loading text. Takes the text color. */
+export function Loader(props: { label?: string; size?: number; pattern?: GridLoaderProps['pattern']; class?: string }) {
+  return <GridLoader size={props.size ?? 5} pattern={props.pattern ?? 'helix'} label={props.label ?? 'Loading'} class={`shrink-0 ${props.class ?? 'text-faint'}`} />;
+}
+
+/** A loader centered in the page, for pages waiting on their record. */
+export function PageLoader(props: { label?: string }) {
+  return (
+    <div class="flex justify-center p-10">
+      <Loader size={7} label={props.label} />
+    </div>
   );
 }
 

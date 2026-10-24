@@ -2,21 +2,40 @@ import { createContext, createSignal, onCleanup, Show, useContext, type ParentPr
 import { Portal } from 'solid-js/web';
 
 /**
- * Page controls outside the page: in the app's top bar next to the account
- * menu, and at the top of the recent sessions column. The layout renders the
- * slots; a page fills them with <HeaderActions> and <SideActions>, which
+ * Page controls outside the page: in the app's top bar (in place of the logo,
+ * over the page, or next to the account menu), and at the top of the recent
+ * sessions column. The layout renders the slots; a page fills them with
+ * <HeaderTitle>, <HeaderActions>, <HeaderEndActions> and <SideActions>, which
  * disappear with the page.
  */
-type Slot = { el: () => HTMLElement | undefined; set: (el: HTMLElement | undefined) => void };
-const SlotContext = createContext<{ header: Slot; side: Slot }>();
+type Slot = {
+  el: () => HTMLElement | undefined;
+  set: (el: HTMLElement | undefined) => void;
+  /** Whether a page fills the slot. */
+  used: () => boolean;
+  use: (delta: number) => void;
+};
+type Slots = { title: Slot; header: Slot; end: Slot; side: Slot };
+const SlotContext = createContext<Slots>();
 
 function createSlot(): Slot {
   const [el, set] = createSignal<HTMLElement>();
-  return { el, set };
+  const [count, setCount] = createSignal(0);
+  return { el, set, used: () => count() > 0, use: (delta) => setCount((n) => n + delta) };
 }
 
 export function HeaderSlotProvider(props: ParentProps) {
-  return <SlotContext.Provider value={{ header: createSlot(), side: createSlot() }}>{props.children}</SlotContext.Provider>;
+  return (
+    <SlotContext.Provider value={{ title: createSlot(), header: createSlot(), end: createSlot(), side: createSlot() }}>
+      {props.children}
+    </SlotContext.Provider>
+  );
+}
+
+/** Whether the current page shows its own title in place of the logo. */
+export function useHeaderTitleUsed() {
+  const slots = useContext(SlotContext);
+  return () => slots?.title.used() ?? false;
 }
 
 function Outlet(props: { slot?: Slot; class?: string }) {
@@ -25,6 +44,9 @@ function Outlet(props: { slot?: Slot; class?: string }) {
 }
 
 function Fill(props: ParentProps<{ slot?: Slot }>) {
+  const slot = props.slot;
+  slot?.use(1);
+  onCleanup(() => slot?.use(-1));
   return (
     <Show when={props.slot?.el()}>
       {(mount) => (
@@ -43,6 +65,24 @@ export function HeaderSlot(props: { class?: string }) {
 
 export function HeaderActions(props: ParentProps) {
   return <Fill slot={useContext(SlotContext)?.header}>{props.children}</Fill>;
+}
+
+/** Where the logo sits: a page's own title replaces it. */
+export function HeaderTitleSlot(props: { class?: string }) {
+  return <Outlet slot={useContext(SlotContext)?.title} class={props.class} />;
+}
+
+export function HeaderTitle(props: ParentProps) {
+  return <Fill slot={useContext(SlotContext)?.title}>{props.children}</Fill>;
+}
+
+/** Just before the account menu. */
+export function HeaderEndSlot(props: { class?: string }) {
+  return <Outlet slot={useContext(SlotContext)?.end} class={props.class} />;
+}
+
+export function HeaderEndActions(props: ParentProps) {
+  return <Fill slot={useContext(SlotContext)?.end}>{props.children}</Fill>;
 }
 
 /** Top of the recent sessions column, shown on wide windows only. */

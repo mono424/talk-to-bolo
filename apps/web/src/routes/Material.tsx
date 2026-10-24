@@ -8,7 +8,7 @@ import { chunkMarkdown, chunkPages } from '../../../../shared/lecture';
 import { idString, whenSynced } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { firstRow, qMaterial, qMaterialJobs } from '../lib/query';
-import { Button, inputClass, StatusText } from '../components/ui';
+import { Button, inputClass, Loader, PageLoader, StatusText } from '../components/ui';
 import { HeaderActions, SideActions } from '../components/HeaderSlot';
 import { LecturePlace } from '../components/LecturePlace';
 import { PdfViewer } from '../components/PdfViewer';
@@ -120,7 +120,7 @@ export default function MaterialPage() {
   );
 
   return (
-    <Show when={material.data()} fallback={<div class="p-10 text-muted">{material.isLoading() ? '' : 'Material not found.'}</div>}>
+    <Show when={material.data()} fallback={material.isLoading() ? <PageLoader /> : <div class="p-10 text-muted">Material not found.</div>}>
       {(m) => (
         <div class="min-h-full min-w-0">
           <HeaderActions>
@@ -142,7 +142,9 @@ export default function MaterialPage() {
                     Cancel
                   </Button>
                   <Button size="sm" disabled={saving()} onClick={save}>
-                    {saving() ? 'Saving…' : 'Save'}
+                    <Show when={saving()} fallback="Save">
+                      <Loader size={4} label="Saving" class="text-solid-fg" />
+                    </Show>
                   </Button>
                 </Show>
               </div>
@@ -189,7 +191,13 @@ export default function MaterialPage() {
                     {/* The PDF is stored before it is converted, so it can be read right away. */}
                     <Show
                       when={m().source_size}
-                      fallback={<p class="break-words text-muted">{m().status === 'failed' ? '' : 'Uploading the PDF…'}</p>}
+                      fallback={
+                        <Show when={m().status !== 'failed'}>
+                          <div class="flex justify-center py-10">
+                            <Loader size={7} pattern="upload" label="Uploading the PDF" />
+                          </div>
+                        </Show>
+                      }
                     >
                       <PdfViewer materialId={m().id} size={m().source_size} fileName={m().source_name} page={page()} />
                     </Show>

@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth';
 import { idKey } from '../lib/ids';
 import { modeLabel, viaLabel } from '../lib/modes';
 import { qRecentCalls } from '../lib/query';
-import { Card, Dot, formatDate } from '../components/ui';
+import { Card, Dot, formatDate, Loader } from '../components/ui';
 
 /** Every study session, newest first: saved by ChatGPT, or an earlier voice call. */
 export default function SessionsPage() {
@@ -27,7 +27,7 @@ export default function SessionsPage() {
             each={calls.data() ?? []}
             fallback={
               <li class="px-4 py-12 text-center text-[15px] text-muted">
-                {calls.isLoading() ? '' : (
+                {calls.isLoading() ? <Loader size={6} label="Loading sessions" class="mx-auto text-faint" /> : (
                   <>
                     No sessions yet. Study a course in ChatGPT and ask it to save the session.{' '}
                     <A href="/settings" class="text-fg underline underline-offset-2">Connect ChatGPT</A>

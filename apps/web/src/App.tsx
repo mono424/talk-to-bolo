@@ -8,6 +8,7 @@ import { ChatGPTGuideProvider } from './components/ChatGPTGuide';
 import { HeaderSlotProvider } from './components/HeaderSlot';
 import { RecentSessions, Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
+import { Loader } from './components/ui';
 import Home from './routes/Home';
 import CoursePage from './routes/Course';
 import MaterialPage from './routes/Material';
@@ -76,7 +77,11 @@ export default function App() {
   return (
     <Sp00kyProvider
       config={dbConfig}
-      fallback={<div class="flex h-dvh items-center justify-center text-[15px] text-muted">Opening TalkToBolo…</div>}
+      fallback={
+        <div class="flex h-dvh items-center justify-center">
+          <Loader size={8} label="Opening TalkToBolo" />
+        </div>
+      }
       onError={(error) => console.error('Failed to start the local database', error)}
     >
       <AuthProvider>
