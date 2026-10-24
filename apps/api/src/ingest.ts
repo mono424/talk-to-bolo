@@ -24,6 +24,10 @@ const PAGES_PER_IMAGE_STEP = 20;
 const PAGES_PER_TEXT_STEP = 50;
 const CHUNKS_PER_EMBED_STEP = 48;
 const EMBED_BATCH = 16;
+/** Sections uploaded, checked or read back per Agent Memory step. */
+const MEMORY_BATCH = 10;
+/** Status rounds 15 s apart before extraction counts as stuck (an hour). */
+const MEMORY_ROUNDS = 240;
 
 const RETRY = { retries: { limit: 3, delay: '10 seconds', backoff: 'exponential' }, timeout: '15 minutes' } as const;
 
@@ -212,40 +216,69 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
         if (r === STOP) return stopped;
       }
 
-      // Each section has its own known-time stamp. Uploading a whole lecture
-      // at once would make its later concepts visible at the first section.
+      // Each section is its own document with its own known-time stamp: one
+      // document for a whole lecture would make its later concepts visible at
+      // the first section. All sections are uploaded first, so Agent Memory
+      // extracts them side by side, then read back once all are ready.
       const graphs: SectionGraph[] = [];
       let withMemory = memoryConfigured(this.env);
       if (withMemory) {
         try {
-          for (let position = 0; position < total; position++) {
-            const documentId = await step.do(`memory upload ${position}`, RETRY, async (): Promise<string | Stop | null> => {
+          const ids: string[] = [];
+          for (let from = 0; from < total; from += MEMORY_BATCH) {
+            const to = Math.min(total, from + MEMORY_BATCH);
+            const batch = await step.do(`memory upload ${from}-${to}`, RETRY, async (): Promise<string[] | Stop> => {
               const m = await current();
               if (!m) return STOP;
-              await progress(`Building the knowledge graph, section ${position + 1} of ${total}`);
-              return indexMemorySection(this.env, m, position, chunkMarkdown(m.content)[position]);
+              await progress(`Building the knowledge graph, sections ${from + 1}-${to} of ${total}`);
+              const chunks = chunkMarkdown(m.content);
+              const out: string[] = [];
+              for (let position = from; position < to; position++) {
+                const id = await indexMemorySection(this.env, m, position, chunks[position]);
+                if (!id) throw new Error('Agent Memory was disabled during ingestion.');
+                out.push(id);
+              }
+              return out;
             });
-            if (documentId === STOP) return stopped;
-            if (!documentId) throw new Error('Agent Memory was disabled during ingestion.');
-            let ready = false;
-            for (let poll = 0; poll < 60; poll++) {
-              const state = await step.do(`memory status ${position} ${poll}`, RETRY, async () => {
-                if (!(await current())) return STOP;
-                return getMemoryDocument(this.env, documentId);
-              });
-              if (state === STOP) return stopped;
-              if (state?.status === 'ready') { ready = true; break; }
-              if (state?.status === 'failed') throw new Error(`Agent Memory extraction failed for section ${position}.`);
-              await step.sleep(`memory wait ${position} ${poll}`, '10 seconds');
-            }
-            if (!ready) throw new Error('Agent Memory extraction did not finish in time.');
-            const graph = await step.do(`memory concepts ${position}`, RETRY, async (): Promise<SectionGraph | Stop> => {
+            if (batch === STOP) return stopped;
+            ids.push(...batch);
+          }
+
+          let pending = ids.map((_, position) => position);
+          for (let round = 0; pending.length; round++) {
+            if (round >= MEMORY_ROUNDS) throw new Error('Agent Memory extraction did not finish in time.');
+            if (round) await step.sleep(`memory wait ${round}`, '15 seconds');
+            const waiting = pending;
+            const left = await step.do(`memory status ${round}`, RETRY, async (): Promise<number[] | Stop> => {
+              if (!(await current())) return STOP;
+              await progress(`Building the knowledge graph, ${total - waiting.length} of ${total} sections read`);
+              const still: number[] = [];
+              for (let i = 0; i < waiting.length; i += MEMORY_BATCH) {
+                const states = await Promise.all(waiting.slice(i, i + MEMORY_BATCH).map((p) => getMemoryDocument(this.env, ids[p])));
+                states.forEach((state, j) => {
+                  const position = waiting[i + j];
+                  if (state?.status === 'failed') throw new Error(`Agent Memory extraction failed for section ${position}.`);
+                  if (state?.status !== 'ready') still.push(position);
+                });
+              }
+              return still;
+            });
+            if (left === STOP) return stopped;
+            pending = left;
+          }
+
+          for (let from = 0; from < total; from += MEMORY_BATCH) {
+            const to = Math.min(total, from + MEMORY_BATCH);
+            const batch = await step.do(`memory concepts ${from}-${to}`, RETRY, async (): Promise<SectionGraph[] | Stop> => {
               const m = await current();
               if (!m) return STOP;
-              return sectionGraph(this.env, m, position, chunkMarkdown(m.content)[position]);
+              const chunks = chunkMarkdown(m.content);
+              const out: SectionGraph[] = [];
+              for (let position = from; position < to; position++) out.push(await sectionGraph(this.env, m, position, chunks[position]));
+              return out;
             });
-            if (graph === STOP) return stopped;
-            graphs.push(graph);
+            if (batch === STOP) return stopped;
+            graphs.push(...batch);
           }
         } catch (err) {
           // The lecture is still searchable and studyable without its graph.
