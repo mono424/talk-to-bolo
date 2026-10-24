@@ -2,6 +2,7 @@ import type { Env } from './env';
 import { sha256Hex } from './auth';
 import { ensureServerSchema, getOwnedCourse } from './service';
 import { BadRequest, NotFound, Surreal, recordId } from './surreal';
+import type { SectionGraph } from './memory';
 
 /**
  * What the student understood, concept by concept: the student's side of the
@@ -286,6 +287,8 @@ export async function recordUnderstanding(env: Env, ownerId: string, input: {
   concepts?: ConceptInput[] | null;
   observations?: ObservationInput[] | null;
   now?: Date;
+  /** Leave a concept where it is when it already belongs to another lecture. */
+  keepAnchors?: boolean;
 }) {
   const concepts = input.concepts ?? [];
   const observations = input.observations ?? [];
@@ -301,7 +304,7 @@ export async function recordUnderstanding(env: Env, ownerId: string, input: {
 
   for (let attempt = 0; ; attempt++) {
     try {
-      return await writeOnce(env, ownerId, course.id, concepts, observations, input.now ?? new Date());
+      return await writeOnce(env, ownerId, course.id, concepts, observations, input.now ?? new Date(), input.keepAnchors ?? false);
     } catch (err) {
       const retry = err instanceof Error && /concept_conflict|already exists|Transaction conflict|can be retried/i.test(err.message);
       if (!retry || attempt >= 3) throw err;
@@ -309,7 +312,9 @@ export async function recordUnderstanding(env: Env, ownerId: string, input: {
   }
 }
 
-async function writeOnce(env: Env, ownerId: string, courseId: string, concepts: ConceptInput[], observations: ObservationInput[], now: Date) {
+async function writeOnce(
+  env: Env, ownerId: string, courseId: string, concepts: ConceptInput[], observations: ObservationInput[], now: Date, keepAnchors: boolean,
+) {
   const graph = await loadGraph(env, ownerId, courseId);
   const at = now.toISOString();
   const touched = new Map<string, ConceptRow>();
@@ -360,6 +365,7 @@ async function writeOnce(env: Env, ownerId: string, courseId: string, concepts: 
 
   const anchorTo = (row: ConceptRow, place: ReturnType<typeof lectureAt>) => {
     if (!place) return row;
+    if (keepAnchors && row.material && row.material !== place.lecture.id && graph.lectures.has(row.material)) return row;
     const same = row.material === place.lecture.id && row.rev === place.lecture.index_rev;
     const positions = same ? row.positions : [];
     return {
@@ -497,6 +503,34 @@ const SET_CONCEPT = `owner = type::record($owner), course = type::record($course
   first_success_at = IF $w.first_success_at THEN <datetime>$w.first_success_at END,
   last_success_at = IF $w.last_success_at THEN <datetime>$w.last_success_at END,
   misconceptions = $w.misconceptions ?? [], gaps = $w.gaps ?? [], version = $w.version + 1`;
+
+/**
+ * Adds the concepts Agent Memory extracted from a lecture, section by
+ * section (`graphs[position]`), to the course's concept map, with what they
+ * build on and are part of. New concepts start unseen; what the student
+ * showed about known ones stays, and so does a concept another lecture
+ * already teaches.
+ */
+export async function mapConcepts(env: Env, ownerId: string, courseId: string, materialId: string, graphs: SectionGraph[]): Promise<number> {
+  const entries: ConceptInput[] = [];
+  graphs.forEach((g, position) => {
+    const byKey = new Map<string, ConceptInput>();
+    for (const name of g.concepts) {
+      const key = conceptKey(name);
+      if (key && !byKey.has(key)) byKey.set(key, { name, material_id: materialId, position, requires: [] });
+    }
+    for (const [from, to] of g.requires) byKey.get(conceptKey(from))?.requires!.push(to);
+    for (const [from, to] of g.partOf) {
+      const c = byKey.get(conceptKey(from));
+      if (c && !c.part_of && conceptKey(to) !== conceptKey(from)) c.part_of = to;
+    }
+    entries.push(...byKey.values());
+  });
+  for (let i = 0; i < entries.length; i += MAX_CONCEPTS) {
+    await recordUnderstanding(env, ownerId, { courseId, concepts: entries.slice(i, i + MAX_CONCEPTS), keepAnchors: true });
+  }
+  return entries.length;
+}
 
 // ── Reading ──────────────────────────────────────────────────────────────
 

@@ -3,7 +3,7 @@ import type { AppEnv, Env } from './env';
 import { bearer, safeEqual } from './auth';
 import { setLectureProgress } from './progress';
 import { BadRequest, NotFound, Surreal, recordId } from './surreal';
-import { startIngest, type MaterialRow } from './service';
+import { startIngest, startMemoryBuild, type MaterialRow } from './service';
 
 /**
  * Background work the web app asks for by writing a row to the `job` outbox
@@ -41,6 +41,13 @@ jobs.post('/materials/index', async (c) => {
   if (material.kind === 'pdf' && !material.content.trim()) throw new BadRequest('Upload the PDF first.');
   const rev = await startIngest(c.env, material.id);
   return c.json({ ok: true, rev });
+});
+
+// Builds a ready material's knowledge graph without re-indexing it.
+jobs.post('/materials/memory', async (c) => {
+  const body = await c.req.json<Payload>();
+  const material = await jobMaterial(c.env, body.id);
+  return c.json({ ok: true, ...(await startMemoryBuild(c.env, material, body.force === true)) });
 });
 
 // Records the last lecture section the student reached.

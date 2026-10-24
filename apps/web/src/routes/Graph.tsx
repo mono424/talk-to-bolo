@@ -13,8 +13,9 @@ import { useCourse } from '../lib/query';
 import { Loader } from '../components/ui';
 
 /**
- * The course knowledge graph in 3D: the concepts ChatGPT mapped while
- * tutoring, what each builds on, and the student's level on each one.
+ * The course knowledge graph in 3D: the concepts of each lecture (from Agent
+ * Memory when it is processed, and what ChatGPT mapped while tutoring), what
+ * each builds on, and the student's level on each one.
  * Learned concepts glow, concepts in progress take the color of their state,
  * and concepts not learned yet stay hollow and dim. `?lecture=` opens one
  * lecture: its concepts and the foundations they build on.
@@ -355,7 +356,7 @@ export default function GraphPage() {
         <Centered>
           <p class="text-[15px] font-medium">{lecture() ? 'No concepts mapped for this lecture yet' : 'No concepts mapped yet'}</p>
           <p class="mt-1 max-w-sm text-[14px] leading-snug text-white/55">
-            Study with ChatGPT: as it walks you through the material, it maps each idea and what it builds on, and notes what you understood.
+            The graph fills in from your lectures once they are processed. Study with ChatGPT to see what you understood about each idea.
           </p>
         </Centered>
       </Show>

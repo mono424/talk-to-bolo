@@ -1,6 +1,7 @@
 import type { Env } from './env';
 import serverSchema from './server-schema.surql';
 import { BadRequest, Conflict, NotFound, Surreal, UserError, recordId, toBase64 } from './surreal';
+import { memoryConfigured } from './memory';
 
 export interface CourseRow {
   id: string;
@@ -204,9 +205,26 @@ export async function markFailed(env: Env, materialId: string, message: string) 
     .catch((err) => console.error('[ingest] could not mark failed', err));
 }
 
-async function launch(env: Env, materialId: string, rev: number, convert: boolean) {
+async function launch(env: Env, materialId: string, rev: number, convert: boolean, memoryOnly = false) {
   const key = materialId.slice(materialId.indexOf(':') + 1);
-  await env.INGEST.create({ id: `${key}-${rev}-${Date.now().toString(36)}`, params: { materialId, rev, convert } });
+  await env.INGEST.create({
+    id: `${key}-${rev}-${memoryOnly ? 'm' : ''}${Date.now().toString(36)}`,
+    params: { materialId, rev, convert, ...(memoryOnly ? { memoryOnly } : {}) },
+  });
+}
+
+/**
+ * Builds the knowledge graph of a ready material from its current text,
+ * keeping its search index and lecture progress. Nothing to do when Agent
+ * Memory is off, or the graph of this revision is already built (unless
+ * `force`).
+ */
+export async function startMemoryBuild(env: Env, material: MaterialRow, force = false): Promise<{ started: boolean; rev: number }> {
+  const rev = material.index_rev;
+  if (!memoryConfigured(env) || material.status !== 'ready' || !material.chunk_count) return { started: false, rev };
+  if (!force && material.memory_rev === rev) return { started: false, rev };
+  await launch(env, material.id, rev, false, true);
+  return { started: true, rev };
 }
 
 /**

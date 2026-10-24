@@ -9,6 +9,7 @@ import {
   memoryConfigured,
   queryCourseMemory,
   recallStudentMemory,
+  sectionGraph,
   type MemoryMaterial,
 } from '../src/memory.ts';
 
@@ -147,4 +148,41 @@ test('document polling and errors do not silently accept missing scopes or faile
   assert.deepEqual(await getMemoryDocument(env, 'doc-2'), { status: 'failed', error: 'Extraction failed.' });
   await assert.rejects(getMemoryDocument(env, 'doc-3'), /failed \(503\)/);
   await assert.rejects(indexMemorySection(env, material, 0, chunk), /failed \(409\)/);
+});
+
+test('section graph keeps only concepts the section names, with their links', async (t) => {
+  const entity = (type: string, name: string, text = name) => ({ id: `e-${name}`, text, source: 'entity', score: 0.5, resource: { kind: 'entity', entityType: type, name } });
+  const relation = (from: string, label: string, to: string) => ({
+    id: `r-${from}`, text: `${from} ${label} ${to}`, source: 'entity', score: 0.5,
+    resource: { kind: 'relation', subjectType: 'concept', subjectName: from, label, objectType: 'concept', objectName: to },
+  });
+  const requests = mockFetch(t, [{
+    body: {
+      tier: 'hybrid',
+      hits: [
+        entity('concept', 'force', 'Force'),
+        entity('concept', 'acceleration'),
+        entity('concept', 'mass'),
+        entity('person', 'newton'),
+        entity('concept', 'photosynthesis'),
+        relation('force', 'requires', 'acceleration'),
+        relation('force', 'depends_on', 'mass'),
+        relation('force', 'requires', 'photosynthesis'),
+        { id: 'chunk:x', text: 'Force equals', source: 'chunk', score: 0.4, resource: { kind: 'document', documentId: 'd', position: 0 } },
+      ],
+      contextHits: [relation('acceleration', 'part_of', 'force')],
+    },
+  }]);
+  const g = await sectionGraph(env, material, 0, { heading: 'Forces', text: 'Force equals mass times acceleration, said Newton.' });
+  assert.deepEqual(g.concepts, ['Force', 'acceleration', 'mass']);
+  assert.deepEqual(g.requires, [['Force', 'acceleration'], ['Force', 'mass']]);
+  assert.deepEqual(g.partOf, [['acceleration', 'Force']]);
+  const sent = body(requests[0]);
+  assert.deepEqual(sent.lens, [[courseScope]]);
+  assert.equal(sent.mode, 'graph');
+  assert.deepEqual(await sectionGraph({} as Env, material, 0, chunk), { concepts: [], requires: [], partOf: [] });
+});
+
+test('a URL without a context id leaves Agent Memory off', () => {
+  assert.equal(memoryConfigured({ AGENT_MEMORY_URL: 'https://memory.example', AGENT_MEMORY_API_KEY: 'k' } as Env), false);
 });

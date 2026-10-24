@@ -109,10 +109,10 @@ apps:
         # Images inside lectures: <img> cannot send the session token.
         - /material-assets/*
     env:
-      # Agent Memory (the course knowledge graph) is off until the vault's
-      # AGENT_MEMORY_URL is the full Context URL, ending /api/v1/<context id>:
-      # it holds only the host, and with it set every ingestion fails. Then add
-      # `- vault: [AGENT_MEMORY_URL, AGENT_MEMORY_API_KEY]` here again.
+      # Agent Memory (the course knowledge graph). AGENT_MEMORY_URL must be
+      # the full Context URL, ending /api/v1/<context id>: without the context
+      # id the API leaves Agent Memory off and logs why.
+      - vault: [AGENT_MEMORY_URL, AGENT_MEMORY_API_KEY]
       # The database is not configured here: sp00ky sets SPKY_DB_URL,
       # SPKY_DB_NS and SPKY_DB_NAME on the Worker backend, and on the shared
       # free database its namespace login (SPKY_DB_USER, SPKY_DB_PASS,

@@ -49,6 +49,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /jobs/materials/memory:
+    post:
+      summary: >-
+        Build a ready material's course knowledge graph (Agent Memory and the
+        concept map) from its current text, without re-indexing it.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  example: material:k3f2a...
+                force:
+                  type: boolean
+                  description: Build again even when this revision's graph exists.
+              required:
+                - id
+      responses:
+        '200':
+          description: >-
+            Started (a memory-only Workflow run), or nothing to do: Agent
+            Memory is off, the material is not ready, or its graph is built.
+        '404':
+          description: The material no longer exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /jobs/materials/progress:
     post:
       summary: Record the last lecture section the student reached.

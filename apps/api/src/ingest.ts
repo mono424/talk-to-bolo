@@ -4,7 +4,8 @@ import { chunkMarkdown, chunkPages, embedText } from './chunk';
 import { extractPageImages, loadPdf, pageCount, pagesToMarkdown, type PageImageRef } from './pdf';
 import { embed, ensureServerSchema, type MaterialRow } from './service';
 import { Surreal, UserError, toBase64 } from './surreal';
-import { getMemoryDocument, indexMemorySection, memoryConfigured } from './memory';
+import { getMemoryDocument, indexMemorySection, memoryConfigured, sectionGraph, type SectionGraph } from './memory';
+import { mapConcepts } from './understanding';
 
 export interface IngestParams {
   materialId: string;
@@ -12,6 +13,11 @@ export interface IngestParams {
   rev: number;
   /** Turn the uploaded PDF into Markdown first (a new upload), or only re-index the current Markdown (an edit). */
   convert: boolean;
+  /**
+   * Only build the course knowledge graph of a ready material, for its current
+   * text: no new revision, so the search index and lecture progress stay.
+   */
+  memoryOnly?: boolean;
 }
 
 const PAGES_PER_IMAGE_STEP = 20;
@@ -32,6 +38,11 @@ type Stop = typeof STOP;
  *   PDF:  extract images -> read the pages' text layer as markdown -> save
  *   all:  chunk the markdown -> embed with Workers AI -> write the search index
  *         -> the course knowledge graph in Agent Memory, when configured
+ *         -> its concepts into the course's concept map (the graph view)
+ *
+ * A memory-only run (`memoryOnly`) does just the last two for a ready
+ * material. Agent Memory failing never fails the material: it stays ready,
+ * without a graph (`memory_rev` 0).
  *
  * Progress is written to `material.status_detail`, which the web app shows
  * live through sync. A newer upload or edit bumps `index_rev`; this run then
@@ -39,7 +50,7 @@ type Stop = typeof STOP;
  */
 export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
   async run(event: WorkflowEvent<IngestParams>, step: WorkflowStep) {
-    const { materialId, rev, convert } = event.payload;
+    const { materialId, rev, convert, memoryOnly = false } = event.payload;
     const db = Surreal.system(this.env);
 
     // The material, or null once a newer run owns it.
@@ -55,11 +66,12 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
       const meta = await step.do('load', RETRY, async () => {
         await ensureServerSchema(this.env);
         const m = await current();
-        return m ? { kind: m.kind, owner: m.owner, course: m.course } : STOP;
+        if (!m || (memoryOnly && m.status !== 'ready')) return STOP;
+        return { kind: m.kind, owner: m.owner, course: m.course };
       });
       if (meta === STOP) return stopped;
 
-      if (meta.kind === 'pdf' && convert) {
+      if (meta.kind === 'pdf' && convert && !memoryOnly) {
         const pages = await step.do('count pages', RETRY, async (): Promise<number | Stop> => {
           if (!(await current())) return STOP;
           const n = await pageCount(await loadPdf(this.env, materialId));
@@ -153,12 +165,12 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
       const total = await step.do('chunk', RETRY, async (): Promise<number | Stop> => {
         const m = await current();
         if (!m) return STOP;
-        await progress('Building the search index');
+        if (!memoryOnly) await progress('Building the search index');
         return chunkMarkdown(m.content).length;
       });
       if (total === STOP) return stopped;
 
-      for (let from = 0; from < total; from += CHUNKS_PER_EMBED_STEP) {
+      for (let from = 0; !memoryOnly && from < total; from += CHUNKS_PER_EMBED_STEP) {
         const to = Math.min(total, from + CHUNKS_PER_EMBED_STEP);
         const r = await step.do(`embed ${from}-${to}`, RETRY, async (): Promise<true | Stop> => {
           const m = await current();
@@ -202,33 +214,56 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
 
       // Each section has its own known-time stamp. Uploading a whole lecture
       // at once would make its later concepts visible at the first section.
-      const withMemory = memoryConfigured(this.env);
+      const graphs: SectionGraph[] = [];
+      let withMemory = memoryConfigured(this.env);
       if (withMemory) {
-        for (let position = 0; position < total; position++) {
-          const documentId = await step.do(`memory upload ${position}`, RETRY, async (): Promise<string | Stop | null> => {
-            const m = await current();
-            if (!m) return STOP;
-            await progress(`Building course memory, section ${position + 1} of ${total}`);
-            return indexMemorySection(this.env, m, position, chunkMarkdown(m.content)[position]);
-          });
-          if (documentId === STOP) return stopped;
-          if (!documentId) throw new Error('Agent Memory was disabled during ingestion.');
-          let ready = false;
-          for (let poll = 0; poll < 60; poll++) {
-            const state = await step.do(`memory status ${position} ${poll}`, RETRY, async () => {
-              if (!(await current())) return STOP;
-              return getMemoryDocument(this.env, documentId);
+        try {
+          for (let position = 0; position < total; position++) {
+            const documentId = await step.do(`memory upload ${position}`, RETRY, async (): Promise<string | Stop | null> => {
+              const m = await current();
+              if (!m) return STOP;
+              await progress(`Building the knowledge graph, section ${position + 1} of ${total}`);
+              return indexMemorySection(this.env, m, position, chunkMarkdown(m.content)[position]);
             });
-            if (state === STOP) return stopped;
-            if (state?.status === 'ready') { ready = true; break; }
-            if (state?.status === 'failed') throw new Error(`Agent Memory extraction failed for section ${position}.`);
-            await step.sleep(`memory wait ${position} ${poll}`, '10 seconds');
+            if (documentId === STOP) return stopped;
+            if (!documentId) throw new Error('Agent Memory was disabled during ingestion.');
+            let ready = false;
+            for (let poll = 0; poll < 60; poll++) {
+              const state = await step.do(`memory status ${position} ${poll}`, RETRY, async () => {
+                if (!(await current())) return STOP;
+                return getMemoryDocument(this.env, documentId);
+              });
+              if (state === STOP) return stopped;
+              if (state?.status === 'ready') { ready = true; break; }
+              if (state?.status === 'failed') throw new Error(`Agent Memory extraction failed for section ${position}.`);
+              await step.sleep(`memory wait ${position} ${poll}`, '10 seconds');
+            }
+            if (!ready) throw new Error('Agent Memory extraction did not finish in time.');
+            const graph = await step.do(`memory concepts ${position}`, RETRY, async (): Promise<SectionGraph | Stop> => {
+              const m = await current();
+              if (!m) return STOP;
+              return sectionGraph(this.env, m, position, chunkMarkdown(m.content)[position]);
+            });
+            if (graph === STOP) return stopped;
+            graphs.push(graph);
           }
-          if (!ready) throw new Error('Agent Memory extraction did not finish in time.');
+        } catch (err) {
+          // The lecture is still searchable and studyable without its graph.
+          console.error(`[ingest] ${materialId} knowledge graph failed`, err);
+          withMemory = false;
+          graphs.length = 0;
         }
       }
 
       await step.do('finish', RETRY, async () => {
+        if (memoryOnly) {
+          await db.query(
+            `UPDATE type::record($m) SET status_detail = NONE, memory_rev = IF $with_memory THEN $rev ELSE memory_rev END
+               WHERE index_rev = $rev AND status = 'ready'`,
+            { m: materialId, rev, with_memory: withMemory },
+          );
+          return;
+        }
         // Only while this run still owns the material: a newer run's chunks
         // must survive an older run finishing late.
         await db.query(
@@ -242,8 +277,29 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
           { m: materialId, rev, n: total, with_memory: withMemory },
         );
       });
-      return { ok: true, chunks: total };
+
+      // The concepts each section names, and how they link, become the
+      // course's concept map, which ChatGPT's record of the student builds on.
+      if (graphs.some((g) => g.concepts.length)) {
+        try {
+          await step.do('concept map', RETRY, async () => {
+            if (!(await current())) return 0;
+            return mapConcepts(this.env, meta.owner, meta.course, materialId, graphs);
+          });
+        } catch (err) {
+          console.error(`[ingest] ${materialId} concept map failed`, err);
+        }
+      }
+      return { ok: true, chunks: total, ...(memoryOnly ? { memoryOnly: true } : {}) };
     } catch (err) {
+      if (memoryOnly) {
+        // The material itself is fine: only its graph was being built.
+        console.error(`[ingest] ${materialId} knowledge graph failed`, err);
+        await step.do('clear progress', async () => {
+          await db.query('UPDATE type::record($m) SET status_detail = NONE WHERE index_rev = $rev AND status = \'ready\'', { m: materialId, rev });
+        });
+        return { failed: 'knowledge graph' };
+      }
       const message = err instanceof UserError ? err.message : 'Processing failed. Upload the file again to retry.';
       console.error(`[ingest] ${materialId} failed`, err);
       await step.do('mark failed', async () => {

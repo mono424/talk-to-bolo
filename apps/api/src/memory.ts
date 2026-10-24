@@ -21,8 +21,27 @@ export interface MemoryDocument {
 const NARRATIVE_START = Date.UTC(2000, 0, 1);
 const REQUEST_TIMEOUT_MS = 30_000;
 
+const CONTEXT_BASE = /^\/api\/v1\/[^/]+\/?$/;
+
+let warnedUrl = false;
+
+/**
+ * Both secrets are set and the URL names a Context. A URL without the context
+ * id (just the host) counts as unset, so ingestion still works without a graph.
+ */
 export function memoryConfigured(env: Env): boolean {
-  return !!env.AGENT_MEMORY_URL?.trim() && !!env.AGENT_MEMORY_API_KEY?.trim();
+  const url = env.AGENT_MEMORY_URL?.trim();
+  if (!url || !env.AGENT_MEMORY_API_KEY?.trim()) return false;
+  try {
+    if (CONTEXT_BASE.test(new URL(url).pathname)) return true;
+  } catch {
+    // Not a URL at all: reported below.
+  }
+  if (!warnedUrl) {
+    warnedUrl = true;
+    console.error('[memory] AGENT_MEMORY_URL must end in /api/v1/{context_id}; Agent Memory is off.');
+  }
+  return false;
 }
 
 // Hex makes record identifiers into collision-free scope segments, including ids
@@ -56,7 +75,7 @@ export function lectureStamp(position: number): string {
 
 function endpoint(env: Env, path: string): string {
   const base = new URL(env.AGENT_MEMORY_URL!.trim());
-  if (!/^\/api\/v1\/[^/]+\/?$/.test(base.pathname) || base.search || base.hash || base.username || base.password) {
+  if (!CONTEXT_BASE.test(base.pathname) || base.search || base.hash || base.username || base.password) {
     throw new Error('AGENT_MEMORY_URL must be the Context API base URL ending in /api/v1/{context_id}.');
   }
   return `${base.href.replace(/\/$/, '')}${path}`;
@@ -200,6 +219,74 @@ async function queryFacts(env: Env, lens: string[][], query: string, asOf: strin
     if (!Number.isFinite(occurred) || occurred > cutoff || occurred < lower) return [];
     return [{ id: hit.id, text: hit.text, source: hit.source, score: hit.score, occurredAt: hit.occurredAt }];
   });
+}
+
+/** The concepts of one lecture section, and how they link, from its extracted graph. */
+export interface SectionGraph {
+  concepts: string[];
+  /** [concept, what it builds on] */
+  requires: [string, string][];
+  /** [concept, the broader concept it is part of] */
+  partOf: [string, string][];
+}
+
+// Extracted entities that are not ideas to learn.
+const NOT_CONCEPTS = new Set(['person', 'organization', 'organisation', 'company', 'location', 'place', 'country', 'city',
+  'date', 'time', 'event', 'document', 'file', 'url', 'website', 'product', 'user']);
+const REQUIRES = /^(requires|depends_on|builds_on|prerequisite(_of|_for)?|needs|based_on|uses|derived_from)$/;
+const PART_OF = /^(part_of|is_part_of|component_of|subtopic_of|belongs_to|is_a|type_of|kind_of|instance_of|example_of)$/;
+const MAX_SECTION_CONCEPTS = 25;
+
+const fold = (s: string) => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/**
+ * The concepts Agent Memory extracted from one section, read back through a
+ * graph query over the section's own text in its material's scope. Only
+ * entities the section names in its text are kept: a hit can never bring in a
+ * concept from anyone else's material.
+ */
+export async function sectionGraph(env: Env, material: MemoryMaterial, position: number, chunk: Chunk): Promise<SectionGraph> {
+  const empty: SectionGraph = { concepts: [], requires: [], partOf: [] };
+  if (!memoryConfigured(env)) return empty;
+  const scope = courseMemoryScope(material.owner, material.course, material.id, material.index_rev);
+  const query = [chunk.heading, chunk.text].filter(Boolean).join('\n').slice(0, 2000).trim();
+  if (!query) return empty;
+  const result = await post(env, '/query', {
+    query, k: 50, lens: [[scope]], scopeView: 'strict', include: ['facts'], mode: 'graph', source: 'talktobolo',
+  });
+  if (!isObject(result) || !Array.isArray(result.hits)) throw new Error('Invalid Agent Memory query response.');
+
+  const text = ` ${fold(`${chunk.heading ?? ''} ${chunk.text}`)} `;
+  const names = new Map<string, string>();
+  const named = (type: unknown, name: unknown, display?: unknown): string | null => {
+    if (typeof type !== 'string' || typeof name !== 'string' || NOT_CONCEPTS.has(type.toLowerCase())) return null;
+    const key = fold(name);
+    if (key.length < 2 || !text.includes(` ${key} `)) return null;
+    if (!names.has(key)) names.set(key, typeof display === 'string' && fold(display) === key ? display.trim() : name.trim());
+    return key;
+  };
+  const edges: [string, string, string][] = [];
+  const rows = [...result.hits, ...(Array.isArray(result.contextHits) ? result.contextHits : [])];
+  for (const hit of rows) {
+    const r = isObject(hit) && isObject(hit.resource) ? hit.resource : null;
+    if (r?.kind === 'entity') named(r.entityType, r.name, (hit as Record<string, unknown>).text);
+    if (r?.kind === 'relation' && typeof r.label === 'string') {
+      const from = named(r.subjectType, r.subjectName);
+      const to = named(r.objectType, r.objectName);
+      if (from && to && from !== to) edges.push([from, r.label.toLowerCase(), to]);
+    }
+  }
+  const keys = [...names.keys()].slice(0, MAX_SECTION_CONCEPTS);
+  const kept = new Set(keys);
+  const pairs = (label: RegExp) => {
+    const seen = new Set<string>();
+    return edges.flatMap(([from, l, to]): [string, string][] => {
+      if (!label.test(l) || !kept.has(from) || !kept.has(to) || seen.has(`${from}\n${to}`)) return [];
+      seen.add(`${from}\n${to}`);
+      return [[names.get(from)!, names.get(to)!]];
+    });
+  };
+  return { concepts: keys.map((k) => names.get(k)!), requires: pairs(REQUIRES), partOf: pairs(PART_OF) };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

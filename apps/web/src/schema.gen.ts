@@ -604,20 +604,20 @@ export const schema = {
     "api": {
       outboxTable: 'job' as const,
       routes: {
-        "/jobs/calls/end": {
+        "/jobs/materials/index": {
           args: {
-            "conversationId": {
-              type: 'string' as const,
-              optional: true as const
-            },
             "id": {
               type: 'string' as const,
               optional: false as const
             },
           }
         },
-        "/jobs/materials/index": {
+        "/jobs/materials/memory": {
           args: {
+            "force": {
+              type: 'boolean' as const,
+              optional: true as const
+            },
             "id": {
               type: 'string' as const,
               optional: false as const
