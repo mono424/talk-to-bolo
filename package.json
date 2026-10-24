@@ -16,7 +16,7 @@
     "deploy": "spky deploy"
   },
   "devDependencies": {
-    "@spooky-sync/cli": "0.0.1-canary.350"
+    "@spooky-sync/cli": "0.0.1-canary.353"
   },
   "packageManager": "pnpm@10.20.0",
   "pnpm": {
