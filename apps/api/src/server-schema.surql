@@ -291,3 +291,26 @@ DEFINE EVENT OVERWRITE concept_deleted ON TABLE concept WHEN $event = 'DELETE' T
 DEFINE EVENT OVERWRITE material_concepts_unanchored ON TABLE material WHEN $event = 'DELETE' THEN {
   UPDATE concept SET material = NONE, rev = NONE, positions = [] WHERE material = $before.id;
 };
+
+-- ##################################################################
+-- KNOWLEDGE GRAPH BUILDS (buildMissingGraphs in src/service.ts)
+--
+-- The latest memory-only Workflow run of each material, so the backfill
+-- keeps only a few builds going at once (Agent Memory refuses a burst) and
+-- tries again, a bounded number of times, when one ends without a graph.
+-- ##################################################################
+
+DEFINE TABLE OVERWRITE graph_build SCHEMAFULL
+  COMMENT 'sp00ky:nosync'
+  PERMISSIONS NONE;
+
+DEFINE FIELD OVERWRITE material ON TABLE graph_build TYPE record<material>;
+-- The material revision the run builds, and the attempts made for it.
+DEFINE FIELD OVERWRITE rev ON TABLE graph_build TYPE int;
+DEFINE FIELD OVERWRITE attempts ON TABLE graph_build TYPE int DEFAULT 0;
+DEFINE FIELD OVERWRITE run ON TABLE graph_build TYPE string;
+DEFINE FIELD OVERWRITE started_at ON TABLE graph_build TYPE datetime DEFAULT time::now();
+
+DEFINE EVENT OVERWRITE material_graph_build_deleted ON TABLE material WHEN $event = 'DELETE' THEN {
+  DELETE graph_build WHERE material = $before.id;
+};

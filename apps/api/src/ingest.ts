@@ -30,6 +30,8 @@ const MEMORY_BATCH = 10;
 const MEMORY_ROUNDS = 240;
 
 const RETRY = { retries: { limit: 3, delay: '10 seconds', backoff: 'exponential' }, timeout: '15 minutes' } as const;
+/** Agent Memory refuses bursts for a while: back off for up to half an hour. */
+const MEMORY_RETRY = { retries: { limit: 6, delay: '30 seconds', backoff: 'exponential' }, timeout: '15 minutes' } as const;
 
 /** Step result when a newer upload or edit has taken over this material. */
 const STOP = '__superseded__' as const;
@@ -227,7 +229,7 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
           const ids: string[] = [];
           for (let from = 0; from < total; from += MEMORY_BATCH) {
             const to = Math.min(total, from + MEMORY_BATCH);
-            const batch = await step.do(`memory upload ${from}-${to}`, RETRY, async (): Promise<string[] | Stop> => {
+            const batch = await step.do(`memory upload ${from}-${to}`, MEMORY_RETRY, async (): Promise<string[] | Stop> => {
               const m = await current();
               if (!m) return STOP;
               await progress(`Building the knowledge graph, sections ${from + 1}-${to} of ${total}`);
@@ -249,7 +251,7 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
             if (round >= MEMORY_ROUNDS) throw new Error('Agent Memory extraction did not finish in time.');
             if (round) await step.sleep(`memory wait ${round}`, '15 seconds');
             const waiting = pending;
-            const left = await step.do(`memory status ${round}`, RETRY, async (): Promise<number[] | Stop> => {
+            const left = await step.do(`memory status ${round}`, MEMORY_RETRY, async (): Promise<number[] | Stop> => {
               if (!(await current())) return STOP;
               await progress(`Building the knowledge graph, ${total - waiting.length} of ${total} sections read`);
               const still: number[] = [];
@@ -269,7 +271,7 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
 
           for (let from = 0; from < total; from += MEMORY_BATCH) {
             const to = Math.min(total, from + MEMORY_BATCH);
-            const batch = await step.do(`memory concepts ${from}-${to}`, RETRY, async (): Promise<SectionGraph[] | Stop> => {
+            const batch = await step.do(`memory concepts ${from}-${to}`, MEMORY_RETRY, async (): Promise<SectionGraph[] | Stop> => {
               const m = await current();
               if (!m) return STOP;
               const chunks = chunkMarkdown(m.content);

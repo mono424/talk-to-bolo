@@ -1,5 +1,4 @@
 import type { Env } from './env';
-import type { IngestParams } from './ingest';
 import serverSchema from './server-schema.surql';
 import { BadRequest, Conflict, NotFound, Surreal, UserError, recordId, toBase64 } from './surreal';
 import { memoryConfigured } from './memory';
@@ -228,58 +227,75 @@ export async function startMemoryBuild(env: Env, material: MaterialRow, force = 
   return { started: true, rev };
 }
 
-const GRAPH_BATCH = 100;
-const GRAPH_ATTEMPTS = 4;
+/** Graph builds running at once, across everyone: Agent Memory refuses a burst. */
+const GRAPH_CONCURRENT = 6;
+/** Builds tried per material revision before it is left without a graph. */
+const GRAPH_ATTEMPTS = 8;
 const ACTIVE_RUN = new Set(['queued', 'running', 'paused', 'waiting', 'waitingForPause', 'unknown']);
 
-/**
- * The id for a new graph build of a material revision, or null while one is
- * under way or every attempt is used up. A run that ended without a graph
- * (it failed, or a deploy cut it off) gets another attempt.
- */
-async function nextGraphRun(env: Env, materialId: string, rev: number): Promise<string | null> {
-  const key = materialId.slice(materialId.indexOf(':') + 1);
-  for (let n = 0; n < GRAPH_ATTEMPTS; n++) {
-    const id = `${key}-${rev}-graph${n ? `-${n}` : ''}`;
-    let status: string;
-    try {
-      status = (await (await env.INGEST.get(id)).status()).status;
-    } catch {
-      return id; // No such run yet.
-    }
-    if (ACTIVE_RUN.has(status)) return null;
-  }
-  return null;
-}
+interface GraphBuild { material: string; rev: number; attempts: number; run: string }
 
 /**
- * Starts the graph build of each ready material of a course, of all a user's
- * courses, or of everyone's (`ownerId` null), that has none for its current
- * text, e.g. material processed before Agent Memory was set up. A build
- * under way is left alone.
+ * Starts graph builds of ready materials that have no graph for their current
+ * text, e.g. material processed before Agent Memory was set up, or a build
+ * that failed. At most GRAPH_CONCURRENT run at once; materials of `ownerId`
+ * (and `courseId`) go first. Called by the graph view, the study tools and
+ * the graph-backfill schedule.
  */
 export async function buildMissingGraphs(env: Env, ownerId: string | null, courseId: string | null = null): Promise<number> {
   if (!memoryConfigured(env)) return 0;
-  const rows = await Surreal.system(env).query<{ id: string; index_rev: number }[]>(
-    `SELECT id, index_rev FROM material WHERE ($owner = NONE OR owner = type::record($owner))
-       AND ($course = NONE OR course = type::record($course))
-       AND status = 'ready' AND chunk_count > 0 AND (memory_rev ?? 0) != index_rev`,
-    { ...(ownerId ? { owner: ownerId } : {}), ...(courseId ? { course: recordId('course', courseId) } : {}) },
-  );
-  const runs: WorkflowInstanceCreateOptions<IngestParams>[] = [];
-  for (let i = 0; i < (rows ?? []).length; i += 20) {
-    const ids = await Promise.all(rows.slice(i, i + 20).map((m) => nextGraphRun(env, m.id, m.index_rev)));
-    rows.slice(i, i + 20).forEach((m, j) => {
-      if (ids[j]) runs.push({ id: ids[j]!, params: { materialId: m.id, rev: m.index_rev, convert: false, memoryOnly: true } });
+  await ensureServerSchema(env);
+  const db = Surreal.system(env);
+  const [rows, builds] = await db.queryAll(
+    `SELECT id, owner, course, index_rev, created_at FROM material
+       WHERE status = 'ready' AND chunk_count > 0 AND (memory_rev ?? 0) != index_rev ORDER BY created_at;
+     SELECT material, rev, attempts, run FROM graph_build;`,
+  ) as [{ id: string; owner: string; course: string; index_rev: number }[], GraphBuild[]];
+  const byMaterial = new Map(builds.map((b) => [b.material, b]));
+  const course = courseId ? recordId('course', courseId) : null;
+
+  let active = 0;
+  const due: { m: (typeof rows)[number]; attempts: number }[] = [];
+  for (let i = 0; i < rows.length; i += 20) {
+    const slice = rows.slice(i, i + 20);
+    const running = await Promise.all(slice.map(async (m) => {
+      const b = byMaterial.get(m.id);
+      if (!b || b.rev !== m.index_rev) return false;
+      try {
+        return ACTIVE_RUN.has((await (await env.INGEST.get(b.run)).status()).status);
+      } catch {
+        return false; // The run is gone.
+      }
+    }));
+    slice.forEach((m, j) => {
+      const b = byMaterial.get(m.id);
+      const attempts = b && b.rev === m.index_rev ? b.attempts : 0;
+      if (running[j]) active++;
+      else if (attempts < GRAPH_ATTEMPTS) due.push({ m, attempts });
     });
   }
-  // One call per hundred: starting them one by one outlasts a request. The
-  // array form skips ids that already exist instead of failing.
-  let started = 0;
-  for (let i = 0; i < runs.length; i += GRAPH_BATCH) {
-    started += (await env.INGEST.createBatch(runs.slice(i, i + GRAPH_BATCH))).length;
-  }
-  return started;
+  const mine = (m: (typeof rows)[number]) => (!ownerId || m.owner === ownerId) && (!course || m.course === course);
+  due.sort((x, y) => Number(mine(y.m)) - Number(mine(x.m)));
+  const start = due.slice(0, Math.max(0, GRAPH_CONCURRENT - active));
+  if (!start.length) return 0;
+
+  const runs = start.map(({ m, attempts }) => ({
+    id: `${m.id.slice(m.id.indexOf(':') + 1)}-${m.index_rev}-g${attempts}-${Date.now().toString(36)}`,
+    material: m.id, rev: m.index_rev, attempts: attempts + 1,
+  }));
+  // Recorded first: a run that then fails to start counts as ended.
+  await db.query(
+    `FOR $r IN $runs {
+       UPSERT type::record('graph_build', record::id(type::record($r.material))) CONTENT {
+         material: type::record($r.material), rev: $r.rev, attempts: $r.attempts, run: $r.id, started_at: time::now()
+       };
+     };`,
+    { runs },
+  );
+  const created = await env.INGEST.createBatch(runs.map((r) => ({
+    id: r.id, params: { materialId: r.material, rev: r.rev, convert: false, memoryOnly: true },
+  })));
+  return created.length;
 }
 
 /**

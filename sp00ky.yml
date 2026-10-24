@@ -123,9 +123,9 @@ apps:
         JOB_TOKEN: *jobToken
 # Lectures without a knowledge graph for their current text (processed before
 # Agent Memory was set up, or a build that failed) get one started, for every
-# student. A build already started is never started twice.
+# student, a few at a time (buildMissingGraphs in apps/api/src/service.ts).
 schedules:
   graph-backfill:
-    every: 1h
+    every: 10m
     backend: api
     route: /jobs/graphs/backfill
