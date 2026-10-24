@@ -2,7 +2,7 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloud
 import type { Env } from './env';
 import { chunkMarkdown, chunkPages, embedText } from './chunk';
 import { extractPageImages, loadPdf, pageCount, pagesToMarkdown, type PageImageRef } from './pdf';
-import { embed, ensureServerSchema, type MaterialRow } from './service';
+import { buildMissingGraphs, embed, ensureServerSchema, type MaterialRow } from './service';
 import { Surreal, UserError, toBase64 } from './surreal';
 import { getMemoryDocument, indexMemorySection, memoryConfigured, sectionGraph, type SectionGraph } from './memory';
 import { mapConcepts } from './understanding';
@@ -325,6 +325,7 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
           console.error(`[ingest] ${materialId} concept map failed`, err);
         }
       }
+      if (memoryOnly) await this.nextGraph(step, event.instanceId);
       return { ok: true, chunks: total, ...(memoryOnly ? { memoryOnly: true } : {}) };
     } catch (err) {
       if (memoryOnly) {
@@ -333,6 +334,7 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
         await step.do('clear progress', async () => {
           await db.query('UPDATE type::record($m) SET status_detail = NONE WHERE index_rev = $rev AND status = \'ready\'', { m: materialId, rev });
         });
+        await this.nextGraph(step, event.instanceId);
         return { failed: 'knowledge graph' };
       }
       const message = err instanceof UserError ? err.message : 'Processing failed. Upload the file again to retry.';
@@ -344,6 +346,15 @@ export class IngestMaterial extends WorkflowEntrypoint<Env, IngestParams> {
         );
       });
       return { failed: message };
+    }
+  }
+
+  /** A graph build hands its place to the next lecture still without a graph. */
+  private async nextGraph(step: WorkflowStep, self: string) {
+    try {
+      await step.do('next graph build', RETRY, () => buildMissingGraphs(this.env, null, null, self));
+    } catch (err) {
+      console.error('[ingest] next graph build', err);
     }
   }
 }

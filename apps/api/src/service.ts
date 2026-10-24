@@ -239,10 +239,13 @@ interface GraphBuild { material: string; rev: number; attempts: number; run: str
  * Starts graph builds of ready materials that have no graph for their current
  * text, e.g. material processed before Agent Memory was set up, or a build
  * that failed. At most GRAPH_CONCURRENT run at once; materials of `ownerId`
- * (and `courseId`) go first. Called by the graph view, the study tools and
- * the graph-backfill schedule.
+ * (and `courseId`) go first. Called by the graph view, the study tools, the
+ * graph-backfill schedule and each build as it ends (`finishing`: its own
+ * run, which no longer counts as running).
  */
-export async function buildMissingGraphs(env: Env, ownerId: string | null, courseId: string | null = null): Promise<number> {
+export async function buildMissingGraphs(
+  env: Env, ownerId: string | null, courseId: string | null = null, finishing?: string,
+): Promise<number> {
   if (!memoryConfigured(env)) return 0;
   await ensureServerSchema(env);
   const db = Surreal.system(env);
@@ -260,7 +263,7 @@ export async function buildMissingGraphs(env: Env, ownerId: string | null, cours
     const slice = rows.slice(i, i + 20);
     const running = await Promise.all(slice.map(async (m) => {
       const b = byMaterial.get(m.id);
-      if (!b || b.rev !== m.index_rev) return false;
+      if (!b || b.rev !== m.index_rev || b.run === finishing) return false;
       try {
         return ACTIVE_RUN.has((await (await env.INGEST.get(b.run)).status()).status);
       } catch {
