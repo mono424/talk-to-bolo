@@ -1,7 +1,7 @@
 import { A, useNavigate, useParams } from '@solidjs/router';
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { FileText, FileType2, Folder, PenLine, Plus, Settings2, Trash2, Upload } from 'lucide-solid';
+import { FileText, FileType2, Folder, PenLine, Plus, Settings2, Trash2, Upload, Waypoints } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { ApiError, uploadPdf } from '../lib/api';
@@ -9,7 +9,7 @@ import { reindexMaterial } from '../lib/jobs';
 import { idKey, newId, whenSynced } from '../lib/ids';
 import { COURSE_COLORS, courseColor, LANGUAGES, type CourseColor } from '../lib/palette';
 import { qMaterialsPage, useCourse } from '../lib/query';
-import { Button, Field, IconButton, inputClass, PageLoader, StatusText } from '../components/ui';
+import { Button, buttonClass, Field, IconButton, inputClass, PageLoader, StatusText } from '../components/ui';
 import { scrollParent, VirtualList } from '../components/VirtualList';
 import { CourseSearch } from '../components/CourseSearch';
 import { Sheet } from '../components/Sheet';
@@ -125,6 +125,15 @@ export default function CoursePage() {
             </div>
           </HeaderTitle>
           <HeaderEndActions>
+            <A
+              href={`/courses/${params.courseKey}/graph`}
+              class={`${buttonClass('ghost', 'sm')} max-sm:h-9 max-sm:w-9 max-sm:px-0`}
+              aria-label="Knowledge graph"
+              title="Knowledge graph"
+            >
+              <Waypoints size={18} stroke-width={1.75} class="sm:h-4 sm:w-4" />
+              <span class="hidden lg:inline">Graph</span>
+            </A>
             <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} />
             <CourseSettings course={c()} />
           </HeaderEndActions>

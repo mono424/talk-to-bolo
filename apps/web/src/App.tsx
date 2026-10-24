@@ -1,5 +1,5 @@
 import { Route, Router, useLocation, useParams, type RouteSectionProps } from '@solidjs/router';
-import { type Component, createEffect, createSignal, on, Show } from 'solid-js';
+import { type Component, createEffect, createSignal, lazy, on, Show } from 'solid-js';
 import { Sp00kyProvider } from '@spooky-sync/client-solid';
 import { dbConfig } from './db';
 import { AuthProvider, useAuth } from './lib/auth';
@@ -16,6 +16,9 @@ import SessionPage from './routes/Session';
 import SessionsPage from './routes/Sessions';
 import SettingsPage from './routes/Settings';
 import ConnectPage from './routes/Connect';
+
+// three.js is large: the graph view loads it when opened.
+const GraphPage = lazy(() => import('./routes/Graph'));
 
 /** The app window: top bar, sidebar, content, on the gray canvas. */
 function Layout(props: RouteSectionProps) {
@@ -88,6 +91,7 @@ export default function App() {
         <Router root={Layout}>
           <Route path="/" component={Home} />
           <Route path="/courses/:courseKey" component={perParam('courseKey', CoursePage)} />
+          <Route path="/courses/:courseKey/graph" component={perParam('courseKey', GraphPage)} />
           <Route path="/courses/:courseKey/materials/:materialKey" component={perParam('materialKey', MaterialPage)} />
           {/* Study sessions live in the `call` table; links from ChatGPT use these paths. */}
           <Route path="/calls" component={SessionsPage} />

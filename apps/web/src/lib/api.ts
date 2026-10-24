@@ -159,3 +159,38 @@ export const searchCourse = (db: Db, courseId: string, query: string) =>
     method: 'POST',
     body: JSON.stringify({ query }),
   });
+
+export type ConceptLevel = 'unseen' | 'introduced' | 'struggling' | 'shaky' | 'solid' | 'mastered';
+
+export interface GraphConcept {
+  id: string;
+  name: string;
+  summary: string | null;
+  level: ConceptLevel;
+  score: number | null;
+  checks: number;
+  /** Background knowledge the lectures assume but do not teach. */
+  prior: boolean;
+  /** The broader concept this one is a part of. */
+  parent: string | null;
+  /** The lecture that teaches it, and where (1-based sections). */
+  lecture: string | null;
+  sections: number[];
+  /** Within the student's place in the lecture. */
+  reached: boolean;
+  review_due: boolean;
+  last_checked_at: string | null;
+  misconceptions: string[];
+  gaps: string[];
+}
+
+export interface CourseGraph {
+  lectures: { id: string; title: string }[];
+  concepts: GraphConcept[];
+  /** `to` is a foundation of `from`. */
+  requires: { from: string; to: string }[];
+}
+
+/** The course's concept map with what the student understood (concept, requires). */
+export const fetchCourseGraph = (db: Db, courseId: string) =>
+  api<CourseGraph>(db, `/api/courses/${encodeURIComponent(courseId)}/graph`);

@@ -1,14 +1,14 @@
-import { useParams, useSearchParams } from '@solidjs/router';
+import { A, useParams, useSearchParams } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, Show, type JSX } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { Pencil } from 'lucide-solid';
+import { Pencil, Waypoints } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { PROGRESS_JOB, reindexMaterial, saveLectureProgress } from '../lib/jobs';
 import { chunkMarkdown, chunkPages } from '../../../../shared/lecture';
 import { idString, whenSynced } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { firstRow, qMaterial, qMaterialJobs } from '../lib/query';
-import { Button, inputClass, Loader, PageLoader, StatusText } from '../components/ui';
+import { Button, buttonClass, inputClass, Loader, PageLoader, StatusText } from '../components/ui';
 import { HeaderActions, SideActions } from '../components/HeaderSlot';
 import { LecturePlace } from '../components/LecturePlace';
 import { PdfViewer } from '../components/PdfViewer';
@@ -130,6 +130,16 @@ export default function MaterialPage() {
                 <StatusText status={m().status} detail={m().status_detail} />
               </span>
               <div class="pointer-events-auto ml-auto flex shrink-0 items-center gap-2">
+                <Show when={!editing()}>
+                  <A
+                    href={`/courses/${params.courseKey}/graph?lecture=${params.materialKey}`}
+                    class={`${buttonClass('soft', 'sm')} max-sm:w-11 max-sm:px-0`}
+                    aria-label="Knowledge graph"
+                    title="Knowledge graph of this lecture"
+                  >
+                    <Waypoints size={14} stroke-width={1.75} /> <span class="hidden sm:inline">Graph</span>
+                  </A>
+                </Show>
                 <Show
                   when={editing()}
                   fallback={

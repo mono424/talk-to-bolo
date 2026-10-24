@@ -770,3 +770,40 @@ export async function sessionEvidence(env: Env, ownerId: string, callId: string)
     { owner: ownerId, call: callId },
   );
 }
+
+/**
+ * The course's concept map for the web app's graph view: every concept with
+ * its level, what it builds on and what it is part of, and the lectures that
+ * teach them. A concept's lecture is only given while its sections belong to
+ * the lecture's current text.
+ */
+export async function courseGraph(env: Env, ownerId: string, courseId: string, now = new Date()) {
+  await ensureServerSchema(env);
+  const course = await getOwnedCourse(env, ownerId, courseId);
+  const graph = await loadGraph(env, ownerId, course.id);
+  return {
+    lectures: [...graph.lectures.values()].map((l) => ({ id: l.id, title: l.title })),
+    concepts: graph.concepts.map((c) => {
+      const a = anchor(graph, c);
+      return {
+        id: c.id,
+        name: c.name,
+        summary: c.summary ?? null,
+        level: c.level,
+        score: round(c.score),
+        checks: c.checks,
+        prior: c.prior,
+        parent: c.parent && graph.byId.has(c.parent) ? c.parent : null,
+        lecture: a?.lecture.id ?? null,
+        sections: a ? a.positions.map((p) => p + 1) : [],
+        reached: reached(graph, c),
+        review_due: reviewDue(c, now),
+        last_checked_at: c.last_checked_at,
+        misconceptions: c.misconceptions,
+        gaps: c.gaps,
+      };
+    }),
+    requires: [...graph.requires.entries()].flatMap(([from, to]) =>
+      [...to].filter((id) => graph.byId.has(from) && graph.byId.has(id)).map((id) => ({ from, to: id }))),
+  };
+}

@@ -17,6 +17,7 @@ import {
   MAX_PDF_BYTES,
 } from './service';
 import { pdfPartCount, pdfParts } from './pdf';
+import { courseGraph } from './understanding';
 import { BadRequest, Conflict, NotFound, Surreal, UserError, fromBase64, recordId } from './surreal';
 
 export { IngestMaterial } from './ingest';
@@ -129,6 +130,9 @@ app.post('/api/courses/:id/search', async (c) => {
   const hits = await searchCourse(c.env, course.id, query ?? '', { k: 8, ownerId: userId });
   return c.json({ hits });
 });
+
+// What the student understood, concept by concept, for the graph view.
+app.get('/api/courses/:id/graph', async (c) => c.json(await courseGraph(c.env, c.var.caller.userId, c.req.param('id'))));
 
 // ── API keys (for the MCP server) ─────────────────────────────────────────
 
