@@ -229,16 +229,18 @@ export async function startMemoryBuild(env: Env, material: MaterialRow, force = 
 }
 
 /**
- * Starts the graph build of each ready material of a course that has none for
- * its current text, e.g. material processed before Agent Memory was set up.
- * Runs once per revision: a run already started (or failed) is left alone.
+ * Starts the graph build of each ready material of a course (or of all the
+ * user's courses) that has none for its current text, e.g. material processed
+ * before Agent Memory was set up. Runs once per revision: a run already
+ * started (or failed) is left alone.
  */
-export async function buildMissingGraphs(env: Env, ownerId: string, courseId: string): Promise<number> {
+export async function buildMissingGraphs(env: Env, ownerId: string, courseId: string | null): Promise<number> {
   if (!memoryConfigured(env)) return 0;
   const rows = await Surreal.system(env).query<{ id: string; index_rev: number }[]>(
-    `SELECT id, index_rev FROM material WHERE owner = type::record($owner) AND course = type::record($course)
+    `SELECT id, index_rev FROM material WHERE owner = type::record($owner)
+       AND ($course = NONE OR course = type::record($course))
        AND status = 'ready' AND chunk_count > 0 AND (memory_rev ?? 0) != index_rev`,
-    { owner: ownerId, course: courseId },
+    { owner: ownerId, ...(courseId ? { course: recordId('course', courseId) } : {}) },
   );
   let started = 0;
   for (const m of rows ?? []) {

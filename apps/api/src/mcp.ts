@@ -1,7 +1,7 @@
 import { McpServer, OAuthError, OAuthErrorCode, createMcpHandler, getOAuthProtectedResourceMetadataUrl, requireBearerAuth, type AuthInfo } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { Env } from './env';
-import { MAX_PDF_BYTES, ensureServerSchema, fetchPdf, getOwnedMaterial, searchCourse, startIngest, storePdfAndIngest, validatePdf } from './service';
+import { MAX_PDF_BYTES, buildMissingGraphs, ensureServerSchema, fetchPdf, getOwnedMaterial, searchCourse, startIngest, storePdfAndIngest, validatePdf } from './service';
 import { Surreal, fromBase64, recordId, signinRecord } from './surreal';
 import { appOrigin, oauthOrigin, verifyOAuthAccessToken } from './oauth';
 import { createMaterial } from './material-create';
@@ -162,6 +162,11 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
       return fail(err instanceof Error ? err.message : String(err)) as T;
     }
   };
+
+  // Lectures processed before Agent Memory was set up get their knowledge
+  // graph once the student studies them. Never fails the tool.
+  const graphsFor = (courseId: string | null) =>
+    buildMissingGraphs(env, userId, courseId).catch((err) => console.error('[memory] graph builds', err));
 
   server.registerTool(
     'list_courses',
@@ -528,7 +533,11 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
       annotations: READ,
       _meta: meta('Checking your progress…', 'Progress ready'),
     },
-    ({ course_id }) => run(async () => text(await studyOverview(env, userId, links, course_id ?? null))),
+    ({ course_id }) => run(async () => {
+      const overview = await studyOverview(env, userId, links, course_id ?? null);
+      await graphsFor(course_id ?? null);
+      return text(overview);
+    }),
   );
 
   server.registerTool(
@@ -640,7 +649,11 @@ function buildServer(env: Env, auth: AuthInfo, origin: string) {
       _meta: meta('Checking what you know…', 'Understanding ready'),
     },
     ({ course_id, material_id, topics }) =>
-      run(async () => text(await studentModel(env, userId, { courseId: course_id, materialId: material_id ?? null, topics: topics ?? null, full: true }))),
+      run(async () => {
+        const model = await studentModel(env, userId, { courseId: course_id, materialId: material_id ?? null, topics: topics ?? null, full: true });
+        await graphsFor(course_id);
+        return text(model);
+      }),
   );
 
   const Place = {
