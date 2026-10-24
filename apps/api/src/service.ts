@@ -1,7 +1,7 @@
 import type { Env } from './env';
 import serverSchema from './server-schema.surql';
 import { BadRequest, Conflict, NotFound, Surreal, UserError, recordId, toBase64 } from './surreal';
-import { memoryConfigured } from './memory';
+import { memoryConfigured, memoryQueryable } from './memory';
 
 export interface CourseRow {
   id: string;
@@ -280,7 +280,8 @@ export async function buildMissingGraphs(
   const mine = (m: (typeof rows)[number]) => (!ownerId || m.owner === ownerId) && (!course || m.course === course);
   due.sort((x, y) => Number(mine(y.m)) - Number(mine(x.m)));
   const start = due.slice(0, Math.max(0, GRAPH_CONCURRENT - active));
-  if (!start.length) return 0;
+  // During an Agent Memory retrieval outage, wait instead of using up attempts.
+  if (!start.length || !(await memoryQueryable(env))) return 0;
 
   const runs = start.map(({ m, attempts }) => ({
     id: `${m.id.slice(m.id.indexOf(':') + 1)}-${m.index_rev}-g${attempts}-${Date.now().toString(36)}`,

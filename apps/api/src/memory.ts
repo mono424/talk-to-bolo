@@ -221,6 +221,21 @@ async function queryFacts(env: Env, lens: string[][], query: string, asOf: strin
   });
 }
 
+/**
+ * Whether Agent Memory answers graph queries right now. Uploads can work
+ * while retrieval fails; a build started then would only fail at its end.
+ */
+export async function memoryQueryable(env: Env): Promise<boolean> {
+  if (!memoryConfigured(env)) return false;
+  try {
+    const result = await post(env, '/query', { query: 'health', k: 1, lens: [['talktobolo']], include: ['facts'], mode: 'graph' });
+    return isObject(result) && Array.isArray(result.hits);
+  } catch (err) {
+    console.error('[memory] graph queries unavailable', err);
+    return false;
+  }
+}
+
 /** The concepts of one lecture section, and how they link, from its extracted graph. */
 export interface SectionGraph {
   concepts: string[];
