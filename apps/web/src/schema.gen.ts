@@ -159,6 +159,7 @@ export const schema = {
      * Relationships:
      * - `owner` → `user` (one)
      * - `calls` → `call` (many)
+     * - `fetchers` → `fetcher` (many)
      * - `materials` → `material` (many)
      *
      * @example
@@ -199,6 +200,145 @@ export const schema = {
          */
         updated_at: { type: 'string' as const, dateTime: true, optional: true },
         calls: { type: 'string' as const, array: true, optional: true },
+        fetchers: { type: 'string' as const, array: true, optional: true },
+        materials: { type: 'string' as const, array: true, optional: true },
+      },
+      primaryKey: ['id'] as const
+    },
+    /**
+     * `fetch_run` table.
+     *
+     * Relationships:
+     * - `fetcher` → `fetcher` (one)
+     * - `owner` → `user` (one)
+     *
+     * @example
+     * const rows = useQuery(() => db.query('fetch_run').orderBy('id', 'asc').limit(20).build());
+     */
+    {
+      name: 'fetch_run' as const,
+      columns: {
+        /**
+         * `id` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        id: { type: 'string' as const, recordId: true, optional: false },
+        created: { type: 'number' as const, optional: false },
+        deferred: { type: 'number' as const, optional: false },
+        detail: { type: 'string' as const, optional: true },
+        failed: { type: 'number' as const, optional: false },
+        /**
+         * `fetcher` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         *
+         * `@parent` — auto-populated server-side from the auth context. Do not write from client code.
+         */
+        fetcher: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `finished_at?` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        finished_at: { type: 'string' as const, dateTime: true, optional: true },
+        found: { type: 'number' as const, optional: false },
+        /**
+         * `owner` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        owner: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `started_at` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        started_at: { type: 'string' as const, dateTime: true, optional: false },
+        status: { type: 'string' as const, optional: false },
+        updated: { type: 'number' as const, optional: false },
+      },
+      primaryKey: ['id'] as const
+    },
+    /**
+     * `fetcher` table.
+     *
+     * Relationships:
+     * - `course` → `course` (one)
+     * - `owner` → `user` (one)
+     * - `fetch_runs` → `fetch_run` (many)
+     * - `materials` → `material` (many)
+     *
+     * @example
+     * const rows = useQuery(() => db.query('fetcher').orderBy('id', 'asc').limit(20).build());
+     */
+    {
+      name: 'fetcher' as const,
+      columns: {
+        /**
+         * `id` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        id: { type: 'string' as const, recordId: true, optional: false },
+        canvas_course: { type: 'string' as const, optional: true },
+        /**
+         * `course` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         *
+         * `@parent` — auto-populated server-side from the auth context. Do not write from client code.
+         */
+        course: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `created_at` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        created_at: { type: 'string' as const, dateTime: true, optional: false },
+        enabled: { type: 'boolean' as const, optional: false },
+        every_hours: { type: 'number' as const, optional: false },
+        has_token: { type: 'boolean' as const, optional: false },
+        import_pages: { type: 'boolean' as const, optional: false },
+        imported_count: { type: 'number' as const, optional: false },
+        include: { type: 'string' as const, optional: true },
+        kind: { type: 'string' as const, optional: false },
+        last_error: { type: 'string' as const, optional: true },
+        /**
+         * `last_run_at?` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        last_run_at: { type: 'string' as const, dateTime: true, optional: true },
+        mapping: { type: 'string' as const, optional: true },
+        name: { type: 'string' as const, optional: false },
+        /**
+         * `next_run_at?` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        next_run_at: { type: 'string' as const, dateTime: true, optional: true },
+        /**
+         * `owner` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        owner: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `run_started_at?` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        run_started_at: { type: 'string' as const, dateTime: true, optional: true },
+        status: { type: 'string' as const, optional: false },
+        /**
+         * `updated_at?` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        updated_at: { type: 'string' as const, dateTime: true, optional: true },
+        url: { type: 'string' as const, optional: false },
+        fetch_runs: { type: 'string' as const, array: true, optional: true },
         materials: { type: 'string' as const, array: true, optional: true },
       },
       primaryKey: ['id'] as const
@@ -265,6 +405,7 @@ export const schema = {
      *
      * Relationships:
      * - `course` → `course` (one)
+     * - `fetcher` → `fetcher` (one)
      * - `owner` → `user` (one)
      * - `calls` → `call` (many)
      * - `jobs` → `job` (many)
@@ -306,6 +447,12 @@ export const schema = {
          */
         created_at: { type: 'string' as const, dateTime: true, optional: false },
         error: { type: 'string' as const, optional: true },
+        /**
+         * `fetcher?` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        fetcher: { type: 'string' as const, recordId: true, optional: true },
         image_count: { type: 'number' as const, optional: false },
         index_rev: { type: 'number' as const, optional: false },
         kind: { type: 'string' as const, optional: false },
@@ -320,6 +467,7 @@ export const schema = {
         page_count: { type: 'number' as const, optional: true },
         source_name: { type: 'string' as const, optional: true },
         source_size: { type: 'number' as const, optional: true },
+        source_url: { type: 'string' as const, optional: true },
         status: { type: 'string' as const, optional: false },
         status_detail: { type: 'string' as const, optional: true },
         title: { type: 'string' as const, optional: false },
@@ -399,6 +547,8 @@ export const schema = {
      * - `calls` → `call` (many)
      * - `call_turns` → `call_turn` (many)
      * - `courses` → `course` (many)
+     * - `fetch_runs` → `fetch_run` (many)
+     * - `fetchers` → `fetcher` (many)
      * - `materials` → `material` (many)
      * - `turn_sources` → `turn_source` (many)
      *
@@ -427,6 +577,8 @@ export const schema = {
         calls: { type: 'string' as const, array: true, optional: true },
         call_turns: { type: 'string' as const, array: true, optional: true },
         courses: { type: 'string' as const, array: true, optional: true },
+        fetch_runs: { type: 'string' as const, array: true, optional: true },
+        fetchers: { type: 'string' as const, array: true, optional: true },
         materials: { type: 'string' as const, array: true, optional: true },
         turn_sources: { type: 'string' as const, array: true, optional: true },
       },
@@ -496,6 +648,48 @@ export const schema = {
     },
     {
       from: 'course' as const,
+      field: 'fetchers' as const,
+      to: 'fetcher' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'course' as const,
+      field: 'materials' as const,
+      to: 'material' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'fetch_run' as const,
+      field: 'fetcher' as const,
+      to: 'fetcher' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'fetch_run' as const,
+      field: 'owner' as const,
+      to: 'user' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'fetcher' as const,
+      field: 'course' as const,
+      to: 'course' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'fetcher' as const,
+      field: 'owner' as const,
+      to: 'user' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'fetcher' as const,
+      field: 'fetch_runs' as const,
+      to: 'fetch_run' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'fetcher' as const,
       field: 'materials' as const,
       to: 'material' as const,
       cardinality: 'many' as const
@@ -510,6 +704,12 @@ export const schema = {
       from: 'material' as const,
       field: 'course' as const,
       to: 'course' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'material' as const,
+      field: 'fetcher' as const,
+      to: 'fetcher' as const,
       cardinality: 'one' as const
     },
     {
@@ -580,6 +780,18 @@ export const schema = {
     },
     {
       from: 'user' as const,
+      field: 'fetch_runs' as const,
+      to: 'fetch_run' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'user' as const,
+      field: 'fetchers' as const,
+      to: 'fetcher' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'user' as const,
       field: 'materials' as const,
       to: 'material' as const,
       cardinality: 'many' as const
@@ -604,6 +816,18 @@ export const schema = {
     "api": {
       outboxTable: 'job' as const,
       routes: {
+        "/jobs/fetchers/run": {
+          args: {
+            "id": {
+              type: 'string' as const,
+              optional: false as const
+            },
+          }
+        },
+        "/jobs/fetchers/tick": {
+          args: {
+          }
+        },
         "/jobs/graphs/backfill": {
           args: {
           }
@@ -730,6 +954,7 @@ DEFINE INDEX OVERWRITE course_owner ON TABLE course FIELDS owner;
 DEFINE EVENT OVERWRITE course_deleted ON TABLE course WHEN $event = "DELETE" THEN {
   DELETE material WHERE course = $before.id;
   DELETE call WHERE course = $before.id;
+  DELETE fetcher WHERE course = $before.id;
 };
 
 -- ##################################################################
@@ -771,6 +996,11 @@ DEFINE FIELD OVERWRITE index_rev ON TABLE material TYPE option<int> DEFAULT 0 PE
 DEFINE FIELD OVERWRITE learned_through ON TABLE material TYPE option<int> DEFAULT -1 ASSERT $value >= -1 PERMISSIONS FOR update WHERE false;
 -- Revision of the material's AgentMemory graph, written by the API.
 DEFINE FIELD OVERWRITE memory_rev ON TABLE material TYPE option<int> DEFAULT 0 PERMISSIONS FOR update WHERE false;
+-- The source that imported it (see SOURCES below) and where a person opens
+-- the original. NONE for material the student added. A source updates its
+-- material when the original changes.
+DEFINE FIELD OVERWRITE fetcher ON TABLE material TYPE option<record<fetcher>> PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE source_url ON TABLE material TYPE option<string> PERMISSIONS FOR update WHERE false;
 DEFINE FIELD OVERWRITE created_at ON TABLE material TYPE option<datetime> DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at ON TABLE material TYPE option<datetime>;
 
@@ -861,6 +1091,82 @@ DEFINE FIELD OVERWRITE created_at ON TABLE turn_source TYPE option<datetime> DEF
 DEFINE INDEX OVERWRITE turn_source_call ON TABLE turn_source FIELDS call, seq;
 
 -- ##################################################################
+-- SOURCES
+--
+-- A source (\`fetcher\`) brings a course's material in by itself: the files
+-- and pages of a bCourses (Canvas) course, or the PDFs linked from a course
+-- website. The API checks it on a schedule and imports what is new or
+-- changed (apps/api/src/fetch). Its Canvas token and what it imported are
+-- server-only (apps/api/src/server-schema.surql).
+-- ##################################################################
+
+DEFINE TABLE OVERWRITE fetcher SCHEMAFULL
+PERMISSIONS FOR select, create, update, delete WHERE true;
+
+DEFINE FIELD OVERWRITE owner ON TABLE fetcher TYPE option<record<user> READONLY>;
+DEFINE FIELD OVERWRITE course ON TABLE fetcher TYPE option<record<course> READONLY>;
+ -- @parent
+-- canvas: a bCourses (or other Canvas) course. web: one public web page.
+DEFINE FIELD OVERWRITE kind ON TABLE fetcher TYPE option<string> ASSERT $value IN ['canvas', 'web'] PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE name ON TABLE fetcher TYPE option<string> ASSERT string::len($value) > 0;
+-- web: the page. canvas: the Canvas origin, e.g. https://bcourses.berkeley.edu.
+DEFINE FIELD OVERWRITE url ON TABLE fetcher TYPE option<string> PERMISSIONS FOR update WHERE false;
+-- The Canvas course id. NONE for web.
+DEFINE FIELD OVERWRITE canvas_course ON TABLE fetcher TYPE option<string> PERMISSIONS FOR update WHERE false;
+-- Comma-separated words: only items whose name or URL contains one are
+-- imported. NONE: every PDF.
+DEFINE FIELD OVERWRITE include ON TABLE fetcher TYPE option<string>;
+-- Also import pages (Canvas pages, the web page's own text) as Markdown.
+DEFINE FIELD OVERWRITE import_pages ON TABLE fetcher TYPE option<bool> DEFAULT false;
+DEFINE FIELD OVERWRITE enabled ON TABLE fetcher TYPE option<bool> DEFAULT true;
+-- Hours between scheduled checks.
+DEFINE FIELD OVERWRITE every_hours ON TABLE fetcher TYPE option<int> DEFAULT 6 ASSERT $value >= 1 AND $value <= 168;
+-- A custom hockeymask mapping (JSON) instead of the template built from the
+-- fields above. Set through the API, which compiles it first.
+DEFINE FIELD OVERWRITE mapping ON TABLE fetcher TYPE option<string> PERMISSIONS FOR update WHERE false;
+-- Fields from here on are written by the API only.
+-- idle: never ran. running. ok. partial: some items failed. failed.
+DEFINE FIELD OVERWRITE status ON TABLE fetcher TYPE option<string> DEFAULT 'idle' ASSERT $value IN ['idle', 'running', 'ok', 'partial', 'failed'] PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE last_error ON TABLE fetcher TYPE option<string> PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE has_token ON TABLE fetcher TYPE option<bool> DEFAULT false PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE imported_count ON TABLE fetcher TYPE option<int> DEFAULT 0 PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE run_started_at ON TABLE fetcher TYPE option<datetime> PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE last_run_at ON TABLE fetcher TYPE option<datetime> PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE next_run_at ON TABLE fetcher TYPE option<datetime> PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE created_at ON TABLE fetcher TYPE option<datetime> DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE updated_at ON TABLE fetcher TYPE option<datetime>;
+
+DEFINE INDEX OVERWRITE fetcher_course ON TABLE fetcher FIELDS course;
+
+-- Material a source imported stays: it is the student's now.
+DEFINE EVENT OVERWRITE fetcher_deleted ON TABLE fetcher WHEN $event = "DELETE" THEN {
+  DELETE fetch_run WHERE fetcher = $before.id;
+  UPDATE material SET fetcher = NONE WHERE fetcher = $before.id;
+};
+
+-- One check of a source, for its history. Written by the API.
+DEFINE TABLE OVERWRITE fetch_run SCHEMAFULL
+PERMISSIONS FOR select, create, update, delete WHERE true;
+
+DEFINE FIELD OVERWRITE owner ON TABLE fetch_run TYPE option<record<user>>;
+DEFINE FIELD OVERWRITE fetcher ON TABLE fetch_run TYPE option<record<fetcher>>;
+ -- @parent
+DEFINE FIELD OVERWRITE status ON TABLE fetch_run TYPE option<string> DEFAULT 'running' ASSERT $value IN ['running', 'ok', 'partial', 'failed'];
+-- Items the mapping kept, and what became of them.
+DEFINE FIELD OVERWRITE found ON TABLE fetch_run TYPE option<int> DEFAULT 0;
+DEFINE FIELD OVERWRITE created ON TABLE fetch_run TYPE option<int> DEFAULT 0;
+DEFINE FIELD OVERWRITE updated ON TABLE fetch_run TYPE option<int> DEFAULT 0;
+DEFINE FIELD OVERWRITE failed ON TABLE fetch_run TYPE option<int> DEFAULT 0;
+-- Left for the next run (a run imports a bounded number of items).
+DEFINE FIELD OVERWRITE deferred ON TABLE fetch_run TYPE option<int> DEFAULT 0;
+-- What went wrong, one line per problem.
+DEFINE FIELD OVERWRITE detail ON TABLE fetch_run TYPE option<string>;
+DEFINE FIELD OVERWRITE started_at ON TABLE fetch_run TYPE option<datetime> DEFAULT time::now();
+DEFINE FIELD OVERWRITE finished_at ON TABLE fetch_run TYPE option<datetime>;
+
+DEFINE INDEX OVERWRITE fetch_run_fetcher ON TABLE fetch_run FIELDS fetcher, started_at;
+
+-- ##################################################################
 -- API KEYS (MCP access for AI clients)
 -- ##################################################################
 
@@ -890,7 +1196,7 @@ DEFINE FIELD OVERWRITE revoked_at ON TABLE api_key TYPE option<datetime>;
 -- \`spky api add\`; only the permissions and \`assigned_to\` are talktobolo's.
 -- ##################################################################
 
--- A student may create a job only about their own material or call, and only
+-- A student may create a job only about their own material, call or source, and only
 -- with that same record as \`payload.id\`: the backend never sees who created a
 -- job, so it treats the owner of \`payload.id\` as the caller. \`payload\` is an
 -- object (the web app writes rows itself, not through \`db.run\`, which would
@@ -899,11 +1205,11 @@ DEFINE FIELD OVERWRITE revoked_at ON TABLE api_key TYPE option<datetime>;
 DEFINE TABLE job SCHEMAFULL
 PERMISSIONS FOR select, create, update, delete WHERE true;
 
--- The material or call this job belongs to, used by the permissions above.
+-- The material, call or source this job belongs to, used by the permissions above.
 -- OPTIONAL on purpose: a server-side schedule (\`schedules:\` in sp00ky.yml)
 -- spawns system-initiated jobs that belong to no single record, so the
 -- scheduler creates rows without it. Such rows are invisible to clients.
-DEFINE FIELD assigned_to ON TABLE job TYPE option<record<material | call>> PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
+DEFINE FIELD assigned_to ON TABLE job TYPE option<record<material | call | fetcher>> PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
 
 DEFINE FIELD path ON TABLE job TYPE option<string> PERMISSIONS FOR create, select WHERE true FOR update WHERE false;
 
@@ -1112,6 +1418,8 @@ DEFINE FIELD _00_rv ON TABLE api_key TYPE int DEFAULT 0 PERMISSIONS FOR select, 
 DEFINE FIELD _00_rv ON TABLE call TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE call_turn TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE course TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
+DEFINE FIELD _00_rv ON TABLE fetch_run TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
+DEFINE FIELD _00_rv ON TABLE fetcher TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE job TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE material TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE turn_source TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
@@ -1173,6 +1481,34 @@ THEN {
 
 -- Table: course Client Deletion
 DEFINE EVENT OVERWRITE _00_course_client_delete ON TABLE course
+WHEN $event = "DELETE"
+THEN {
+    -- No-op for now.
+};
+
+-- Table: fetch_run Client Mutation
+DEFINE EVENT OVERWRITE _00_fetch_run_client_mutation ON TABLE fetch_run
+WHEN $before != $after AND $event != "DELETE"
+THEN {
+    -- No-op for now. Client mutation sync logic moved to DBSP.
+};
+
+-- Table: fetch_run Client Deletion
+DEFINE EVENT OVERWRITE _00_fetch_run_client_delete ON TABLE fetch_run
+WHEN $event = "DELETE"
+THEN {
+    -- No-op for now.
+};
+
+-- Table: fetcher Client Mutation
+DEFINE EVENT OVERWRITE _00_fetcher_client_mutation ON TABLE fetcher
+WHEN $before != $after AND $event != "DELETE"
+THEN {
+    -- No-op for now. Client mutation sync logic moved to DBSP.
+};
+
+-- Table: fetcher Client Deletion
+DEFINE EVENT OVERWRITE _00_fetcher_client_delete ON TABLE fetcher
 WHEN $event = "DELETE"
 THEN {
     -- No-op for now.

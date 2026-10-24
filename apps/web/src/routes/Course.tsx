@@ -1,7 +1,7 @@
 import { A, useNavigate, useParams } from '@solidjs/router';
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { FileText, FileType2, Folder, PenLine, Plus, Settings2, Trash2, Upload, Waypoints } from 'lucide-solid';
+import { FileText, FileType2, Folder, PenLine, Plus, Radar, Settings2, Trash2, Upload, Waypoints } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { ApiError, uploadPdf } from '../lib/api';
@@ -14,6 +14,7 @@ import { scrollParent, VirtualList } from '../components/VirtualList';
 import { CourseSearch } from '../components/CourseSearch';
 import { Sheet } from '../components/Sheet';
 import { HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
+import { AddSourceSheet, SourceSheet, SourcesSection } from '../components/Sources';
 
 export default function CoursePage() {
   const params = useParams();
@@ -24,6 +25,8 @@ export default function CoursePage() {
   const course = useCourse(db, auth.userId, courseId);
 
   const [writing, setWriting] = createSignal(false);
+  const [addingSource, setAddingSource] = createSignal(false);
+  const [openSource, setOpenSource] = createSignal<FetcherRow | null>(null);
   const [dragging, setDragging] = createSignal(false);
   const [notice, setNotice] = createSignal<string | null>(null);
 
@@ -134,7 +137,7 @@ export default function CoursePage() {
               <Waypoints size={18} stroke-width={1.75} class="sm:h-4 sm:w-4" />
               <span class="hidden lg:inline">Graph</span>
             </A>
-            <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} />
+            <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} onSource={() => setAddingSource(true)} />
             <CourseSettings course={c()} />
           </HeaderEndActions>
 
@@ -148,6 +151,15 @@ export default function CoursePage() {
               class={`pointer-events-none absolute inset-x-0 top-full h-6 bg-linear-to-b from-surface to-surface/0 transition-opacity ${scrolled() ? 'opacity-100' : 'opacity-0'}`}
             />
           </div>
+
+          <SourcesSection courseId={c().id} onOpen={setOpenSource} />
+          <Show when={addingSource()}>
+            <AddSourceSheet courseId={c().id} onClose={() => setAddingSource(false)} />
+          </Show>
+          {/* Remounted per source, so its live queries never switch in place. */}
+          <Show when={openSource()} keyed>
+            {(f) => <SourceSheet fetcher={f} onClose={() => setOpenSource(null)} />}
+          </Show>
 
           {/* Materials */}
           <section class={`-mx-3 rounded-2xl ${dragging() ? 'ring-2 ring-blue/40' : ''}`}>
@@ -269,7 +281,7 @@ function EditableTitle(props: { value: string; onSave: (v: string) => void }) {
 }
 
 /** Upload files or write notes, from one button in the top bar. */
-function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () => void }) {
+function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () => void; onSource: () => void }) {
   const [open, setOpen] = createSignal(false);
   let input!: HTMLInputElement;
   const item = 'flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10';
@@ -321,6 +333,17 @@ function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () =>
           >
             <PenLine size={16} stroke-width={1.75} class="text-muted" /> Write notes
           </button>
+          <button
+            type="button"
+            role="menuitem"
+            class={item}
+            onClick={() => {
+              setOpen(false);
+              props.onSource();
+            }}
+          >
+            <Radar size={16} stroke-width={1.75} class="text-muted" /> Add a source
+          </button>
         </div>
       </Show>
     </div>
@@ -360,6 +383,7 @@ function TextMaterialForm(props: { onSave: (title: string, content: string) => v
 }
 
 type CourseRow = TableModel<GetTable<typeof schema, 'course'>>;
+type FetcherRow = TableModel<GetTable<typeof schema, 'fetcher'>>;
 
 /** The gear button in the top bar and the course settings dialog it opens. */
 function CourseSettings(props: { course: CourseRow }) {

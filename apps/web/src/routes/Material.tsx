@@ -170,8 +170,20 @@ export default function MaterialPage() {
             fallback={
               <article class={`mx-auto w-full min-w-0 px-4 pb-12 pt-6 sm:px-8 sm:pt-5 ${isPdf() ? 'max-w-5xl' : 'max-w-3xl'}`}>
                 <h1 class="break-words text-[22px] font-semibold leading-tight tracking-tight sm:text-[30px]">{m().title}</h1>
-                <Show when={meta()}>
-                  <p class="mt-1.5 break-words text-[14px] text-muted">{meta()}</p>
+                <Show when={meta() || m().source_url}>
+                  <p class="mt-1.5 break-words text-[14px] text-muted">
+                    {meta()}
+                    <Show when={m().source_url}>
+                      {(url) => (
+                        <>
+                          {meta() ? ' · ' : ''}
+                          <a href={url()} target="_blank" rel="noopener noreferrer" class="underline decoration-line-strong underline-offset-2 hover:text-fg">
+                            Open the original
+                          </a>
+                        </>
+                      )}
+                    </Show>
+                  </p>
                 </Show>
                 <div class="mt-2 md:hidden">
                   <StatusText status={m().status} detail={m().status_detail} />

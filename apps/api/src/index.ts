@@ -5,6 +5,7 @@ import { requireUser } from './auth';
 import { handleMcp } from './mcp';
 import { approveOAuthConsent, getOAuthConsent, handleOAuth, oauthOrigin } from './oauth';
 import { jobs } from './jobs';
+import { fetcherRoutes } from './fetch/routes';
 import {
   buildMissingGraphs,
   createApiKey,
@@ -22,6 +23,7 @@ import { courseGraph } from './understanding';
 import { BadRequest, Conflict, NotFound, Surreal, UserError, fromBase64, recordId } from './surreal';
 
 export { IngestMaterial } from './ingest';
+export { FetchSource } from './fetch/workflow';
 
 const app = new Hono<AppEnv>();
 
@@ -118,7 +120,8 @@ app.get('/api/materials/:id/pdf', async (c) => {
     headers: {
       'content-type': 'application/pdf',
       'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(name)}`,
-      // A material's PDF never changes: a second upload is refused.
+      // A material's PDF changes only when its source replaces it, and the
+      // app then asks for it with the new size (`?v=`, lib/api.ts fetchPdf).
       'cache-control': 'private, max-age=86400',
     },
   });
@@ -141,6 +144,10 @@ app.get('/api/courses/:id/graph', async (c) => {
   );
   return c.json(graph);
 });
+
+// ── Sources (fetch/routes.ts) ─────────────────────────────────────────────
+
+app.route('/api/fetchers', fetcherRoutes);
 
 // ── API keys (for the MCP server) ─────────────────────────────────────────
 

@@ -51,6 +51,14 @@ export const qMaterialsPage = (db: Db, courseId: string, page: number, size: num
 
 export const qMaterial = (db: Db, materialId: string) => db.query('material').where({ id: materialId }).build();
 
+/** A course's sources (bCourses courses, web pages that import material by themselves). */
+export const qFetchers = (db: Db, courseId: string) =>
+  db.query('fetcher').where({ course: courseId }).orderBy('created_at', 'asc').build();
+
+/** A source's latest checks, newest first. */
+export const qFetchRuns = (db: Db, fetcherId: string) =>
+  db.query('fetch_run').where({ fetcher: fetcherId }).orderBy('started_at', 'desc').limit(10).build();
+
 /** A material's latest jobs on one outbox path (jobs.ts), newest first. */
 export const qMaterialJobs = (db: Db, materialId: string, path: string) =>
   db.query('job').where({ assigned_to: materialId, path }).orderBy('created_at', 'desc').limit(5).build();

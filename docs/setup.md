@@ -24,6 +24,9 @@ ChatGPT through the MCP server. Workspace packages and deployment resources use 
                      -> embeddings (Workers AI) -> SurrealDB HNSW/BM25
                      -> course knowledge graph (Agent Memory, when configured)
    GET /api/materials/:id/pdf  the original PDF, for the in-app viewer
+   /api/fetchers     sources: bCourses courses and course websites, checked on a
+                     schedule (FetchSource Workflow) -> hockeymask mapping
+                     -> new and changed PDFs and pages become materials
    /material-assets/:id  images extracted from PDFs
    /mcp              MCP server (Streamable HTTP) for ChatGPT
    /oauth/*          account linking for ChatGPT
@@ -36,6 +39,7 @@ ChatGPT through the MCP server. Workspace packages and deployment resources use 
 | [`schema/buckets/materials.surql`](../schema/buckets/materials.surql) | The `materials` bucket: uploaded PDFs (in parts of at most 1 MiB) and the images extracted from them. Listed under `buckets:` in both sp00ky configs. |
 | [`apps/web`](../apps/web) | SolidJS app. Every read is a named live query in `src/lib/query.ts`. |
 | [`apps/api`](../apps/api) | Cloudflare Worker (Hono): ingest Workflow, search, assets, MCP. On Sp00ky Cloud it is the `api` Worker backend; `openapi.yml` lists its jobs. |
+| [`apps/api/src/fetch`](../apps/api/src/fetch) | Sources: the Canvas and web page connectors, the [hockeymask](https://github.com/mono424/hockeymask) mapping that decides what to import, the import ledger and the `FetchSource` Workflow. See [Sources](#sources-bcourses-and-course-websites). |
 | [`schema/src/outbox/api.surql`](../schema/src/outbox/api.surql) | The `job` outbox: the web app writes a row, the sync node calls the API with its payload. |
 | `sp00ky.yml` / `dev/sp00ky.yml` | Staging (free plan, shared SurrealDB, the API as a Worker backend) / local development. |
 
@@ -228,6 +232,49 @@ SITE_URL=https://mono424.github.io BASE_PATH=/talk-to-bolo PUBLIC_APP_URL= pnpm 
 
 Landing page photo: [Sanket Mishra on Unsplash](https://unsplash.com/photos/a-girl-sitting-on-a-bench-using-a-laptop-vvE2GOnGudg).
 
+## Sources (bCourses and course websites)
+
+A course can have sources (the `fetcher` table) that bring material in by
+themselves: **Add, Add a source** on the course page, or `add_web_source` from
+ChatGPT. Two kinds:
+
+- **bCourses** (any Canvas): the student pastes a personal access token from
+  bCourses (Account, Settings, New access token) and picks a course. The API
+  lists the course's files, and its pages when asked. Courses that hide the
+  Files tab from students are read through their Modules instead.
+- **Course website**: one public https page. Every link on it is a candidate
+  (http links are fetched over https), and its own text can be imported too.
+
+How a check runs (`apps/api/src/fetch`):
+
+1. The `fetchers-tick` schedule (every 15 minutes, `sp00ky.yml`) starts the
+   sources that are due; **Check now** in the app starts one at once (job
+   `/jobs/fetchers/run`). Each check is one `FetchSource` Workflow run.
+2. The connector lists what the source has as rows (`SourceRow` in
+   `mapping.ts`), through the hockeymask `Connector` contract.
+3. A [hockeymask](https://www.npmjs.com/package/@hockeymask/core) mapping turns
+   the rows into `import` rows: which items to take, their title and kind.
+   Each source runs a template built from its settings (PDFs, optionally
+   pages, filtered by the words in "Only files whose name contains"), or its
+   own mapping (the "Mapping (advanced)" editor, compiled before it is saved).
+4. The `fetched_item` ledger (server-only) says what is new, what changed
+   (Canvas `updated_at`, the page's text hash, a linked file's ETag or
+   Last-Modified) and what the student deleted, which is never imported again.
+5. New items become materials and are ingested like an upload; a changed one
+   replaces its material's content and is re-indexed, which resets that
+   lecture's progress and graph like any edit. At most 15 items per check; the
+   rest follow ten minutes later.
+
+Deleting a source keeps the material it imported. A token Canvas refuses stops
+the source's scheduled checks until the student pastes a new one.
+
+`FETCHER_KEY` seals the Canvas tokens (AES-GCM, bound to the source's id): any
+long random string, in `.dev.vars` locally and in the vault for the deploy
+(`pnpm exec spky env set FETCHER_KEY`). Changing it makes every saved token
+unreadable, so students would have to paste theirs again. Requests to sources
+go to public https hosts by name only, redirects included, and a token is only
+ever sent to its own Canvas.
+
 ## Deploy
 
 ### Current staging app
@@ -250,6 +297,10 @@ and list them under `apps.api.env`. Set a missing key with
 ```bash
 pnpm exec spky deploy --yes
 ```
+
+Sources need `FETCHER_KEY` in the vault (see
+[Sources](#sources-bcourses-and-course-websites)); set it once before the first
+deploy that lists it.
 
 Agent Memory is off on staging for now: the vault's `AGENT_MEMORY_URL` holds
 only the host, and with an incomplete URL every ingestion fails. To turn it on,

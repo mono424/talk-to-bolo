@@ -10,3 +10,6 @@ SPKY_DB_PASS=root
 # the graph: search and studying in ChatGPT then use the lecture text only.
 # AGENT_MEMORY_URL=https://YOUR-CONTEXT-HOST/api/v1/YOUR-CONTEXT-ID
 # AGENT_MEMORY_API_KEY=...
+# Seals the bCourses access tokens of sources. Any long random string, e.g.
+# `openssl rand -hex 32`. Without it, bCourses sources cannot be added.
+FETCHER_KEY=local-dev-fetcher-key-change-me

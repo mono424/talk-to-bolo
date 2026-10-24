@@ -333,13 +333,15 @@ export function validatePdf(bytes: Uint8Array) {
 /**
  * Stores a material's PDF and converts it. The PDF is the original the viewer
  * shows and citations point into, so it is kept until the material is
- * deleted: only a failed upload may be replaced.
+ * deleted: only a failed upload may be replaced, unless `replace` (a source
+ * whose original changed, fetch/run.ts), which re-indexes from the new file.
  */
 export async function storePdfAndIngest(
   env: Env,
   material: Pick<MaterialRow, 'id' | 'owner'>,
   bytes: Uint8Array,
   fileName: string | null,
+  opts: { replace?: boolean } = {},
 ): Promise<void> {
   validatePdf(bytes);
   await ensureServerSchema(env);
@@ -350,7 +352,7 @@ export async function storePdfAndIngest(
      }`,
     { m: material.id },
   );
-  if (held.parts > 0 && held.status !== 'failed') {
+  if (held.parts > 0 && held.status !== 'failed' && !opts.replace) {
     throw new Conflict('This material already has its PDF. Upload the new file as new material.');
   }
   // Claim first, so a run still converting the previous upload stops before

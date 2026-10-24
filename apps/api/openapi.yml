@@ -5,7 +5,7 @@ info:
   description: >-
     Jobs of the API backend (sp00ky.yml `apps.api`). The web app writes a row
     to the `job` outbox (schema/src/outbox/api.surql) with `path` set to one of
-    these paths, `assigned_to` set to the material, and the request
+    these paths, `assigned_to` set to the material (or source), and the request
     body below as `payload`. sp00ky's job runner POSTs the payload here with
     the backend's token. Every payload's `id` is the row's `assigned_to`: the
     outbox permission refuses anything else. These paths are not public.
@@ -124,4 +124,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /jobs/fetchers/run:
+    post:
+      summary: Check a source (a bCourses course or a web page) now and import what is new or changed.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  example: fetcher:k3f2a...
+              required:
+                - id
+      responses:
+        '200':
+          description: >-
+            A check started (a Workflow run), or nothing to do while one of
+            this source is still running.
+        '404':
+          description: The source no longer exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /jobs/fetchers/tick:
+    post:
+      summary: >-
+        Start the check of every enabled source that is due. Run by the
+        `fetchers-tick` schedule; belongs to no single record.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: The number of checks started.
 webhooks: {}

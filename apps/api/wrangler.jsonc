@@ -17,6 +17,12 @@
       "name": "studycall-ingest",
       "binding": "INGEST",
       "class_name": "IngestMaterial"
+    },
+    // Sources (bCourses, web pages): one durable run per check.
+    {
+      "name": "studycall-fetch",
+      "binding": "FETCH",
+      "class_name": "FetchSource"
     }
   ],
 
@@ -49,4 +55,5 @@
   //   AGENT_MEMORY_URL     Context data-plane base, ending /api/v1/{context_id}
   //                        (the course knowledge graph)
   //   AGENT_MEMORY_API_KEY server key with scoped memory read/write and scope:create
+  //   FETCHER_KEY          long random string sealing the Canvas tokens of sources
 }

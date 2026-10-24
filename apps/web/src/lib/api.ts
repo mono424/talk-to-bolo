@@ -65,12 +65,14 @@ const pdfCache = new Map<string, Promise<ArrayBuffer>>();
 const PDF_STALL_MS = 30_000;
 
 /**
- * The original PDF of a material, for the viewer. A material's PDF never
- * changes, so it is cached by id and size. pdf.js takes ownership of the
+ * The original PDF of a material, for the viewer. A material's PDF changes
+ * only when its source replaces it, which changes its size, so it is cached
+ * by id and size. pdf.js takes ownership of the
  * buffer it is given: pass it a copy.
  */
 export function fetchPdf(db: Db, materialId: string, size: number | null | undefined): Promise<ArrayBuffer> {
   const key = `${materialId}:${size ?? ''}`;
+  const version = size ? `?v=${size}` : '';
   const hit = pdfCache.get(key);
   if (hit) {
     pdfCache.delete(key);
@@ -90,7 +92,9 @@ export function fetchPdf(db: Db, materialId: string, size: number | null | undef
       timer = setTimeout(() => abort.abort(), PDF_STALL_MS);
     };
     try {
-      const res = await fetch(`${API_URL}/api/materials/${encodeURIComponent(materialId)}/pdf`, {
+      // The size in the URL: a source replacing the PDF changes it, so the
+      // browser's cached copy of the old file is not reused.
+      const res = await fetch(`${API_URL}/api/materials/${encodeURIComponent(materialId)}/pdf${version}`, {
         headers: { authorization: `Bearer ${token}` },
         signal: abort.signal,
       });
@@ -194,3 +198,58 @@ export interface CourseGraph {
 /** The course's concept map with what the student understood (concept, requires). */
 export const fetchCourseGraph = (db: Db, courseId: string) =>
   api<CourseGraph>(db, `/api/courses/${encodeURIComponent(courseId)}/graph`);
+
+// ── Sources (apps/api/src/fetch) ──────────────────────────────────────────
+
+export type SourceKind = 'canvas' | 'web';
+
+export interface SourceSettings {
+  kind: SourceKind;
+  /** web: the page. canvas: the Canvas address (bcourses.berkeley.edu by default). */
+  url?: string;
+  canvas_course?: string;
+  include?: string;
+  import_pages?: boolean;
+  /** A bCourses access token, sent to the API only, which seals it. */
+  token?: string;
+}
+
+export interface CanvasCourse {
+  id: string;
+  name: string;
+  code: string | null;
+  term: string | null;
+}
+
+export type PreviewStatus = 'new' | 'changed' | 'imported' | 'dismissed';
+
+export interface SourcePreview {
+  /** Everything the source lists, before the mapping filters it. */
+  listed: number;
+  items: { id: string; title: string; kind: 'pdf' | 'markdown'; link: string; status: PreviewStatus }[];
+  total: number;
+  issues: string[];
+}
+
+/** The courses a bCourses token can see, for the course picker. */
+export const listCanvasCourses = (db: Db, input: { url?: string; token: string }) =>
+  api<{ courses: CanvasCourse[] }>(db, '/api/fetchers/canvas/courses', { method: 'POST', body: JSON.stringify(input) });
+
+/** What a source would import. `fetcher`: an existing source, using its saved token. */
+export const previewSource = (db: Db, input: Partial<SourceSettings> & { fetcher?: string }) =>
+  api<SourcePreview>(db, '/api/fetchers/preview', { method: 'POST', body: JSON.stringify(input) });
+
+/** Adds a source to a course; its first check starts at once. */
+export const createSource = (db: Db, input: SourceSettings & { course: string; name?: string; every_hours?: number }) =>
+  api<{ id: string; name: string }>(db, '/api/fetchers/create', { method: 'POST', body: JSON.stringify(input) });
+
+/** Changes a source. A new token switches a source its old token stopped back on. */
+export const updateSource = (
+  db: Db,
+  fetcherId: string,
+  patch: { name?: string; include?: string; import_pages?: boolean; every_hours?: number; token?: string; mapping?: string | null },
+) => api<{ ok: true }>(db, `/api/fetchers/${encodeURIComponent(fetcherId)}`, { method: 'POST', body: JSON.stringify(patch) });
+
+/** The hockeymask mapping a source runs: its own, or the template for its settings. */
+export const sourceMapping = (db: Db, fetcherId: string) =>
+  api<{ custom: boolean; mapping: unknown }>(db, `/api/fetchers/${encodeURIComponent(fetcherId)}/mapping`);

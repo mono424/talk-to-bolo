@@ -97,6 +97,7 @@ DEFINE INDEX OVERWRITE course_owner ON TABLE course FIELDS owner;
 DEFINE EVENT OVERWRITE course_deleted ON TABLE course WHEN $event = "DELETE" THEN {
   DELETE material WHERE course = $before.id;
   DELETE call WHERE course = $before.id;
+  DELETE fetcher WHERE course = $before.id;
 };
 
 -- ##################################################################
@@ -155,6 +156,13 @@ DEFINE FIELD OVERWRITE learned_through ON TABLE material TYPE int DEFAULT -1
   PERMISSIONS FOR update WHERE false;
 -- Revision of the material's AgentMemory graph, written by the API.
 DEFINE FIELD OVERWRITE memory_rev ON TABLE material TYPE int DEFAULT 0
+  PERMISSIONS FOR update WHERE false;
+-- The source that imported it (see SOURCES below) and where a person opens
+-- the original. NONE for material the student added. A source updates its
+-- material when the original changes.
+DEFINE FIELD OVERWRITE fetcher ON TABLE material TYPE option<record<fetcher>>
+  PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE source_url ON TABLE material TYPE option<string>
   PERMISSIONS FOR update WHERE false;
 DEFINE FIELD OVERWRITE created_at ON TABLE material TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at ON TABLE material TYPE datetime VALUE time::now();
@@ -250,6 +258,99 @@ DEFINE FIELD OVERWRITE at ON TABLE turn_source TYPE int;
 DEFINE FIELD OVERWRITE created_at ON TABLE turn_source TYPE datetime DEFAULT time::now();
 
 DEFINE INDEX OVERWRITE turn_source_call ON TABLE turn_source FIELDS call, seq;
+
+-- ##################################################################
+-- SOURCES
+--
+-- A source (`fetcher`) brings a course's material in by itself: the files
+-- and pages of a bCourses (Canvas) course, or the PDFs linked from a course
+-- website. The API checks it on a schedule and imports what is new or
+-- changed (apps/api/src/fetch). Its Canvas token and what it imported are
+-- server-only (apps/api/src/server-schema.surql).
+-- ##################################################################
+
+DEFINE TABLE OVERWRITE fetcher SCHEMAFULL
+  PERMISSIONS
+    FOR select, update, delete WHERE owner = $auth.id
+    FOR create WHERE owner = $auth.id AND course.owner = $auth.id;
+
+DEFINE FIELD OVERWRITE owner ON TABLE fetcher TYPE record<user> READONLY;
+DEFINE FIELD OVERWRITE course ON TABLE fetcher TYPE record<course> READONLY; -- @parent
+-- canvas: a bCourses (or other Canvas) course. web: one public web page.
+DEFINE FIELD OVERWRITE kind ON TABLE fetcher TYPE string
+  ASSERT $value IN ['canvas', 'web']
+  PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE name ON TABLE fetcher TYPE string ASSERT string::len($value) > 0;
+-- web: the page. canvas: the Canvas origin, e.g. https://bcourses.berkeley.edu.
+DEFINE FIELD OVERWRITE url ON TABLE fetcher TYPE string
+  PERMISSIONS FOR update WHERE false;
+-- The Canvas course id. NONE for web.
+DEFINE FIELD OVERWRITE canvas_course ON TABLE fetcher TYPE option<string>
+  PERMISSIONS FOR update WHERE false;
+-- Comma-separated words: only items whose name or URL contains one are
+-- imported. NONE: every PDF.
+DEFINE FIELD OVERWRITE include ON TABLE fetcher TYPE option<string>;
+-- Also import pages (Canvas pages, the web page's own text) as Markdown.
+DEFINE FIELD OVERWRITE import_pages ON TABLE fetcher TYPE bool DEFAULT false;
+DEFINE FIELD OVERWRITE enabled ON TABLE fetcher TYPE bool DEFAULT true;
+-- Hours between scheduled checks.
+DEFINE FIELD OVERWRITE every_hours ON TABLE fetcher TYPE int DEFAULT 6
+  ASSERT $value >= 1 AND $value <= 168;
+-- A custom hockeymask mapping (JSON) instead of the template built from the
+-- fields above. Set through the API, which compiles it first.
+DEFINE FIELD OVERWRITE mapping ON TABLE fetcher TYPE option<string>
+  PERMISSIONS FOR update WHERE false;
+-- Fields from here on are written by the API only.
+-- idle: never ran. running. ok. partial: some items failed. failed.
+DEFINE FIELD OVERWRITE status ON TABLE fetcher TYPE string DEFAULT 'idle'
+  ASSERT $value IN ['idle', 'running', 'ok', 'partial', 'failed']
+  PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE last_error ON TABLE fetcher TYPE option<string>
+  PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE has_token ON TABLE fetcher TYPE bool DEFAULT false
+  PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE imported_count ON TABLE fetcher TYPE int DEFAULT 0
+  PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE run_started_at ON TABLE fetcher TYPE option<datetime>
+  PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE last_run_at ON TABLE fetcher TYPE option<datetime>
+  PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE next_run_at ON TABLE fetcher TYPE option<datetime>
+  PERMISSIONS FOR update WHERE false;
+DEFINE FIELD OVERWRITE created_at ON TABLE fetcher TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE updated_at ON TABLE fetcher TYPE datetime VALUE time::now();
+
+DEFINE INDEX OVERWRITE fetcher_course ON TABLE fetcher FIELDS course;
+
+-- Material a source imported stays: it is the student's now.
+DEFINE EVENT OVERWRITE fetcher_deleted ON TABLE fetcher WHEN $event = "DELETE" THEN {
+  DELETE fetch_run WHERE fetcher = $before.id;
+  UPDATE material SET fetcher = NONE WHERE fetcher = $before.id;
+};
+
+-- One check of a source, for its history. Written by the API.
+DEFINE TABLE OVERWRITE fetch_run SCHEMAFULL
+  PERMISSIONS
+    FOR select, delete WHERE owner = $auth.id
+    FOR create, update WHERE false;
+
+DEFINE FIELD OVERWRITE owner ON TABLE fetch_run TYPE record<user>;
+DEFINE FIELD OVERWRITE fetcher ON TABLE fetch_run TYPE record<fetcher>; -- @parent
+DEFINE FIELD OVERWRITE status ON TABLE fetch_run TYPE string DEFAULT 'running'
+  ASSERT $value IN ['running', 'ok', 'partial', 'failed'];
+-- Items the mapping kept, and what became of them.
+DEFINE FIELD OVERWRITE found ON TABLE fetch_run TYPE int DEFAULT 0;
+DEFINE FIELD OVERWRITE created ON TABLE fetch_run TYPE int DEFAULT 0;
+DEFINE FIELD OVERWRITE updated ON TABLE fetch_run TYPE int DEFAULT 0;
+DEFINE FIELD OVERWRITE failed ON TABLE fetch_run TYPE int DEFAULT 0;
+-- Left for the next run (a run imports a bounded number of items).
+DEFINE FIELD OVERWRITE deferred ON TABLE fetch_run TYPE int DEFAULT 0;
+-- What went wrong, one line per problem.
+DEFINE FIELD OVERWRITE detail ON TABLE fetch_run TYPE option<string>;
+DEFINE FIELD OVERWRITE started_at ON TABLE fetch_run TYPE datetime DEFAULT time::now();
+DEFINE FIELD OVERWRITE finished_at ON TABLE fetch_run TYPE option<datetime>;
+
+DEFINE INDEX OVERWRITE fetch_run_fetcher ON TABLE fetch_run FIELDS fetcher, started_at;
 
 -- ##################################################################
 -- API KEYS (MCP access for AI clients)

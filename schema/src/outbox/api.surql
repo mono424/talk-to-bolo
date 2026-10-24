@@ -7,7 +7,7 @@
 -- `spky api add`; only the permissions and `assigned_to` are talktobolo's.
 -- ##################################################################
 
--- A student may create a job only about their own material or call, and only
+-- A student may create a job only about their own material, call or source, and only
 -- with that same record as `payload.id`: the backend never sees who created a
 -- job, so it treats the owner of `payload.id` as the caller. `payload` is an
 -- object (the web app writes rows itself, not through `db.run`, which would
@@ -20,11 +20,11 @@ PERMISSIONS
     AND <string> payload.id = <string> assigned_to
   FOR update WHERE false;
 
--- The material or call this job belongs to, used by the permissions above.
+-- The material, call or source this job belongs to, used by the permissions above.
 -- OPTIONAL on purpose: a server-side schedule (`schedules:` in sp00ky.yml)
 -- spawns system-initiated jobs that belong to no single record, so the
 -- scheduler creates rows without it. Such rows are invisible to clients.
-DEFINE FIELD assigned_to ON TABLE job TYPE option<record<material | call>>
+DEFINE FIELD assigned_to ON TABLE job TYPE option<record<material | call | fetcher>>
 PERMISSIONS
   FOR create, select WHERE true
   FOR update WHERE false;

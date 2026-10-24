@@ -1,8 +1,11 @@
+import type { FetchParams } from './fetch/workflow';
 import type { IngestParams } from './ingest';
 
 export interface Env {
   AI: Ai;
   INGEST: Workflow<IngestParams>;
+  /** One run of a source (fetch/workflow.ts). */
+  FETCH: Workflow<FetchParams>;
 
   APP_ORIGIN: string;
   /** Public API origin used for OAuth issuer and MCP audience, when proxied. */
@@ -40,6 +43,12 @@ export interface Env {
    */
   AGENT_MEMORY_URL?: string;
   AGENT_MEMORY_API_KEY?: string;
+
+  /**
+   * Seals the Canvas access tokens of sources (fetch/secret.ts). Any long
+   * random string; changing it makes every saved token unreadable.
+   */
+  FETCHER_KEY?: string;
 
   /** sp00ky's job runner presents this (sp00ky.yml `apps.api.auth.token`) on /jobs/*. */
   JOB_TOKEN?: string;

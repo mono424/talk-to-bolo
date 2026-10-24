@@ -4,6 +4,7 @@ import { bearer, safeEqual } from './auth';
 import { setLectureProgress } from './progress';
 import { BadRequest, NotFound, Surreal, recordId } from './surreal';
 import { buildMissingGraphs, startIngest, startMemoryBuild, type MaterialRow } from './service';
+import { getFetcher, startDueFetches, startFetch } from './fetch/run';
 
 /**
  * Background work the web app asks for by writing a row to the `job` outbox
@@ -60,3 +61,16 @@ jobs.post('/materials/progress', async (c) => {
   const material = await jobMaterial(c.env, body.id);
   return c.json(await setLectureProgress(c.env, material.owner, material.id, { through: body.through, rev: body.rev }));
 });
+
+// Checks a source now ("Check now" in the app). Nothing to do while a check
+// of it is still running.
+jobs.post('/fetchers/run', async (c) => {
+  const body = await c.req.json<Payload>();
+  const f = await getFetcher(c.env, recordId('fetcher', body.id));
+  if (!f) throw new NotFound('Source not found.');
+  return c.json({ ok: true, ...(await startFetch(c.env, f.id, { manual: true })) });
+});
+
+// Starts the scheduled check of every source that is due (schedule
+// `fetchers-tick` in sp00ky.yml).
+jobs.post('/fetchers/tick', async (c) => c.json({ ok: true, started: await startDueFetches(c.env) }));

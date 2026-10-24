@@ -314,3 +314,46 @@ DEFINE FIELD OVERWRITE started_at ON TABLE graph_build TYPE datetime DEFAULT tim
 DEFINE EVENT OVERWRITE material_graph_build_deleted ON TABLE material WHEN $event = 'DELETE' THEN {
   DELETE graph_build WHERE material = $before.id;
 };
+
+-- ##################################################################
+-- SOURCES (src/fetch)
+--
+-- The server-only half of a `fetcher` (main schema): its Canvas token,
+-- sealed with FETCHER_KEY (fetch/secret.ts), and what it imported, so a run
+-- knows what is new, what changed and what the student deleted.
+-- ##################################################################
+
+DEFINE TABLE OVERWRITE fetcher_secret SCHEMAFULL
+  COMMENT 'sp00ky:nosync'
+  PERMISSIONS NONE;
+DEFINE FIELD OVERWRITE fetcher ON TABLE fetcher_secret TYPE record<fetcher>;
+DEFINE FIELD OVERWRITE token ON TABLE fetcher_secret TYPE string;
+DEFINE FIELD OVERWRITE updated_at ON TABLE fetcher_secret TYPE datetime VALUE time::now();
+
+-- One item of a source and the material it became. `material` NONE: the
+-- student deleted it, so it is never imported again. The id is derived from
+-- the fetcher and the item (fetch/run.ts ledgerId).
+DEFINE TABLE OVERWRITE fetched_item SCHEMAFULL
+  COMMENT 'sp00ky:nosync'
+  PERMISSIONS NONE;
+DEFINE FIELD OVERWRITE owner ON TABLE fetched_item TYPE record<user>;
+DEFINE FIELD OVERWRITE fetcher ON TABLE fetched_item TYPE record<fetcher>;
+DEFINE FIELD OVERWRITE external_id ON TABLE fetched_item TYPE string;
+DEFINE FIELD OVERWRITE material ON TABLE fetched_item TYPE option<record<material>>;
+-- The item's version when it was last imported (ImportRow.version).
+DEFINE FIELD OVERWRITE version ON TABLE fetched_item TYPE option<string>;
+DEFINE FIELD OVERWRITE created_at ON TABLE fetched_item TYPE datetime DEFAULT time::now();
+DEFINE FIELD OVERWRITE updated_at ON TABLE fetched_item TYPE datetime VALUE time::now();
+
+DEFINE INDEX IF NOT EXISTS fetched_item_fetcher ON TABLE fetched_item FIELDS fetcher;
+DEFINE INDEX IF NOT EXISTS fetched_item_material ON TABLE fetched_item FIELDS material;
+-- The scheduled check looks for due sources.
+DEFINE INDEX IF NOT EXISTS fetcher_due ON TABLE fetcher FIELDS enabled, next_run_at;
+
+DEFINE EVENT OVERWRITE fetcher_server_deleted ON TABLE fetcher WHEN $event = 'DELETE' THEN {
+  DELETE fetcher_secret WHERE fetcher = $before.id;
+  DELETE fetched_item WHERE fetcher = $before.id;
+};
+DEFINE EVENT OVERWRITE material_fetched_deleted ON TABLE material WHEN $event = 'DELETE' THEN {
+  UPDATE fetched_item SET material = NONE WHERE material = $before.id;
+};

@@ -47,6 +47,7 @@ Bring your material, ChatGPT, and a little curiosity.
 - **A knowledge graph per course.** As material is processed, SurrealDB Agent Memory builds the course's knowledge graph section by section. ChatGPT draws on it up to your place in each lecture.
 - **Learning over time.** Set your place in each lecture. Reached material counts as seen, never as mastered.
 - **What you understood, concept by concept.** While you study, ChatGPT maps the ideas of each lecture and what they build on, and notes what you showed about each one: right, shaky, a misconception, a missing piece. Your level per concept comes from that evidence, so the next session knows what to explain first, what to focus on and what you still miss for the full picture.
+- **Material that comes in by itself.** Add a bCourses course or a course website as a source, and TalkToBolo checks it every few hours, importing new lecture PDFs and pages and updating the ones that changed. A [hockeymask](https://github.com/mono424/hockeymask) mapping decides what to take.
 - **Your PDFs, kept as they are.** The original PDF stays in the app to read page by page, and its text and pictures become searchable for the tutor. Markdown and text notes are imported as they are.
 - **Sources you can check.** Recaps, course search and the MCP tools link straight to the lecture page.
 - **A record of each session.** Sessions saved from ChatGPT keep their recap, so you can return to them.
