@@ -148,7 +148,7 @@ export async function indexMemorySection(
   }));
   const result = await request(env, '/documents', { method: 'POST', body: form });
   if (!isObject(result) || typeof result.id !== 'string' || !result.id ||
-    (result.observedAt != null && result.observedAt !== observedAt)) {
+    (result.observedAt != null && Date.parse(String(result.observedAt)) !== Date.parse(observedAt))) {
     throw new Error('Agent Memory upload returned no document or a different lecture timestamp.');
   }
   return result.id;
@@ -224,6 +224,8 @@ async function queryFacts(env: Env, lens: string[][], query: string, asOf: strin
 /** The concepts of one lecture section, and how they link, from its extracted graph. */
 export interface SectionGraph {
   concepts: string[];
+  /** Definitions Agent Memory extracted, by concept name. */
+  summaries?: Record<string, string>;
   /** [concept, what it builds on] */
   requires: [string, string][];
   /** [concept, the broader concept it is part of] */
@@ -236,6 +238,7 @@ const NOT_CONCEPTS = new Set(['person', 'organization', 'organisation', 'company
 const REQUIRES = /^(requires|depends_on|builds_on|prerequisite(_of|_for)?|needs|based_on|uses|derived_from)$/;
 const PART_OF = /^(part_of|is_part_of|component_of|subtopic_of|belongs_to|is_a|type_of|kind_of|instance_of|example_of)$/;
 const MAX_SECTION_CONCEPTS = 25;
+const DEFINITION = /^(definition|description|summary|meaning|explanation)$/;
 
 const fold = (s: string) => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
@@ -258,11 +261,17 @@ export async function sectionGraph(env: Env, material: MemoryMaterial, position:
 
   const text = ` ${fold(`${chunk.heading ?? ''} ${chunk.text}`)} `;
   const names = new Map<string, string>();
+  const summaries = new Map<string, string>();
   const named = (type: unknown, name: unknown, display?: unknown): string | null => {
     if (typeof type !== 'string' || typeof name !== 'string' || NOT_CONCEPTS.has(type.toLowerCase())) return null;
+    // Entity names are stored folded with underscores ("newton's_second_law").
     const key = fold(name);
-    if (key.length < 2 || !text.includes(` ${key} `)) return null;
-    if (!names.has(key)) names.set(key, typeof display === 'string' && fold(display) === key ? display.trim() : name.trim());
+    const bare = fold(name.replace(/['\u2019]/g, ''));
+    if (key.length < 2 || !(text.includes(` ${key} `) || text.includes(` ${bare} `))) return null;
+    if (!names.has(key) || typeof display === 'string') {
+      const shown = typeof display === 'string' && fold(display) === key ? display.trim() : null;
+      if (shown || !names.has(key)) names.set(key, shown ?? name.replace(/_/g, ' ').trim());
+    }
     return key;
   };
   const edges: [string, string, string][] = [];
@@ -270,6 +279,11 @@ export async function sectionGraph(env: Env, material: MemoryMaterial, position:
   for (const hit of rows) {
     const r = isObject(hit) && isObject(hit.resource) ? hit.resource : null;
     if (r?.kind === 'entity') named(r.entityType, r.name, (hit as Record<string, unknown>).text);
+    if (r?.kind === 'attribute' && typeof r.key === 'string' && DEFINITION.test(r.key)) {
+      const key = named(r.entityType, r.name);
+      const said = String((hit as Record<string, unknown>).text ?? '').replace(/^.*?\b(definition|description|summary|meaning|explanation) is\s+/i, '').trim();
+      if (key && said && !summaries.has(key)) summaries.set(key, said.slice(0, 400));
+    }
     if (r?.kind === 'relation' && typeof r.label === 'string') {
       const from = named(r.subjectType, r.subjectName);
       const to = named(r.objectType, r.objectName);
@@ -286,7 +300,13 @@ export async function sectionGraph(env: Env, material: MemoryMaterial, position:
       return [[names.get(from)!, names.get(to)!]];
     });
   };
-  return { concepts: keys.map((k) => names.get(k)!), requires: pairs(REQUIRES), partOf: pairs(PART_OF) };
+  const defined = Object.fromEntries(keys.filter((k) => summaries.has(k)).map((k) => [names.get(k)!, summaries.get(k)!]));
+  return {
+    concepts: keys.map((k) => names.get(k)!),
+    ...(Object.keys(defined).length ? { summaries: defined } : {}),
+    requires: pairs(REQUIRES),
+    partOf: pairs(PART_OF),
+  };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

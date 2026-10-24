@@ -390,7 +390,7 @@ async function writeOnce(
     let row = await resolve(c.name);
     const place = lectureAt(c.material_id, c.position);
     row = anchorTo(row, place);
-    if (clip(c.summary)) row = { ...row, summary: clip(c.summary) };
+    if (clip(c.summary) && !(keepAnchors && row.summary)) row = { ...row, summary: clip(c.summary) };
     if (c.prior != null) row = { ...row, prior: c.prior };
     if (c.part_of) {
       const parent = await resolve(c.part_of);
@@ -517,7 +517,7 @@ export async function mapConcepts(env: Env, ownerId: string, courseId: string, m
     const byKey = new Map<string, ConceptInput>();
     for (const name of g.concepts) {
       const key = conceptKey(name);
-      if (key && !byKey.has(key)) byKey.set(key, { name, material_id: materialId, position, requires: [] });
+      if (key && !byKey.has(key)) byKey.set(key, { name, summary: g.summaries?.[name] ?? null, material_id: materialId, position, requires: [] });
     }
     for (const [from, to] of g.requires) byKey.get(conceptKey(from))?.requires!.push(to);
     for (const [from, to] of g.partOf) {

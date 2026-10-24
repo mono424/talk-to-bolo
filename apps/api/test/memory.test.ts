@@ -79,7 +79,7 @@ test('scope ids remain distinct across owners, courses, materials, revisions and
 
 test('document upload uses scoped multipart metadata and unique bytes per position', async (t) => {
   const requests = mockFetch(t, [
-    scopeReply(), { status: 202, body: { id: 'doc-0', status: 'queued', observedAt: lectureStamp(0) } },
+    scopeReply(), { status: 202, body: { id: 'doc-0', status: 'queued', observedAt: lectureStamp(0).replace('.000Z', 'Z') } },
     scopeReply(), { status: 202, body: { id: 'doc-1', status: 'queued' } },
   ]);
   assert.equal(await indexMemorySection(env, material, 0, chunk), 'doc-0');
@@ -165,6 +165,9 @@ test('section graph keeps only concepts the section names, with their links', as
         entity('concept', 'mass'),
         entity('person', 'newton'),
         entity('concept', 'photosynthesis'),
+        entity('concept', "newton's_second_law", "Newton's second law"),
+        { id: 'a1', text: "acceleration's definition is the rate of change of velocity", source: 'attribute', score: 0.5,
+          resource: { kind: 'attribute', entityType: 'concept', name: 'acceleration', key: 'definition' } },
         relation('force', 'requires', 'acceleration'),
         relation('force', 'depends_on', 'mass'),
         relation('force', 'requires', 'photosynthesis'),
@@ -173,8 +176,9 @@ test('section graph keeps only concepts the section names, with their links', as
       contextHits: [relation('acceleration', 'part_of', 'force')],
     },
   }]);
-  const g = await sectionGraph(env, material, 0, { heading: 'Forces', text: 'Force equals mass times acceleration, said Newton.' });
-  assert.deepEqual(g.concepts, ['Force', 'acceleration', 'mass']);
+  const g = await sectionGraph(env, material, 0, { heading: 'Forces', text: "Newton's second law: force equals mass times acceleration, said Newton." });
+  assert.deepEqual(g.concepts, ['Force', 'acceleration', 'mass', "Newton's second law"]);
+  assert.deepEqual(g.summaries, { acceleration: 'the rate of change of velocity' });
   assert.deepEqual(g.requires, [['Force', 'acceleration'], ['Force', 'mass']]);
   assert.deepEqual(g.partOf, [['acceleration', 'Force']]);
   const sent = body(requests[0]);
