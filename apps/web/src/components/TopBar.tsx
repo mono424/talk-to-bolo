@@ -4,7 +4,7 @@ import { LogOut, Menu, MessageCircle, X } from 'lucide-solid';
 import { useAuth } from '../lib/auth';
 import { useChatGPTGuide } from './ChatGPTGuide';
 import { Dot } from './ui';
-import { HeaderEndSlot, HeaderSlot, HeaderTitleSlot, useHeaderTitleUsed } from './HeaderSlot';
+import { HeaderEndSlot, HeaderSlot, HeaderTitleSlot, useFocused, useHeaderTitleUsed } from './HeaderSlot';
 
 /** Bolo, the approved TalkToBolo mark. */
 export function Logo(props: { class?: string }) {
@@ -20,6 +20,7 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
   const guide = useChatGPTGuide();
   const [menu, setMenu] = createSignal(false);
   const titled = useHeaderTitleUsed();
+  const focused = useFocused();
   const initial = () => auth.user()?.name?.trim().charAt(0).toUpperCase() || '?';
 
   // How much of the bar's right end the account menu takes: page controls in
@@ -37,23 +38,26 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
 
   return (
     <header ref={header} class="relative flex h-16 shrink-0 items-center gap-2 px-3 sm:px-5">
-      <button
-        type="button"
-        class="inline-flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-soft hover:text-fg md:hidden"
-        aria-label={props.menuOpen ? 'Close navigation' : 'Open navigation'}
-        aria-expanded={props.menuOpen}
-        aria-controls="app-navigation"
-        onClick={props.onMenu}
-      >
-        {props.menuOpen ? <X size={20} stroke-width={1.75} /> : <Menu size={20} stroke-width={1.75} />}
-      </button>
+      {/* A page in focus has no sidebar to open: its own way back stands here. */}
+      <Show when={!focused()}>
+        <button
+          type="button"
+          class="inline-flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-soft hover:text-fg md:hidden"
+          aria-label={props.menuOpen ? 'Close navigation' : 'Open navigation'}
+          aria-expanded={props.menuOpen}
+          aria-controls="app-navigation"
+          onClick={props.onMenu}
+        >
+          {props.menuOpen ? <X size={20} stroke-width={1.75} /> : <Menu size={20} stroke-width={1.75} />}
+        </button>
+      </Show>
       <Show when={!titled()}>
         <A href="/" class="mr-1 inline-flex shrink-0 items-center text-fg sm:mr-3" aria-label="TalkToBolo home">
           <Logo />
         </A>
       </Show>
-      {/* A page's own title, in place of the logo: within the sidebar's width beside it. */}
-      <HeaderTitleSlot class="flex min-w-0 items-center empty:hidden md:max-w-[252px]" />
+      {/* A page's own title, in place of the logo: within the sidebar's width beside it, unless the sidebar is hidden. */}
+      <HeaderTitleSlot class={`flex min-w-0 items-center empty:hidden ${focused() ? '' : 'md:max-w-[252px]'}`} />
 
       {/* Beside the sidebar, the slot spans the page below it, so pages can line controls up with their content.
           Wide windows end it at the recent sessions column, clear of the account menu above it. */}

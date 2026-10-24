@@ -11,6 +11,7 @@ import { fetchCourseGraph, materialPath, type ConceptLevel, type CourseGraph, ty
 import { idKey } from '../lib/ids';
 import { useCourse } from '../lib/query';
 import { Loader } from '../components/ui';
+import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
 
 /**
  * The course knowledge graph in 3D: the concepts of each lecture (from Agent
@@ -237,7 +238,7 @@ export default function GraphPage() {
           const { x, y, z } = fg.cameraPosition();
           fg.cameraPosition({ x: 0, y: 0, z: Math.hypot(x, y, z) }, { x: 0, y: 0, z: 0 });
         }
-        // Room for the header and legend over the scene on phones.
+        // Room for the lectures and legend over the scene on phones.
         fg.zoomToFit(600, host.clientWidth < 640 ? 90 : 40);
       });
     }
@@ -287,40 +288,38 @@ export default function GraphPage() {
 
   const glass = 'border border-white/10 bg-[#0b0f1a]/75 backdrop-blur-md';
   const chip = (active: boolean) =>
-    `shrink-0 rounded-full px-3 py-1.5 text-[13px] transition-colors ${active ? 'bg-white text-[#05070d]' : 'bg-white/8 text-white/75 hover:bg-white/15'}`;
+    `shrink-0 rounded-full border px-3 py-1.5 text-[13px] backdrop-blur-md transition-colors ${active ? 'border-white bg-white font-medium text-[#05070d]' : 'border-white/10 bg-[#0b0f1a]/60 text-white/75 hover:bg-white/15 hover:text-white'}`;
 
   return (
     <div class="relative h-full min-h-[24rem] overflow-hidden text-white" style={{ background: SCENE }}>
       <div ref={host} class="absolute inset-0" />
 
-      {/* Header: back, title, lectures, 3D or 2D. */}
-      <div class="pointer-events-none absolute inset-x-0 top-0 bg-linear-to-b from-[#05070d] via-[#05070d]/70 to-transparent p-3 pb-8 sm:p-4 sm:pb-10">
-        <div class="pointer-events-auto flex items-center gap-2">
-          <A href={`/courses/${params.courseKey}`} class={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${glass}`} aria-label="Back to the course">
-            <ArrowLeft size={18} stroke-width={1.8} />
+      {/* The whole window: back, the graph's name and the view in the top bar. */}
+      <Focus />
+      <HeaderTitle>
+        <div class="flex min-w-0 items-center gap-1.5 sm:-ml-2 sm:gap-2">
+          <A
+            href={`/courses/${params.courseKey}`}
+            class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-soft hover:text-fg md:h-10 md:w-10"
+            aria-label="Back to the course"
+            title="Back to the course"
+          >
+            <ArrowLeft size={20} stroke-width={1.75} />
           </A>
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-[16px] font-semibold tracking-tight sm:text-[18px]">{lecture()?.title ?? course.data()?.title ?? 'Course'}</div>
-            <div class="truncate text-[12px] text-white/55 sm:text-[13px]">Knowledge graph{lecture() ? ` · ${course.data()?.title ?? ''}` : ''}</div>
-          </div>
-          <div class={`flex shrink-0 rounded-full p-1 ${glass}`} role="group" aria-label="View">
-            <For each={[3, 2] as const}>
-              {(d) => (
-                <button
-                  type="button"
-                  aria-pressed={dims() === d}
-                  onClick={() => setDims(d)}
-                  class={`flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[12px] font-medium transition-colors ${dims() === d ? 'bg-white/15 text-white' : 'text-white/55 hover:text-white'}`}
-                >
-                  {d === 3 ? <Box size={14} stroke-width={1.8} /> : <Square size={13} stroke-width={1.8} />}
-                  {d}D
-                </button>
-              )}
-            </For>
+          <div class="min-w-0">
+            <div class="truncate text-[15px] font-semibold leading-tight tracking-tight sm:text-[16px]">{lecture()?.title ?? course.data()?.title ?? 'Course'}</div>
+            <div class="truncate text-[12px] leading-tight text-muted sm:text-[13px]">Knowledge graph{lecture() ? ` · ${course.data()?.title ?? ''}` : ''}</div>
           </div>
         </div>
-        <Show when={(graph()?.lectures.length ?? 0) > 0}>
-          <div class="scroll-quiet pointer-events-auto -mx-3 mt-3 flex gap-1.5 overflow-x-auto px-3 sm:-mx-4 sm:px-4">
+      </HeaderTitle>
+      <HeaderEndActions>
+        <ViewToggle dims={dims()} onChange={setDims} class="max-sm:hidden" />
+      </HeaderEndActions>
+
+      {/* The lectures over the scene, and on phones the view, which the top bar has no room for. */}
+      <div class="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-2 bg-linear-to-b from-[#05070d]/90 to-transparent pb-8 pr-3 pt-3 sm:pb-10 sm:pr-4 sm:pt-4">
+        <div class="scroll-quiet pointer-events-auto flex min-w-0 flex-1 gap-1.5 overflow-x-auto px-3 sm:px-4">
+          <Show when={(graph()?.lectures.length ?? 0) > 0}>
             <button type="button" class={chip(!lecture())} onClick={() => openLecture(null)}>
               Whole course
             </button>
@@ -331,8 +330,9 @@ export default function GraphPage() {
                 </button>
               )}
             </For>
-          </div>
-        </Show>
+          </Show>
+        </div>
+        <ViewToggle dims={dims()} onChange={setDims} dark class="pointer-events-auto sm:hidden" />
       </div>
 
       {/* Empty, loading and error states. */}
@@ -394,7 +394,7 @@ export default function GraphPage() {
       <Show when={concept()}>
         {(c) => (
           <aside
-            class={`scroll-quiet absolute inset-x-3 bottom-3 max-h-[55%] overflow-y-auto rounded-2xl p-4 sm:inset-x-auto sm:right-4 sm:bottom-auto sm:top-28 sm:max-h-[calc(100%-8.5rem)] sm:w-80 ${glass}`}
+            class={`scroll-quiet absolute inset-x-3 bottom-3 max-h-[55%] overflow-y-auto rounded-2xl p-4 sm:inset-x-auto sm:right-4 sm:bottom-auto sm:top-16 sm:max-h-[calc(100%-5rem)] sm:w-80 ${glass}`}
             aria-label={c().name}
           >
             <div class="flex items-start gap-2">
@@ -444,6 +444,35 @@ export default function GraphPage() {
           </aside>
         )}
       </Show>
+    </div>
+  );
+}
+
+/** 3D or 2D: in the top bar, or over the scene (`dark`). */
+function ViewToggle(props: { dims: 2 | 3; onChange: (d: 2 | 3) => void; dark?: boolean; class?: string }) {
+  return (
+    <div
+      class={`flex shrink-0 rounded-full p-1 ${props.dark ? 'border border-white/10 bg-[#0b0f1a]/75 backdrop-blur-md' : 'bg-soft'} ${props.class ?? ''}`}
+      role="group"
+      aria-label="View"
+    >
+      <For each={[3, 2] as const}>
+        {(d) => (
+          <button
+            type="button"
+            aria-pressed={props.dims === d}
+            onClick={() => props.onChange(d)}
+            class={`flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[12px] font-medium transition-colors ${
+              props.dims === d
+                ? props.dark ? 'bg-white/15 text-white' : 'bg-surface text-fg shadow-card'
+                : props.dark ? 'text-white/55 hover:text-white' : 'text-muted hover:text-fg'
+            }`}
+          >
+            {d === 3 ? <Box size={14} stroke-width={1.8} /> : <Square size={13} stroke-width={1.8} />}
+            {d}D
+          </button>
+        )}
+      </For>
     </div>
   );
 }

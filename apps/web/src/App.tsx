@@ -1,11 +1,11 @@
 import { Route, Router, useLocation, useParams, type RouteSectionProps } from '@solidjs/router';
-import { type Component, createEffect, createSignal, lazy, on, Show } from 'solid-js';
+import { type Component, createEffect, createSignal, lazy, on, type ParentProps, Show } from 'solid-js';
 import { Sp00kyProvider } from '@spooky-sync/client-solid';
 import { dbConfig } from './db';
 import { AuthProvider, useAuth } from './lib/auth';
 import { AuthScreen } from './components/AuthScreen';
 import { ChatGPTGuideProvider } from './components/ChatGPTGuide';
-import { HeaderSlotProvider } from './components/HeaderSlot';
+import { HeaderSlotProvider, useFocused } from './components/HeaderSlot';
 import { RecentSessions, Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { Loader } from './components/ui';
@@ -23,7 +23,25 @@ const GraphPage = lazy(() => import('./routes/Graph'));
 /** The app window: top bar, sidebar, content, on the gray canvas. */
 function Layout(props: RouteSectionProps) {
   const auth = useAuth();
+  return (
+    <Show when={auth.userId()} fallback={<AuthScreen />}>
+      <div class="app-viewport h-dvh">
+        <div class="flex h-full flex-col overflow-hidden bg-surface md:rounded-[22px] md:border md:border-line md:shadow-frame">
+          <ChatGPTGuideProvider>
+            <HeaderSlotProvider>
+              <Frame>{props.children}</Frame>
+            </HeaderSlotProvider>
+          </ChatGPTGuideProvider>
+        </div>
+      </div>
+    </Show>
+  );
+}
+
+/** Top bar, sidebars and the page. A page in focus (the graph) hides the sidebars. */
+function Frame(props: ParentProps) {
   const location = useLocation();
+  const focused = useFocused();
   const [menuOpen, setMenuOpen] = createSignal(false);
   createEffect(on(() => location.pathname, () => setMenuOpen(false)));
 
@@ -42,22 +60,18 @@ function Layout(props: RouteSectionProps) {
   );
 
   return (
-    <Show when={auth.userId()} fallback={<AuthScreen />}>
-      <div class="app-viewport h-dvh">
-        <div class="flex h-full flex-col overflow-hidden bg-surface md:rounded-[22px] md:border md:border-line md:shadow-frame">
-          <ChatGPTGuideProvider>
-            <HeaderSlotProvider>
-              <TopBar menuOpen={menuOpen()} onMenu={() => setMenuOpen(!menuOpen())} />
-              <div class="relative flex min-h-0 flex-1">
-                <Sidebar open={menuOpen()} onClose={() => setMenuOpen(false)} />
-                <main ref={main} class="scroll-quiet min-w-0 flex-1 overflow-y-auto overscroll-contain">{props.children}</main>
-                <RecentSessions />
-              </div>
-            </HeaderSlotProvider>
-          </ChatGPTGuideProvider>
-        </div>
+    <>
+      <TopBar menuOpen={menuOpen()} onMenu={() => setMenuOpen(!menuOpen())} />
+      <div class="relative flex min-h-0 flex-1">
+        <Show when={!focused()}>
+          <Sidebar open={menuOpen()} onClose={() => setMenuOpen(false)} />
+        </Show>
+        <main ref={main} class="scroll-quiet min-w-0 flex-1 overflow-y-auto overscroll-contain">{props.children}</main>
+        <Show when={!focused()}>
+          <RecentSessions />
+        </Show>
       </div>
-    </Show>
+    </>
   );
 }
 

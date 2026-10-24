@@ -6,7 +6,7 @@ import { Portal } from 'solid-js/web';
  * over the page, or next to the account menu), and at the top of the recent
  * sessions column. The layout renders the slots; a page fills them with
  * <HeaderTitle>, <HeaderActions>, <HeaderEndActions> and <SideActions>, which
- * disappear with the page.
+ * disappear with the page. <Focus> hides the sidebars.
  */
 type Slot = {
   el: () => HTMLElement | undefined;
@@ -15,7 +15,7 @@ type Slot = {
   used: () => boolean;
   use: (delta: number) => void;
 };
-type Slots = { title: Slot; header: Slot; end: Slot; side: Slot };
+type Slots = { title: Slot; header: Slot; end: Slot; side: Slot; focus: Slot };
 const SlotContext = createContext<Slots>();
 
 function createSlot(): Slot {
@@ -26,7 +26,7 @@ function createSlot(): Slot {
 
 export function HeaderSlotProvider(props: ParentProps) {
   return (
-    <SlotContext.Provider value={{ title: createSlot(), header: createSlot(), end: createSlot(), side: createSlot() }}>
+    <SlotContext.Provider value={{ title: createSlot(), header: createSlot(), end: createSlot(), side: createSlot(), focus: createSlot() }}>
       {props.children}
     </SlotContext.Provider>
   );
@@ -36,6 +36,20 @@ export function HeaderSlotProvider(props: ParentProps) {
 export function useHeaderTitleUsed() {
   const slots = useContext(SlotContext);
   return () => slots?.title.used() ?? false;
+}
+
+/** Whether the current page takes the whole window, without the sidebars. */
+export function useFocused() {
+  const slots = useContext(SlotContext);
+  return () => slots?.focus.used() ?? false;
+}
+
+/** Hides both sidebars while the page shows: its own title and way back stand in the top bar. */
+export function Focus() {
+  const slot = useContext(SlotContext)?.focus;
+  slot?.use(1);
+  onCleanup(() => slot?.use(-1));
+  return null;
 }
 
 function Outlet(props: { slot?: Slot; class?: string }) {
