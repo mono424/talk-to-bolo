@@ -83,7 +83,10 @@ export class Surreal {
       throw new Error(`SurrealDB: ${msg}`);
     }
     const results = body.result ?? [];
-    const failed = results.find((r) => r.status !== 'OK');
+    // In a failed transaction every other statement reports that it was not
+    // executed; the cause is the one that says something else.
+    const errors = results.filter((r) => r.status !== 'OK');
+    const failed = errors.find((r) => !/not executed due to a failed transaction/i.test(String(r.result))) ?? errors[0];
     if (failed) throw new Error(`SurrealDB: ${String(failed.result)}`);
     return results.slice(bindingStatements).map((r) => r.result);
   }

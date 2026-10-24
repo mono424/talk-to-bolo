@@ -196,7 +196,7 @@ test('studying over MCP keeps lecture boundaries, writes progress forward and lo
         name: string; annotations: Record<string, boolean>; _meta: Record<string, unknown>; outputSchema?: unknown;
       }[];
       const byName = new Map(listed.map((tool) => [tool.name, tool]));
-      for (const name of ['search', 'fetch', 'get_study_overview', 'prepare_study_session', 'read_section', 'get_lecture_outline', 'get_profile']) {
+      for (const name of ['search', 'fetch', 'get_study_overview', 'prepare_study_session', 'read_section', 'get_lecture_outline', 'get_profile', 'get_understanding']) {
         assert.equal(byName.get(name)?.annotations.readOnlyHint, true, name);
       }
       for (const tool of listed) {

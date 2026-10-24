@@ -181,3 +181,113 @@ DEFINE ACCESS IF NOT EXISTS oauth_agent ON DATABASE TYPE RECORD
   )
   DURATION FOR TOKEN 1h, FOR SESSION 1h
 ;
+
+-- ##################################################################
+-- STUDENT UNDERSTANDING (understanding.ts)
+--
+-- The student's side of the course knowledge graph: one `concept` node per
+-- small idea of a course (a definition, a rule, a step, a relationship),
+-- `requires` edges between them, and the evidence of what the student showed
+-- about each one. ChatGPT maps the concepts while it tutors and records what
+-- the student says through the MCP server; the Worker turns that evidence
+-- into a level per concept. Courses belong to one student, so a concept and
+-- its level are that student's.
+-- ##################################################################
+
+DEFINE TABLE OVERWRITE concept SCHEMAFULL
+  COMMENT 'sp00ky:nosync'
+  PERMISSIONS
+    FOR select WHERE owner = $auth.id
+    FOR create, update, delete WHERE false;
+
+DEFINE FIELD OVERWRITE owner ON TABLE concept TYPE record<user>;
+DEFINE FIELD OVERWRITE course ON TABLE concept TYPE record<course>;
+-- The name folded for matching (lowercase, no accents or punctuation).
+DEFINE FIELD OVERWRITE key ON TABLE concept TYPE string;
+DEFINE FIELD OVERWRITE name ON TABLE concept TYPE string;
+DEFINE FIELD OVERWRITE summary ON TABLE concept TYPE option<string>;
+-- Background knowledge the lecture assumes but does not teach.
+DEFINE FIELD OVERWRITE prior ON TABLE concept TYPE bool DEFAULT false;
+-- The broader concept this one is a part of.
+DEFINE FIELD OVERWRITE parent ON TABLE concept TYPE option<record<concept>>;
+-- Where the lecture teaches it: search sections of one material revision.
+-- Positions of another revision than the material's current one are stale.
+DEFINE FIELD OVERWRITE material ON TABLE concept TYPE option<record<material>>;
+DEFINE FIELD OVERWRITE rev ON TABLE concept TYPE option<int>;
+DEFINE FIELD OVERWRITE positions ON TABLE concept TYPE array<int> DEFAULT [];
+-- Derived from the evidence (understanding.ts applyObservation).
+DEFINE FIELD OVERWRITE level ON TABLE concept TYPE string DEFAULT 'unseen'
+  ASSERT $value IN ['unseen', 'introduced', 'struggling', 'shaky', 'solid', 'mastered'];
+DEFINE FIELD OVERWRITE score ON TABLE concept TYPE option<float>;
+DEFINE FIELD OVERWRITE checks ON TABLE concept TYPE int DEFAULT 0;
+DEFINE FIELD OVERWRITE successes ON TABLE concept TYPE int DEFAULT 0;
+DEFINE FIELD OVERWRITE deep_successes ON TABLE concept TYPE int DEFAULT 0;
+DEFINE FIELD OVERWRITE last_outcome ON TABLE concept TYPE option<string>;
+DEFINE FIELD OVERWRITE explained_at ON TABLE concept TYPE option<datetime>;
+DEFINE FIELD OVERWRITE last_checked_at ON TABLE concept TYPE option<datetime>;
+DEFINE FIELD OVERWRITE first_success_at ON TABLE concept TYPE option<datetime>;
+DEFINE FIELD OVERWRITE last_success_at ON TABLE concept TYPE option<datetime>;
+-- Open wrong beliefs and missing pieces, until resolved.
+DEFINE FIELD OVERWRITE misconceptions ON TABLE concept TYPE array<string> DEFAULT [];
+DEFINE FIELD OVERWRITE gaps ON TABLE concept TYPE array<string> DEFAULT [];
+-- Compare-and-set counter for concurrent updates.
+DEFINE FIELD OVERWRITE version ON TABLE concept TYPE int DEFAULT 0;
+DEFINE FIELD OVERWRITE created_at ON TABLE concept TYPE datetime DEFAULT time::now();
+DEFINE FIELD OVERWRITE updated_at ON TABLE concept TYPE datetime VALUE time::now();
+
+DEFINE INDEX IF NOT EXISTS concept_course_key ON TABLE concept FIELDS course, key UNIQUE;
+
+-- `in` builds on `out`: explain `out` first.
+DEFINE TABLE OVERWRITE requires TYPE RELATION IN concept OUT concept SCHEMAFULL
+  COMMENT 'sp00ky:nosync'
+  PERMISSIONS
+    FOR select WHERE owner = $auth.id
+    FOR create, update, delete WHERE false;
+
+DEFINE FIELD OVERWRITE owner ON TABLE requires TYPE record<user>;
+DEFINE FIELD OVERWRITE course ON TABLE requires TYPE record<course>;
+DEFINE FIELD OVERWRITE created_at ON TABLE requires TYPE datetime DEFAULT time::now();
+
+DEFINE INDEX IF NOT EXISTS requires_pair ON TABLE requires FIELDS in, out UNIQUE;
+DEFINE INDEX IF NOT EXISTS requires_course ON TABLE requires FIELDS course;
+
+-- One observation of the student: what they said or did about a concept.
+DEFINE TABLE OVERWRITE concept_evidence SCHEMAFULL
+  COMMENT 'sp00ky:nosync'
+  PERMISSIONS
+    FOR select WHERE owner = $auth.id
+    FOR create, update, delete WHERE false;
+
+DEFINE FIELD OVERWRITE owner ON TABLE concept_evidence TYPE record<user>;
+DEFINE FIELD OVERWRITE course ON TABLE concept_evidence TYPE record<course>;
+DEFINE FIELD OVERWRITE concept ON TABLE concept_evidence TYPE record<concept>;
+-- The logged session, set when it is saved.
+DEFINE FIELD OVERWRITE call ON TABLE concept_evidence TYPE option<record<call>>;
+DEFINE FIELD OVERWRITE material ON TABLE concept_evidence TYPE option<record<material>>;
+DEFINE FIELD OVERWRITE position ON TABLE concept_evidence TYPE option<int>;
+DEFINE FIELD OVERWRITE outcome ON TABLE concept_evidence TYPE string
+  ASSERT $value IN ['explained', 'asked', 'unsure', 'wrong', 'partial', 'recalled', 'explained_back', 'applied'];
+DEFINE FIELD OVERWRITE note ON TABLE concept_evidence TYPE string;
+DEFINE FIELD OVERWRITE misconception ON TABLE concept_evidence TYPE option<string>;
+DEFINE FIELD OVERWRITE gap ON TABLE concept_evidence TYPE option<string>;
+DEFINE FIELD OVERWRITE resolved ON TABLE concept_evidence TYPE array<string> DEFAULT [];
+DEFINE FIELD OVERWRITE score_after ON TABLE concept_evidence TYPE option<float>;
+DEFINE FIELD OVERWRITE level_after ON TABLE concept_evidence TYPE string;
+DEFINE FIELD OVERWRITE at ON TABLE concept_evidence TYPE datetime DEFAULT time::now();
+
+DEFINE INDEX IF NOT EXISTS concept_evidence_concept ON TABLE concept_evidence FIELDS concept, at;
+DEFINE INDEX IF NOT EXISTS concept_evidence_course ON TABLE concept_evidence FIELDS course, at;
+
+-- The main schema's course and material events do not know these tables
+-- (sp00ky does not sync them), so they clean up here. Deleting a concept
+-- removes its `requires` edges with it.
+DEFINE EVENT OVERWRITE course_concepts_deleted ON TABLE course WHEN $event = 'DELETE' THEN {
+  DELETE concept WHERE course = $before.id;
+};
+DEFINE EVENT OVERWRITE concept_deleted ON TABLE concept WHEN $event = 'DELETE' THEN {
+  DELETE concept_evidence WHERE concept = $before.id;
+};
+-- What the student understood stays when a lecture goes; only where it is taught does.
+DEFINE EVENT OVERWRITE material_concepts_unanchored ON TABLE material WHEN $event = 'DELETE' THEN {
+  UPDATE concept SET material = NONE, rev = NONE, positions = [] WHERE material = $before.id;
+};

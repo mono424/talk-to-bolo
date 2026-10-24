@@ -4,6 +4,7 @@ import { memoryConfigured, queryCourseMemory, recallStudentMemory } from './memo
 import { setLectureProgress } from './progress';
 import { ensureServerSchema, getOwnedCourse, getOwnedMaterial, searchCourse, type CourseRow, type MaterialRow } from './service';
 import { BadRequest, NotFound, Surreal, recordId } from './surreal';
+import { conceptDetail, linkEvidenceToSession, sessionEvidence, studentModel } from './understanding';
 
 /**
  * Studying with ChatGPT over MCP (ChatGPT voice on the go): the student's
@@ -11,7 +12,8 @@ import { BadRequest, NotFound, Surreal, recordId } from './surreal';
  * shape a conversation needs, and the two things it writes back, lecture
  * progress and a logged session with its recap. Reaching a section is
  * exposure, not mastery, and the tutoring stays within reached material plus
- * the one next section.
+ * the one next section. What the student understood, concept by concept,
+ * lives in understanding.ts.
  *
  * Every query runs as the API's database user and filters by owner itself.
  */
@@ -210,9 +212,10 @@ async function coursesOverview(env: Env, ownerId: string, links: Links) {
 
 async function courseOverview(env: Env, ownerId: string, links: Links, courseId: string) {
   const course = await getOwnedCourse(env, ownerId, courseId);
-  const [rows, sessions] = await Promise.all([
+  const [rows, sessions, model] = await Promise.all([
     lectures(env, ownerId, course.id),
     recentSessions(env, ownerId, { courseId: course.id, limit: 5 }),
+    studentModel(env, ownerId, { courseId: course.id }),
   ]);
   const ready = rows.filter((m) => m.status === 'ready' && m.chunk_count > 0);
   const inProgress = ready.find((m) => (m.learned_through ?? -1) >= 0 && (m.learned_through ?? -1) + 1 < m.chunk_count);
@@ -224,6 +227,7 @@ async function courseOverview(env: Env, ownerId: string, links: Links, courseId:
     const next = continueWith.next;
     suggestions.push(`Explain: ${inProgress ? 'continue' : 'start'} "${continueWith.title}" at section ${(next?.position ?? 0) + 1} of ${continueWith.chunk_count}${next?.heading ? ` (${next.heading})` : ''}.`);
   }
+  if (model.focus.length) suggestions.push(`Focus: ${model.focus.slice(0, 3).map((f) => `${f.concept} (${f.why})`).join('; ')}.`);
   if (reached.length) suggestions.push(`Quiz: test the reached sections of ${reached.map((m) => `"${m.title}"`).slice(0, 3).join(', ')}.`);
   const review = reviewNext(sessions.find((s) => s.recap)?.recap);
   if (review) suggestions.push(`Review what the last session flagged: ${review.replace(/\s+/g, ' ').slice(0, 300)}`);
@@ -240,8 +244,9 @@ async function courseOverview(env: Env, ownerId: string, links: Links, courseId:
     },
     lectures: rows.map((m) => lectureSummary(links, m)),
     recent_sessions: sessions.map((s) => sessionSummary(links, s, true)),
+    understanding: model.summary,
     suggestions,
-    note: 'sections_reached counts sections the student has seen, not mastered. Use prepare_study_session to start.',
+    note: 'sections_reached counts sections the student has seen, not mastered; understanding counts concepts by what the student showed (get_understanding). Use prepare_study_session to start.',
   };
 }
 
@@ -261,13 +266,20 @@ const ACCURACY_RULES = `Never lie or guess:
 - If you are not sure, say so rather than guess. If the material looks wrong or contradicts itself, say what it says and name the doubt; do not quietly change it.
 - Correct the student when they are wrong, even when they sound sure. If you said something wrong, correct it right away.`;
 
+const UNDERSTANDING_RULES = `Track what the student understands, concept by concept (record_understanding). This builds their map in TalkToBolo, and the next session starts from it:
+- A concept is one small idea: a definition, a rule, a step, a relationship, a reason. Name it as the lecture does. Reuse the names in student_model exactly; a new name makes a new concept.
+- When you read a section whose ideas are not mapped yet, map them (concepts, with material_id and position) and what each builds on (requires), also background knowledge the lecture assumes but does not teach (prior: true).
+- Record an observation after each answer or remark that shows what the student understands: explained (you told them), asked, unsure, wrong, partial, recalled, explained_back (in their own words, or why), applied (used it on something new). The note says what the student actually said. Add a misconception (what they wrongly believe) or a gap (the piece they are missing) when you see one, and list resolved ones once they get it right. Batch a few at natural pauses, at the latest before save_study_session, and do it quietly: never read it out.
+- Only the student's own words count. "I get it" or a nod is not evidence: ask a short check question.
+- Use student_model: before new material, briefly explain the weak foundations in explain_first (background ones in general terms, marked as such). Spend practice on focus, misconceptions first. Close what missing lists: open gaps, ideas the student has seen but never been checked on. Call get_understanding again when the plan changes.`;
+
 const MODE_GUIDES: Record<StudyMode, string> = {
-  explain: `Walk the student through the lecture in order, one section at a time. Explain next_section simply in your own words with an example, then ask one short question to check understanding. If an answer shows a gap, explain it another way. When the student confirms they have it, call read_section with the following position (next_position) and continue. Do not skip ahead unless they ask.`,
-  quiz: `Quiz the student on the reached sections below. Ask one question at a time, easy first and then harder, mixing recall, "why" and application questions across topics. After each answer, say whether it was right and correct it briefly if not. Every five questions or so, say how they are doing and which topic to review. Use read_section for more reached sections when these run out.`,
+  explain: `Walk the student through the lecture in order, one section at a time. First cover anything in student_model.explain_first that next_section builds on. Explain next_section simply in your own words with an example, then ask one short question to check understanding. If an answer shows a gap, explain it another way. When the student confirms they have it, call read_section with the following position (next_position) and continue. Do not skip ahead unless they ask.`,
+  quiz: `Quiz the student on the reached sections below, starting with student_model.focus and the concepts in missing.never_checked. Ask one question at a time, easy first and then harder, mixing recall, "why" and application questions across topics. After each answer, say whether it was right and correct it briefly if not. Every five questions or so, say how they are doing and which topic to review. Use read_section for more reached sections when these run out.`,
   qa: `The student leads with their questions. Answer precisely and briefly from their material: find the passage with search_course (or search), cite the lecture and page, then check whether that helped or offer one related point. If they run out of questions, suggest an important reached topic they have not asked about.`,
 };
 
-const WRAP_UP = `When the student wants to stop or the conversation winds down: give a one-sentence recap of what to review, then save the session with save_study_session so it shows in their TalkToBolo history. Do it every session, also a short one. Call it once with a short, truthful recap of what actually happened (what was covered, how it went, what to review next) and, after an explanation, covered_through set to the last section the student confirmed. That keeps their progress and history in sync with the app.`;
+const WRAP_UP = `When the student wants to stop or the conversation winds down: record any observations not yet recorded, give a one-sentence recap of what to review, then save the session with save_study_session so it shows in their TalkToBolo history. Do it every session, also a short one. Call it once with a short, truthful recap of what actually happened (what was covered, how it went, what to review next) and, after an explanation, covered_through set to the last section the student confirmed. That keeps their progress and history in sync with the app.`;
 
 /** The guide, the material and what the student already showed, for one mode on a course or lecture. */
 export async function prepareStudySession(
@@ -359,6 +371,9 @@ export async function prepareStudySession(
     evidence = recalled.flatMap((r) => r.evidence).slice(0, 10);
   }
 
+  // What the student showed so far, concept by concept, for this lecture or the course.
+  const model = await studentModel(env, ownerId, { courseId: course.id, materialId: target?.id ?? null });
+
   return {
     course: {
       id: course.id,
@@ -368,10 +383,12 @@ export async function prepareStudySession(
       ...(course.tutor_notes ? { student_instructions: course.tutor_notes } : {}),
     },
     mode: input.mode,
-    guide: `You are tutoring the student as Bolo from TalkToBolo would. ${MODE_GUIDES[input.mode]}\n\n${ACCURACY_RULES}\n\n${VOICE_RULES}\n- Speak ${languageName(course.language)} unless the student switches language.\n\n${WRAP_UP}`,
+    guide: `You are tutoring the student as Bolo from TalkToBolo would. ${MODE_GUIDES[input.mode]}\n\n${ACCURACY_RULES}\n\n${UNDERSTANDING_RULES}\n\n${VOICE_RULES}\n- Speak ${languageName(course.language)} unless the student switches language.\n\n${WRAP_UP}`,
     ...material,
     ...(lastSession ? { last_session: sessionSummary(links, lastSession, false) } : {}),
     ...(concepts.length ? { course_concepts: concepts } : {}),
+    student_model: model,
+    // From in-app voice calls before studying moved to ChatGPT.
     ...(evidence.length ? { student_evidence: evidence } : {}),
   };
 }
@@ -546,6 +563,10 @@ export async function saveStudySession(env: Env, ownerId: string, links: Links, 
       hash: await sha256Hex(randomKey()),
     },
   );
+  // The observations recorded during the session belong to it. Without its
+  // length, take the unclaimed ones of the last hours.
+  const since = new Date(Date.parse(started) - (input.minutes != null ? 5 * 60_000 : MAX_MINUTES * 60_000)).toISOString();
+  await linkEvidenceToSession(env, ownerId, course.id, id, since);
   return {
     id,
     saved: true,
@@ -620,8 +641,12 @@ export async function fetchDocument(env: Env, ownerId: string, links: Links, raw
       { id: callId, owner: ownerId },
     );
     const transcript = turns.map((t) => `${t.role === 'tutor' ? 'Bolo' : 'Student'}: ${t.text}`).join('\n');
+    const observed = await sessionEvidence(env, ownerId, callId);
     const text = [
       call.recap ? `Recap:\n${absoluteLinks(links, call.recap)}` : 'No recap was written for this session.',
+      observed.length
+        ? `Understanding recorded:\n${observed.map((e) => `- ${e.concept}: ${e.outcome}. ${e.note}${e.misconception ? ` Misconception: ${e.misconception}` : ''}${e.gap ? ` Gap: ${e.gap}` : ''}`).join('\n')}`
+        : '',
       transcript ? `Transcript:\n${transcript}` : call.assistant ? `This session took place in ${call.assistant}; only its recap is kept.` : '',
     ].filter(Boolean).join('\n\n');
     return {
@@ -630,6 +655,16 @@ export async function fetchDocument(env: Env, ownerId: string, links: Links, raw
       text: text.length > MAX_FETCH ? `${text.slice(0, MAX_FETCH)}\n\n[Truncated.]` : text,
       url: sessionUrl(links, call.id),
       metadata: { course_id: call.course, mode: call.mode, date: call.started_at, ...(call.assistant ? { assistant: call.assistant } : {}) },
+    };
+  }
+  if (id.startsWith('concept:')) {
+    const concept = await conceptDetail(env, ownerId, id);
+    return {
+      id: concept.id,
+      title: `${concept.name} (${concept.level})`,
+      text: JSON.stringify(concept, null, 2),
+      url: courseUrl(links, concept.course_id),
+      metadata: { course_id: concept.course_id, level: concept.level, review_due: String(concept.review_due) },
     };
   }
   if (id.startsWith('course:')) {
@@ -642,5 +677,5 @@ export async function fetchDocument(env: Env, ownerId: string, links: Links, raw
       metadata: { language: overview.course.language },
     };
   }
-  throw new BadRequest('Unknown id. Pass an id from search, or a course:, material:, call: or section: id from the other tools.');
+  throw new BadRequest('Unknown id. Pass an id from search, or a course:, material:, call:, concept: or section: id from the other tools.');
 }

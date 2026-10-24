@@ -368,25 +368,58 @@ sections explained in order.
 2. `prepare_study_session`: a spoken tutoring guide for `explain`, `quiz` or
    `qa` in the course language, with the next section (explain) or a spread of
    reached sections (quiz, qa), and with Agent Memory the course graph's facts
-   up to the student's place.
+   up to the student's place. Its `student_model` comes from the concept map
+   below.
 3. `read_section` and `get_lecture_outline`: a lecture one section at a time,
    with headings, pages and links that open the PDF at the page.
-4. `save_study_session` (and `record_progress`): logs the session as a `call`
+4. `record_understanding` and `get_understanding`: the student's concept map
+   (see below).
+5. `save_study_session` (and `record_progress`): logs the session as a `call`
    with `assistant` set and a recap, shown under Sessions, and moves the lecture
-   place forward. Progress never moves back from here.
+   place forward. Progress never moves back from here. Observations recorded
+   during the session join it.
+
+#### What the student understood
+
+`apps/api/src/understanding.ts` keeps the student's side of the course
+knowledge graph in SurrealDB (`concept`, `requires` and `concept_evidence` in
+`server-schema.surql`, not synced to the browser). The API calls no model, so
+ChatGPT builds it while it tutors, through `record_understanding`:
+
+- `concepts`: the small ideas of each section it reads (a definition, a rule,
+  a step), where they are taught, what each `requires`, `part_of` a broader
+  idea, and `prior` background knowledge the lecture assumes.
+- `observations`: what the student showed about a concept after an answer:
+  `explained`, `asked`, `unsure`, `wrong`, `partial`, `recalled`,
+  `explained_back` or `applied`, with a note of what they said, and any
+  misconception or gap (or ones they resolved).
+
+ChatGPT never sets a level. The Worker derives it from the evidence
+(`applyObservation`): `unseen`, `introduced` (only told), `struggling`,
+`shaky`, `solid`, `mastered` (deep answers at least a day apart, no open
+misconception), and when each is due for review. Names match across case,
+accents and punctuation; a concept's id is derived from its course and name.
+
+`get_understanding` (and `student_model` in `prepare_study_session`) reads it
+back as three lists: `explain_first`, the weak foundations of the next
+sections or of given topics, deepest first; `focus`, misconceptions, weak and
+due concepts with why; `missing`, open gaps, concepts seen but never checked
+and reached sections with no concepts mapped. `fetch` opens a `concept:` id
+with its evidence. Deleting a lecture keeps its concepts and their evidence;
+deleting the course removes them.
 
 Read tools are annotated `readOnlyHint`, so with ChatGPT's plugin permission
 **Allow read actions** Voice reads without asking; writes are approved on
 screen. `search` and `fetch` follow ChatGPT's knowledge-source convention
 across all courses, returning section ids and citable links; `fetch` also
-opens `material:`, `course:` and `call:` ids.
+opens `material:`, `course:`, `call:` and `concept:` ids.
 
 Course tools: `list_courses`, `create_course`, `update_course`, `list_materials`,
 `get_material`, `add_material`, `update_material`, `edit_material`, `add_pdf`
 (https URL or base64), `delete_material`, `search_course`. Study tools:
 `get_profile`, `get_study_overview`, `prepare_study_session`, `read_section`,
-`get_lecture_outline`, `record_progress`, `save_study_session`, `search`,
-`fetch`. Search hits and PDF materials carry page numbers and links into the
+`get_lecture_outline`, `get_understanding`, `record_understanding`,
+`record_progress`, `save_study_session`, `search`, `fetch`. Search hits and PDF materials carry page numbers and links into the
 app's viewer, so assistants can cite pages; the text of a PDF is derived from
 it and cannot be edited, only its title.
 
