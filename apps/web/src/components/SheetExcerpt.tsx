@@ -4,11 +4,11 @@ import { renderMarkdown } from '../lib/markdown';
 import type { Segment } from '../lib/sheet-regions';
 
 /**
- * The exercise a homework answer is for: its region of the PDF sheet, cut
- * out of the rendered page, or, `expanded`, the whole page(s) with the part
- * lit and the rest dimmed, for its context. Without a region (a LaTeX sheet,
- * a part whose label was not found) its text. Pages are rendered once per
- * width and shared by every excerpt from them.
+ * The exercise a homework answer is for: the page(s) of the PDF sheet it is
+ * on, the part lit and marked at its edge, the rest dimmed, scrolled so the
+ * part sits near the top. Without a region (a LaTeX sheet, a part whose
+ * label was not found) its text. Pages are rendered once per width and
+ * shared by every excerpt from them.
  */
 
 const pages = new Map<string, Promise<HTMLCanvasElement>>();
@@ -44,35 +44,10 @@ function reveal(el: HTMLElement) {
   box.scrollTo({ top: box.scrollTop + offset - 24, behavior: 'smooth' });
 }
 
-/** The canvas without the blank rows at its foot (a part that runs to the page's end), keeping `pad`. */
-function trimBottom(canvas: HTMLCanvasElement, pad: number): HTMLCanvasElement {
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx || canvas.height < 2) return canvas;
-  const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  let last = -1;
-  for (let y = height - 1; y >= 0 && last < 0; y--) {
-    for (let x = 0; x < width; x += 2) {
-      const i = (y * width + x) * 4;
-      if (data[i + 3] > 0 && (data[i] < 235 || data[i + 1] < 235 || data[i + 2] < 235)) {
-        last = y;
-        break;
-      }
-    }
-  }
-  const keep = Math.min(height, last < 0 ? height : last + 1 + pad);
-  if (keep >= height - pad) return canvas;
-  const out = document.createElement('canvas');
-  out.width = width;
-  out.height = keep;
-  out.getContext('2d')!.drawImage(canvas, 0, 0, width, keep, 0, 0, width, keep);
-  return out;
-}
-
-export function SheetExcerpt(props: { pdf: PDFDocumentProxy | null; segments: Segment[]; prompt: string; context?: string | null; expanded?: boolean }) {
+export function SheetExcerpt(props: { pdf: PDFDocumentProxy | null; segments: Segment[]; prompt: string; context?: string | null }) {
   let host!: HTMLDivElement;
   const [width, setWidth] = createSignal(0);
-  const [crops, setCrops] = createSignal<HTMLCanvasElement[]>([]);
-  // Expanded: whole pages, each with the bands of the part on it.
+  // Whole pages, each with the bands of the part on it.
   const [pages, setPages] = createSignal<{ canvas: HTMLCanvasElement; bands: { top: number; bottom: number }[] }[]>([]);
   const [failed, setFailed] = createSignal(false);
 
@@ -83,8 +58,7 @@ export function SheetExcerpt(props: { pdf: PDFDocumentProxy | null; segments: Se
   });
 
   createEffect(
-    on([() => props.pdf, () => JSON.stringify(props.segments), width, () => !!props.expanded], ([pdf, , w, expanded]) => {
-      setCrops([]);
+    on([() => props.pdf, () => JSON.stringify(props.segments), width], ([pdf, , w]) => {
       setPages([]);
       setFailed(false);
       if (!pdf || !props.segments.length || w < 40) return;
@@ -92,40 +66,22 @@ export function SheetExcerpt(props: { pdf: PDFDocumentProxy | null; segments: Se
       onCleanup(() => {
         cancelled = true;
       });
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const px = Math.round(w * dpr);
+      const px = Math.round(w * Math.min(window.devicePixelRatio || 1, 2));
       void (async () => {
         try {
-          if (expanded) {
-            const numbers = [...new Set(props.segments.map((seg) => seg.page))];
-            const out = [];
-            for (const n of numbers) {
-              const page = await renderPage(pdf, n, px);
-              // The cached canvas is shared: show a copy.
-              const copy = document.createElement('canvas');
-              copy.width = page.width;
-              copy.height = page.height;
-              copy.getContext('2d')!.drawImage(page, 0, 0);
-              copy.className = 'block h-auto w-full';
-              out.push({ canvas: copy, bands: props.segments.filter((seg) => seg.page === n).map((seg) => ({ top: seg.top, bottom: seg.bottom })) });
-            }
-            if (!cancelled) setPages(out);
-            return;
+          const numbers = [...new Set(props.segments.map((seg) => seg.page))];
+          const out = [];
+          for (const n of numbers) {
+            const page = await renderPage(pdf, n, px);
+            // The cached canvas is shared: show a copy.
+            const copy = document.createElement('canvas');
+            copy.width = page.width;
+            copy.height = page.height;
+            copy.getContext('2d')!.drawImage(page, 0, 0);
+            copy.className = 'block h-auto w-full';
+            out.push({ canvas: copy, bands: props.segments.filter((seg) => seg.page === n).map((seg) => ({ top: seg.top, bottom: seg.bottom })) });
           }
-          const out: HTMLCanvasElement[] = [];
-          for (const s of props.segments) {
-            const page = await renderPage(pdf, s.page, px);
-            const top = Math.floor(s.top * page.height);
-            const height = Math.max(1, Math.ceil((s.bottom - s.top) * page.height));
-            const crop = document.createElement('canvas');
-            crop.width = page.width;
-            crop.height = height;
-            crop.getContext('2d')!.drawImage(page, 0, top, page.width, height, 0, 0, page.width, height);
-            const trimmed = trimBottom(crop, Math.round(10 * dpr));
-            trimmed.className = 'block h-auto w-full';
-            out.push(trimmed);
-          }
-          if (!cancelled) setCrops(out);
+          if (!cancelled) setPages(out);
         } catch {
           if (!cancelled) setFailed(true);
         }
@@ -148,41 +104,30 @@ export function SheetExcerpt(props: { pdf: PDFDocumentProxy | null; segments: Se
           </div>
         }
       >
-        <Show
-          when={props.expanded}
-          fallback={
-            <Show when={crops().length} fallback={<div class="h-28 animate-pulse rounded-lg bg-soft" />}>
-              <div class="sheet-excerpt space-y-1 bg-white">
-                <For each={crops()}>{(c) => c}</For>
-              </div>
-            </Show>
-          }
-        >
-          <Show when={pages().length} fallback={<div class="h-96 animate-pulse rounded-lg bg-soft" />}>
-            <div class="space-y-3">
-              <For each={pages()}>
-                {(p, i) => (
-                  <div class="sheet-excerpt relative overflow-hidden rounded-md border border-line bg-white">
-                    {p.canvas}
-                    <For each={p.bands}>
-                      {(b, j) => (
-                        <>
-                          {/* Everything but the part, dimmed; the part itself marked at its edge. */}
-                          <div class="pointer-events-none absolute inset-x-0 top-0 bg-white/60" style={{ height: `${b.top * 100}%` }} />
-                          <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-white/60" style={{ height: `${(1 - b.bottom) * 100}%` }} />
-                          <div
-                            ref={(el) => i() === 0 && j() === 0 && queueMicrotask(() => reveal(el))}
-                            class="pointer-events-none absolute left-0 w-[3px] rounded-full bg-blue/70"
-                            style={{ top: `${b.top * 100}%`, height: `${(b.bottom - b.top) * 100}%` }}
-                          />
-                        </>
-                      )}
-                    </For>
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
+        <Show when={pages().length} fallback={<div class="h-96 animate-pulse rounded-lg bg-soft" />}>
+          <div class="space-y-3">
+            <For each={pages()}>
+              {(p, i) => (
+                <div class="sheet-excerpt relative overflow-hidden rounded-md border border-line bg-white">
+                  {p.canvas}
+                  <For each={p.bands}>
+                    {(b, j) => (
+                      <>
+                        {/* Everything but the part, dimmed; the part itself marked at its edge. */}
+                        <div class="pointer-events-none absolute inset-x-0 top-0 bg-white/60" style={{ height: `${b.top * 100}%` }} />
+                        <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-white/60" style={{ height: `${(1 - b.bottom) * 100}%` }} />
+                        <div
+                          ref={(el) => i() === 0 && j() === 0 && queueMicrotask(() => reveal(el))}
+                          class="pointer-events-none absolute left-0 w-[3px] rounded-full bg-blue/70"
+                          style={{ top: `${b.top * 100}%`, height: `${(b.bottom - b.top) * 100}%` }}
+                        />
+                      </>
+                    )}
+                  </For>
+                </div>
+              )}
+            </For>
+          </div>
         </Show>
       </Show>
     </div>

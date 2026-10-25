@@ -80,6 +80,20 @@ function renderMath(f: Formula, macros: Record<string, string>): string {
   }
 }
 
+/** One formula as HTML (the homework editor's live preview). */
+export function renderTex(tex: string, display: boolean): string {
+  return renderMath({ tex: tex.trim(), display }, {});
+}
+
+/** Where an image of the markdown loads from (`asset:` and `answer-image:` refs resolved). */
+export function imageSrc(src: string): string {
+  const asset = ASSET_REF.exec(src);
+  if (asset) return assetUrl(asset[1]);
+  const answer = ANSWER_IMAGE_REF.exec(src);
+  if (answer) return answerImageUrl(answer[1]);
+  return /^https?:/i.test(src) ? src : '';
+}
+
 /** Lecture markdown (with its math) to sanitized HTML. */
 export function renderMarkdown(md: string): string {
   const { text, math } = extractMath(md ?? '');

@@ -1,8 +1,8 @@
 import { A, useParams } from '@solidjs/router';
-import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, lazy, on, onCleanup, onMount, Show, Suspense, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { ExternalLink, FileDown, Maximize2, Minimize2, X } from 'lucide-solid';
+import { ExternalLink, FileDown, X } from 'lucide-solid';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { schema } from '../schema.gen';
 import { fetchPdf, materialPath, uploadAnswerImage } from '../lib/api';
@@ -15,15 +15,19 @@ import { Button, PageLoader, Segmented } from '../components/ui';
 import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
 import { PdfViewer } from '../components/PdfViewer';
 import { SheetExcerpt } from '../components/SheetExcerpt';
+import type { AnswerPart } from '../components/AnswerEditor';
+
+const AnswerEditor = lazy(() => import('../components/AnswerEditor'));
 
 /**
  * Doing homework: every answer of an exercise sheet in one document, part by
- * part in sheet order, with the whole window (no sidebars). A quiet label in
- * the margin says which part an answer is for. Beside the answers, in a panel
- * as wide as you drag it, the exercise of the part being written: cut from
- * the sheet, or the whole page around it, or the entire sheet. On a phone it
- * is pinned above the keyboard. Answers are free text, Markdown with $math$
- * and pasted images, saved as you type, and print as a PDF.
+ * part in sheet order, with the whole window (no sidebars). It is one editor
+ * (components/AnswerEditor.tsx), a quiet label in the margin saying which
+ * part each answer is for. Beside the answers, in a panel as wide as you drag
+ * it, the exercise of the part being written: its page with the part marked
+ * and the rest dimmed, or the entire sheet. On a phone it is pinned above the
+ * keyboard. Answers are Markdown with $math$ and pasted images, rendered as
+ * you write, saved as you type, and print as a PDF.
  */
 
 type AnswerRow = TableModel<GetTable<typeof schema, 'answer'>>;
@@ -142,8 +146,6 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
   const [pending, setPending] = createSignal(0);
   const [notice, setNotice] = createSignal<string | null>(null);
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
-  const editors = new Map<string, HTMLTextAreaElement>();
-  const blocks = new Map<string, HTMLElement>();
 
   onMount(() => {
     setPending(db.pendingMutationCount);
@@ -151,24 +153,47 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
   });
 
   const text = (a: AnswerRow) => drafts()[idString(a.id)] ?? a.content ?? '';
+  const textOf = (id: string) => {
+    const a = props.answers.find((row) => idString(row.id) === id);
+    return a ? text(a) : '';
+  };
+
+  // A saved draft stays until its row has caught up: the editor follows the
+  // row, and must not be handed the text from before the save.
+  const settling = new Map<string, { value: string; stale: string }>();
+  const settle = (id: string, value: string) =>
+    setDrafts((d) => {
+      if (d[id] !== value) return d;
+      const { [id]: _saved, ...rest } = d;
+      return rest;
+    });
+  createEffect(() => {
+    for (const a of props.answers) {
+      const id = idString(a.id);
+      const wait = settling.get(id);
+      // The row now holds the save, or something newer from another device.
+      if (wait && (a.content === wait.value || a.content !== wait.stale)) {
+        settling.delete(id);
+        settle(id, wait.value);
+      }
+    }
+  });
 
   const save = (id: string) => {
     clearTimeout(timers.get(id));
     timers.delete(id);
     const value = drafts()[id];
     if (value === undefined) return;
-    void db.update('answer', id, { content: value }).then(() =>
-      // Once saved, the row is the truth again (and takes edits from another device).
-      setDrafts((d) => {
-        if (d[id] !== value) return d;
-        const { [id]: _saved, ...rest } = d;
-        return rest;
-      }),
-    );
+    void db.update('answer', id, { content: value }).then(() => {
+      const row = props.answers.find((a) => idString(a.id) === id);
+      if (!row || row.content === value) settle(id, value);
+      else settling.set(id, { value, stale: row.content ?? '' });
+    });
   };
-  onCleanup(() => {
+  const saveAll = () => {
     for (const id of [...timers.keys()]) save(id);
-  });
+  };
+  onCleanup(saveAll);
 
   const edit = (id: string, value: string) => {
     setDrafts((d) => ({ ...d, [id]: value }));
@@ -176,55 +201,36 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
     timers.set(id, setTimeout(() => save(id), SAVE_DELAY_MS));
   };
 
-  const ids = () => props.answers.map((a) => idString(a.id));
-  const focus = (id: string, at: 'start' | 'end' | null = null) => {
-    setActive(id);
-    queueMicrotask(() => {
-      const el = editors.get(id);
-      if (!el) return;
-      el.focus({ preventScroll: false });
-      if (at === 'start') el.setSelectionRange(0, 0);
-      if (at === 'end') el.setSelectionRange(el.value.length, el.value.length);
-    });
-  };
-  const move = (id: string, by: 1 | -1) => {
-    const list = ids();
-    const next = list[list.indexOf(id) + by];
-    if (next) focus(next, by === 1 ? 'start' : 'end');
-  };
-
-  const insert = (id: string, before: string, after = '') => {
-    const el = editors.get(id);
-    if (!el) return;
-    const { selectionStart: s, selectionEnd: e, value } = el;
-    const next = value.slice(0, s) + before + value.slice(s, e) + after + value.slice(e);
-    el.value = next;
-    edit(id, next);
-    el.focus();
-    const caret = s + before.length + (e - s);
-    el.setSelectionRange(caret, caret);
-    autosize(el);
-  };
-
-  const addImages = async (id: string, files: File[]) => {
-    for (const file of files.filter((f) => f.type.startsWith('image/'))) {
-      setNotice('Adding the image…');
-      try {
-        const { id: image } = await uploadAnswerImage(db, id, file);
-        insert(id, `\n![](answer-image:${idKey(image)})\n`);
-        setNotice(null);
-      } catch (err) {
-        setNotice(err instanceof Error ? err.message : 'The image could not be added.');
-      }
+  const uploadImage = async (id: string, file: File) => {
+    setNotice('Adding the image…');
+    try {
+      const { id: image } = await uploadAnswerImage(db, id, file);
+      setNotice(null);
+      return `![](answer-image:${idKey(image)})`;
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'The image could not be added.');
+      return null;
     }
   };
+
+  // The editor is built once per set of parts; their texts flow in through `textOf`.
+  const parts = createMemo<AnswerPart[]>(
+    () =>
+      props.answers.map((a) => ({
+        id: idString(a.id),
+        question: a.question,
+        questionTitle: a.question_title ?? '',
+        label: a.label,
+      })),
+    [],
+    { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) },
+  );
 
   // ── The exercise beside (or above) the active answer ───────────────────
 
   const [showExercise, setShowExercise] = createSignal(true);
-  // exercise: the part, cut from the sheet (`expanded`: its whole page). sheet: the entire sheet.
+  // exercise: the part's page, the part marked. sheet: the entire sheet.
   const [mode, setMode] = createSignal<'exercise' | 'sheet'>('exercise');
-  const [expanded, setExpanded] = createSignal(false);
   const current = createMemo(() => props.answers.find((a) => idString(a.id) === active()) ?? props.answers[0] ?? null);
   const hasPdf = () => props.sheet?.kind === 'pdf' && !!props.sheet.source_size;
 
@@ -273,17 +279,6 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
         {a.points ? ` · ${a.points} ${a.points === 1 ? 'point' : 'points'}` : ''}
         {hasPdf() ? ` · page ${pageOf(a)}` : ''}
       </span>
-      <Show when={hasPdf() && (compact || mode() === 'exercise')}>
-        <button
-          type="button"
-          class="inline-flex h-7 items-center gap-1 rounded-full px-2 hover:bg-soft hover:text-fg"
-          title={expanded() ? 'Only this part' : 'The whole page around it'}
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {expanded() ? <Minimize2 size={13} stroke-width={1.9} /> : <Maximize2 size={13} stroke-width={1.9} />}
-          <span class="hidden sm:inline">{expanded() ? 'Less' : 'Page'}</span>
-        </button>
-      </Show>
       <Show when={compact && props.sheet}>
         {(sheet) => (
           <A href={materialPath(idString(sheet().course), idString(sheet().id), pageOf(a))} class="inline-flex h-7 items-center gap-1 rounded-full px-2 hover:bg-soft hover:text-fg" title="Open the sheet">
@@ -298,7 +293,7 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
   );
 
   const excerpt = (a: AnswerRow) => (
-    <SheetExcerpt pdf={pdf()} segments={parseRegion(a.region)} prompt={a.prompt} context={a.context} expanded={expanded()} />
+    <SheetExcerpt pdf={pdf()} segments={parseRegion(a.region)} prompt={a.prompt} context={a.context} />
   );
 
   return (
@@ -377,100 +372,23 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
       <div class="relative mt-4 flex items-start gap-0">
         <div class="relative min-w-0 flex-1">
           <div class="mx-auto max-w-3xl">
-          {/* By position, not by row: a saved answer syncing back must not rebuild its editor. */}
-          <Index each={props.answers} fallback={<p class="py-10 text-center text-muted">This sheet has no parts to answer.</p>}>
-            {(row, i) => {
-              const a = () => row();
-              const id = idString(row().id);
-              const isActive = () => active() === id;
-              const newQuestion = () => i === 0 || props.answers[i - 1]?.question !== a().question;
-              return (
-                <>
-                  <Show when={newQuestion()}>
-                    <div class={`grid grid-cols-[3rem_minmax(0,1fr)] sm:grid-cols-[4.25rem_minmax(0,1fr)] ${i ? 'mt-5' : ''} mb-2`}>
-                      <div class="pr-3 pt-[3px] text-right text-[11px] tabular-nums text-faint">{a().question}</div>
-                      <h2 class="text-[14px] font-semibold">{a().question_title || `Question ${a().question}`}</h2>
-                    </div>
-                  </Show>
-                  <div ref={(el) => blocks.set(id, el)} class="grid grid-cols-[3rem_minmax(0,1fr)] sm:grid-cols-[4.25rem_minmax(0,1fr)]">
-                    <button
-                      type="button"
-                      class={`pr-3 pt-[5px] text-right text-[11px] leading-tight transition-colors ${isActive() ? 'text-muted' : 'text-faint hover:text-muted'}`}
-                      onClick={() => focus(id, 'end')}
-                      title={a().points ? `${a().points} points` : undefined}
-                    >
-                      {a().label}
-                    </button>
-                    <div class="relative min-w-0 pb-4">
-                      <Show when={isActive()}>
-                        <span aria-hidden="true" class="absolute -left-2.5 bottom-5 top-1.5 w-px bg-blue opacity-55" />
-                      </Show>
-                      <Show
-                        when={isActive()}
-                        fallback={
-                          <div class="min-h-7 cursor-text" onClick={() => focus(id, 'end')}>
-                            <Show when={text(a()).trim()} fallback={<p class="text-[15px] text-faint">Answer…</p>}>
-                              <div class="lecture answer text-[15px]" innerHTML={renderMarkdown(text(a()))} />
-                            </Show>
-                          </div>
-                        }
-                      >
-                        <textarea
-                          ref={(el) => {
-                            editors.set(id, el);
-                            queueMicrotask(() => autosize(el));
-                          }}
-                          class="block w-full resize-none overflow-hidden bg-transparent text-[16px] leading-relaxed outline-none placeholder:text-faint sm:text-[15px]"
-                          rows={1}
-                          value={text(a())}
-                          placeholder="Write your answer. $…$ for math; paste or drop images."
-                          aria-label={`Answer to ${[a().question, a().label].filter(Boolean).join(' ')}`}
-                          onInput={(e) => {
-                            edit(id, e.currentTarget.value);
-                            autosize(e.currentTarget);
-                          }}
-                          onBlur={() => save(id)}
-                          onDrop={(e) => {
-                            const files = [...(e.dataTransfer?.files ?? [])];
-                            if (files.some((f) => f.type.startsWith('image/'))) {
-                              e.preventDefault();
-                              void addImages(id, files);
-                            }
-                          }}
-                          onPaste={(e) => {
-                            const files = [...(e.clipboardData?.files ?? [])];
-                            if (files.some((f) => f.type.startsWith('image/'))) {
-                              e.preventDefault();
-                              void addImages(id, files);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            const el = e.currentTarget;
-                            if (e.key === 'Escape') {
-                              save(id);
-                              setActive(null);
-                            } else if (e.key === 'Tab') {
-                              e.preventDefault();
-                              move(id, e.shiftKey ? -1 : 1);
-                            } else if (e.key === 'ArrowUp' && el.selectionStart === 0 && el.selectionEnd === 0) {
-                              e.preventDefault();
-                              move(id, -1);
-                            } else if (e.key === 'ArrowDown' && el.selectionStart === el.value.length) {
-                              e.preventDefault();
-                              move(id, 1);
-                            }
-                          }}
-                        />
-                        <Show when={/[$\\*_#![`|]/.test(text(a()))}>
-                          <div class="lecture answer mt-2 border-t border-dashed border-line pt-2 text-[15px]" innerHTML={renderMarkdown(text(a()))} />
-                        </Show>
-                      </Show>
-                    </div>
-                  </div>
-                </>
-              );
-            }}
-          </Index>
+            <Show when={props.answers.length} fallback={<p class="py-10 text-center text-muted">This sheet has no parts to answer.</p>}>
+              <Suspense fallback={<div class="mx-12 h-40 animate-pulse rounded-xl bg-soft sm:mx-16" />}>
+                <Show when={parts()} keyed>
+                  {(list) => (
+                    <AnswerEditor
+                      parts={list}
+                      content={textOf}
+                      onInput={edit}
+                      onActive={setActive}
+                      onBlur={saveAll}
+                      uploadImage={uploadImage}
+                      topInset={() => (!wide() && showExercise() && active() ? (folded() ? 40 : pinnedHeight() + 56) + 12 : 0)}
+                    />
+                  )}
+                </Show>
+              </Suspense>
+            </Show>
           </div>
         </div>
 
@@ -515,11 +433,6 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
       </Portal>
     </div>
   );
-}
-
-function autosize(el: HTMLTextAreaElement) {
-  el.style.height = 'auto';
-  el.style.height = `${el.scrollHeight}px`;
 }
 
 /** What Export PDF prints: the answers in sheet order, under their part labels. */
