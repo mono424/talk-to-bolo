@@ -115,8 +115,8 @@ export async function readHomework(
       ...(p.points != null ? { points: p.points } : {}),
       ...(p.page != null ? { page: p.page } : {}),
       ...(sheet && p.page != null && hw.sheet_kind === 'pdf' ? { page_url: links.material(hw.course, sheet, p.page) } : {}),
-      prompt: p.prompt,
-      ...(context && !sameContext ? { context } : {}),
+      prompt: text.external(p.prompt),
+      ...(context && !sameContext ? { context: text.external(context) } : {}),
     };
   });
   return {

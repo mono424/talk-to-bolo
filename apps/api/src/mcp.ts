@@ -472,9 +472,10 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
 
   // ── Homework: the student's own answers to an exercise sheet ───────────
 
-  // Answer images are `answer-image:<id>` inside the app, absolute URLs outside.
+  // Answer images are `answer-image:<id>` inside the app, absolute URLs outside;
+  // the sheet's own figures in a part's text are lecture images (`asset:`).
   const answerText: AnswerText = {
-    external: (md) => md.replace(/\(answer-image:([A-Za-z0-9_-]+)\)/g, `(${origin}/answer-images/$1)`),
+    external: (md) => toExternal(md).replace(/\(answer-image:([A-Za-z0-9_-]+)\)/g, `(${origin}/answer-images/$1)`),
     internal: (md) => md.replaceAll(`(${origin}/answer-images/`, '(answer-image:'),
   };
   const homeworkLinks: HomeworkLinks = { material: materialUrl };
