@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseSheet } from '../../../shared/homework.ts';
 import { lectureMarkdown } from '../../../shared/lecture.ts';
+import { appendText, applyEdits } from '../src/homework.ts';
 
 const brief = (parts: ReturnType<typeof parseSheet>) => parts.map((p) => `${p.key} ${p.label}|${p.points ?? '-'}|p${p.page ?? '-'}|${p.anchor}`);
 
@@ -79,4 +80,17 @@ test('a sheet without structure is one answer, and repeated labels stay unique',
   // "(i)" right after "(h)" is the letter i.
   const letters = parseSheet('Question 1. A\n(g) g\n(h) h\n(i) i\n(j) j');
   assert.deepEqual(letters.map((p) => p.key), ['1.g', '1.h', '1.i', '1.j']);
+});
+
+test('AI edits to an answer apply in order and must each match exactly once', () => {
+  const answer = 'Let $x = 2$. Then $x^2 = 4$, so $y = 4$.';
+  assert.equal(applyEdits(answer, [{ old_text: '$x = 2$', new_text: '$x = 3$' }, { old_text: '$x^2 = 4$, so $y = 4$', new_text: '$x^2 = 9$, so $y = 9$' }]),
+    'Let $x = 3$. Then $x^2 = 9$, so $y = 9$.');
+  assert.throws(() => applyEdits(answer, [{ old_text: 'z', new_text: '' }]), /not found/);
+  assert.throws(() => applyEdits(answer, [{ old_text: '$y', new_text: '' }, { old_text: '= 4', new_text: '' }]), /Edit 2: old_text occurs more than once/);
+});
+
+test('appended text becomes its own paragraph', () => {
+  assert.equal(appendText('', 'First.'), 'First.');
+  assert.equal(appendText('First.\n\n', '\nSecond.'), 'First.\n\nSecond.');
 });
