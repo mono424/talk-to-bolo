@@ -73,19 +73,6 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
 
       <div ref={account} class="relative ml-auto flex shrink-0 items-center gap-2">
         <HeaderEndSlot class="flex items-center gap-1 empty:hidden" />
-        {/* Until ChatGPT is connected, the way to its guide; after, a mark on the account. */}
-        <Show when={!guide.connected()}>
-          <button
-            type="button"
-            onClick={guide.open}
-            class="inline-flex h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full px-3 text-[14px] font-medium text-fg transition-colors hover:bg-soft max-sm:w-11 max-sm:px-0 md:h-10"
-            aria-label="Connect ChatGPT"
-            title="Connect ChatGPT"
-          >
-            <ChatGPTMark size={16} />
-            <span class="hidden sm:inline">Connect ChatGPT</span>
-          </button>
-        </Show>
         <button
           type="button"
           onClick={() => setMenu(!menu())}
@@ -108,19 +95,18 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
           <div class="fixed inset-0 z-40" onClick={() => setMenu(false)} />
           <div role="menu" class="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-line bg-surface p-1.5 shadow-card">
             <div class="px-3 py-2 text-[13px] text-muted truncate">{auth.user()?.email}</div>
-            <Show when={guide.connected()}>
-              <button
-                type="button"
-                role="menuitem"
-                class="flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10"
-                onClick={() => {
-                  setMenu(false);
-                  guide.open();
-                }}
-              >
-                <ChatGPTMark size={16} class="text-muted" /> How to study in ChatGPT
-              </button>
-            </Show>
+            {/* The ChatGPT guide: to connect, or once connected, how to study there. */}
+            <button
+              type="button"
+              role="menuitem"
+              class="flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10"
+              onClick={() => {
+                setMenu(false);
+                guide.open();
+              }}
+            >
+              <ChatGPTMark size={16} class="text-muted" /> {guide.connected() ? 'How to study in ChatGPT' : 'Connect ChatGPT'}
+            </button>
             <A
               href="/settings"
               role="menuitem"
