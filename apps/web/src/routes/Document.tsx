@@ -3,7 +3,7 @@ import { createEffect, createMemo, createSignal, For, lazy, onCleanup, onMount, 
 import { Portal } from 'solid-js/web';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
 import type { EditorView } from '@codemirror/view';
-import { FileCode2, FileDown, Library, PanelRight, Plus, Trash2, X } from 'lucide-solid';
+import { Download, FileCode2, FileDown, FileText, Library, PanelRight, Plus, Trash2, X } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { uploadDocumentImage } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -290,6 +290,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     const refs = printed.cited.map((p, i) => `${style() === 'numeric' ? `[${i + 1}] ` : ''}${referenceMarkdown(p, style())}`);
     return renderMarkdown(`${printed.markdown}${refs.length ? `\n\n## References\n\n${refs.join('\n\n')}` : ''}`);
   });
+  const downloadMd = () => download(`${fileName(props.doc.title)}.md`, text(props.doc), 'text/markdown');
   const downloadTex = () => download(`${fileName(props.doc.title)}.tex`, text(props.doc), 'text/x-tex');
   // As \bibliography{references} reads it.
   const downloadBib = () => download('references.bib', `${papers().map(bibtexEntry).join('\n\n')}\n`, 'text/x-bibtex');
@@ -446,17 +447,17 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
             <FileCode2 size={16} stroke-width={1.75} /> <span class="hidden sm:inline">Switch to LaTeX</span>
           </Button>
         </Show>
-        <Show when={isTex()}>
-          <Button variant="ghost" size="sm" onClick={downloadTex} title="Download the LaTeX source">
-            <FileCode2 size={16} stroke-width={1.75} /> <span class="hidden sm:inline">.tex</span>
-          </Button>
-          <Button variant="ghost" size="sm" onClick={downloadBib} title="Download the papers as references.bib, for \bibliography{references}">
-            <Library size={16} stroke-width={1.75} /> <span class="hidden sm:inline">.bib</span>
-          </Button>
-        </Show>
-        <Button variant="ghost" size="sm" onClick={() => void exportPdf(props.doc.title)} title="Print or save as PDF">
-          <FileDown size={16} stroke-width={1.75} /> <span class="hidden sm:inline">Export PDF</span>
-        </Button>
+        <DownloadMenu
+          items={[
+            { label: 'PDF', detail: 'Print or save, citations formatted', icon: FileDown, run: () => void exportPdf(props.doc.title) },
+            ...(isTex()
+              ? [
+                  { label: 'LaTeX source', detail: `${fileName(props.doc.title)}.tex`, icon: FileCode2, run: downloadTex },
+                  { label: 'Bibliography', detail: 'references.bib', icon: Library, run: downloadBib },
+                ]
+              : [{ label: 'Markdown', detail: `${fileName(props.doc.title)}.md`, icon: FileText, run: downloadMd }]),
+          ]}
+        />
         <IconButton label="Delete the document" size="sm" onClick={() => void remove()}>
           <Trash2 size={16} stroke-width={1.75} />
         </IconButton>
@@ -527,6 +528,46 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
       <Portal ref={(el) => el.classList.add('homework-print')}>
         <PrintView title={props.doc.title} text={markdown()} papers={papers()} style={style()} />
       </Portal>
+    </div>
+  );
+}
+
+/** The document's downloads, behind one button. */
+function DownloadMenu(props: { items: { label: string; detail: string; icon: typeof Download; run: () => void }[] }) {
+  const [open, setOpen] = createSignal(false);
+  return (
+    <div class="relative">
+      <IconButton label="Download" size="sm" title="Download" aria-haspopup="menu" aria-expanded={open()} onClick={() => setOpen(!open())}>
+        <Download size={16} stroke-width={1.75} />
+      </IconButton>
+      <Show when={open()}>
+        <div class="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+        <div
+          role="menu"
+          class="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-line bg-surface p-1.5 shadow-card"
+          onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
+        >
+          <For each={props.items}>
+            {(it) => (
+              <button
+                type="button"
+                role="menuitem"
+                class="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-soft"
+                onClick={() => {
+                  setOpen(false);
+                  it.run();
+                }}
+              >
+                <it.icon size={16} stroke-width={1.75} class="shrink-0 text-muted" />
+                <span class="min-w-0">
+                  <span class="block text-[14px]">{it.label}</span>
+                  <span class="block truncate text-[12px] text-muted">{it.detail}</span>
+                </span>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
     </div>
   );
 }
