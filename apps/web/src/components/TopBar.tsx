@@ -1,4 +1,4 @@
-import { A } from '@solidjs/router';
+import { A, useLocation } from '@solidjs/router';
 import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { LogOut, Menu, MessageCircle, X } from 'lucide-solid';
 import { useAuth } from '../lib/auth';
@@ -27,6 +27,9 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
   const auth = useAuth();
   const guide = useChatGPTGuide();
   const [menu, setMenu] = createSignal(false);
+  const location = useLocation();
+  // An editor (a document, homework) keeps the screen to itself.
+  const inEditor = () => /^\/courses\/[^/]+\/(documents|homework)\//.test(location.pathname);
   const titled = useHeaderTitleUsed();
   const focused = useFocused();
   const initial = () => auth.user()?.name?.trim().charAt(0).toUpperCase() || '?';
@@ -77,63 +80,65 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
         </div>
       </header>
 
-      {/* The account, at the screen's lower left on every page, its menu opening upwards. */}
-      <div class="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 z-30 sm:bottom-5 sm:left-5">
-        <button
-          type="button"
-          onClick={() => setMenu(!menu())}
-          class="inline-flex h-11 w-11 items-center justify-center rounded-full border border-line bg-surface shadow-card transition-colors hover:bg-soft"
-          aria-label="Account menu"
-          aria-haspopup="menu"
-          aria-expanded={menu()}
-        >
-          <span class="relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-solid text-[13px] font-semibold text-solid-fg">
-            {initial()}
-            <Show when={guide.connected()}>
-              <span class="absolute -bottom-1 -right-1 grid h-[18px] w-[18px] place-items-center rounded-full bg-surface text-fg ring-2 ring-soft" title="ChatGPT connected">
-                <ChatGPTMark size={11} />
-              </span>
-            </Show>
-          </span>
-        </button>
-        <Show when={menu()}>
-          <div class="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-          <div role="menu" class="absolute bottom-full left-0 z-50 mb-2 w-60 rounded-2xl border border-line bg-surface p-1.5 shadow-card">
-            <div class="px-3 py-2">
-              <p class="truncate text-[14px] font-medium">{auth.user()?.name ?? 'Account'}</p>
-              <p class="truncate text-[13px] text-muted">{auth.user()?.email}</p>
+      {/* The account, at the screen's lower left on every page but the editors, its menu opening upwards. */}
+      <Show when={!inEditor()}>
+        <div class="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 z-30 sm:bottom-5 sm:left-5">
+          <button
+            type="button"
+            onClick={() => setMenu(!menu())}
+            class="inline-flex h-11 w-11 items-center justify-center rounded-full border border-line bg-surface shadow-card transition-colors hover:bg-soft"
+            aria-label="Account menu"
+            aria-haspopup="menu"
+            aria-expanded={menu()}
+          >
+            <span class="relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-solid text-[13px] font-semibold text-solid-fg">
+              {initial()}
+              <Show when={guide.connected()}>
+                <span class="absolute -bottom-1 -right-1 grid h-[18px] w-[18px] place-items-center rounded-full bg-surface text-fg ring-2 ring-soft" title="ChatGPT connected">
+                  <ChatGPTMark size={11} />
+                </span>
+              </Show>
+            </span>
+          </button>
+          <Show when={menu()}>
+            <div class="fixed inset-0 z-40" onClick={() => setMenu(false)} />
+            <div role="menu" class="absolute bottom-full left-0 z-50 mb-2 w-60 rounded-2xl border border-line bg-surface p-1.5 shadow-card">
+              <div class="px-3 py-2">
+                <p class="truncate text-[14px] font-medium">{auth.user()?.name ?? 'Account'}</p>
+                <p class="truncate text-[13px] text-muted">{auth.user()?.email}</p>
+              </div>
+              {/* The ChatGPT guide: to connect, or once connected, how to study there. */}
+              <button
+                type="button"
+                role="menuitem"
+                class="flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10"
+                onClick={() => {
+                  setMenu(false);
+                  guide.open();
+                }}
+              >
+                <ChatGPTMark size={16} class="text-muted" /> {guide.connected() ? 'How to study in ChatGPT' : 'Connect ChatGPT'}
+              </button>
+              <A
+                href="/settings"
+                role="menuitem"
+                class="flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10"
+                onClick={() => setMenu(false)}
+              >
+                <MessageCircle size={17} stroke-width={1.75} class="text-muted" /> ChatGPT settings
+              </A>
+              <button
+                type="button"
+                role="menuitem"
+                class="flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10"
+                onClick={() => auth.signOut()}
+              >
+                <LogOut size={17} stroke-width={1.75} class="text-muted" /> Sign out
+              </button>
             </div>
-            {/* The ChatGPT guide: to connect, or once connected, how to study there. */}
-            <button
-              type="button"
-              role="menuitem"
-              class="flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10"
-              onClick={() => {
-                setMenu(false);
-                guide.open();
-              }}
-            >
-              <ChatGPTMark size={16} class="text-muted" /> {guide.connected() ? 'How to study in ChatGPT' : 'Connect ChatGPT'}
-            </button>
-            <A
-              href="/settings"
-              role="menuitem"
-              class="flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10"
-              onClick={() => setMenu(false)}
-            >
-              <MessageCircle size={17} stroke-width={1.75} class="text-muted" /> ChatGPT settings
-            </A>
-            <button
-              type="button"
-              role="menuitem"
-              class="flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10"
-              onClick={() => auth.signOut()}
-            >
-              <LogOut size={17} stroke-width={1.75} class="text-muted" /> Sign out
-            </button>
-          </div>
-        </Show>
-      </div>
+          </Show>
+        </div>
+      </Show>
     </>
   );
 }
