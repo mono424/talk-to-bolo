@@ -3,7 +3,7 @@ import { createEffect, createMemo, createSignal, For, lazy, onCleanup, onMount, 
 import { Portal } from 'solid-js/web';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
 import type { EditorView } from '@codemirror/view';
-import { BookOpen, FileDown, Trash2 } from 'lucide-solid';
+import { BookOpen, FileCode2, FileDown, Library, Trash2 } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { uploadDocumentImage } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -13,31 +13,37 @@ import {
   citations,
   type CiteStyle,
   citeYear,
-  countCites,
   insertCitation,
+  insertTexCitation,
   type Paper,
   printCitations,
   updatePapers,
 } from '../lib/citations';
+import { latexToMarkdown } from '../../../../shared/latex';
+import { bibtexEntry, countCitations, texCitesToMarkdown } from '../../../../shared/references';
 import { createDrafts } from '../lib/drafts';
 import { idKey, idString } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { exportPdf } from '../lib/print';
 import { firstRow, qDocument, qPapers } from '../lib/query';
-import { Button, IconButton, PageLoader } from '../components/ui';
+import { Button, IconButton, PageLoader, Segmented } from '../components/ui';
 import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
 import { type PaperRow, PapersPanel, type Reading } from '../components/Papers';
 
 const Editor = lazy(() => import('../components/Editor'));
+const TexDocumentEditor = lazy(() => import('../components/TexDocumentEditor'));
 
 /**
  * Writing a document (a research proposal, an essay) with the papers it
  * draws on beside it. The whole window: one editor for the text on the
  * left, and on the right, in a panel as wide as you drag it, the papers to
  * cite from, each one open to read with its page (components/Papers.tsx).
- * Cite with a paper's Cite button or by typing [@ (lib/citations.ts). On a
- * phone the papers slide up over the text. Saved as you type; Export PDF
- * formats the citations and lists the papers cited.
+ * A Markdown document renders as you write (components/Editor.tsx); a LaTeX
+ * one is source with its rendering beside or instead of it
+ * (components/TexDocumentEditor.tsx), and downloads as .tex with a .bib of
+ * its papers. Cite with a paper's Cite button, or by typing [@ or \cite{
+ * (lib/citations.ts). On a phone the papers slide up over the text. Saved
+ * as you type; Export PDF formats the citations and lists the papers cited.
  */
 
 type DocumentRow = TableModel<GetTable<typeof schema, 'document'>>;
@@ -67,7 +73,28 @@ function useMedia(query: string) {
   return matches;
 }
 
-const toPaper = (p: PaperRow): Paper => ({ key: idKey(p.id), title: p.title, authors: p.authors, year: p.year, venue: p.venue, url: p.url });
+const toPaper = (p: PaperRow): Paper => ({
+  key: p.cite_key?.trim() || idKey(p.id),
+  id: idKey(p.id),
+  title: p.title,
+  authors: p.authors,
+  year: p.year,
+  venue: p.venue,
+  url: p.url,
+});
+
+const TEX_VIEW_KEY = 'document-tex-view';
+
+/** Saves a text as a file. */
+function download(name: string, text: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const fileName = (title: string) => title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'document';
 
 function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: string }) {
   const db = useDb<typeof schema>();
@@ -103,9 +130,13 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     }
   };
 
+  const isTex = () => props.doc.format === 'tex';
+  // The text as Markdown with [@…] citations: LaTeX through its converter.
+  const markdown = createMemo(() => (isTex() ? latexToMarkdown(texCitesToMarkdown(text(props.doc))) : text(props.doc)));
+
   const words = createMemo(() => {
-    const plain = text(props.doc).replace(/\[@[^\]\n]*\]/g, ' ').trim();
-    return plain ? plain.split(/\s+/).length : 0;
+    const plain = markdown().replace(/\[@[^\]\n]*\]/g, ' ').replace(/<!--[\s\S]*?-->/g, ' ').replace(/[#*_`>$\\]/g, ' ').trim();
+    return plain ? plain.split(/\s+/).filter((w) => /\w/.test(w)).length : 0;
   });
 
   // ── Papers and citations ───────────────────────────────────────────────
@@ -116,7 +147,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
   const ordered = createMemo(() => {
     const body = text(props.doc);
     const at = (p: PaperRow) => {
-      const spots = [body.indexOf(`@${idKey(p.id)}`), p.url ? body.indexOf(p.url) : -1].filter((i) => i >= 0);
+      const spots = [body.indexOf(`@${idKey(p.id)}`), p.cite_key ? body.indexOf(p.cite_key) : -1, p.url ? body.indexOf(p.url) : -1].filter((i) => i >= 0);
       return spots.length ? Math.min(...spots) : Infinity;
     };
     const time = (p: PaperRow) => (p.created_at ? new Date(p.created_at as unknown as string).getTime() : Infinity);
@@ -129,7 +160,12 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
 
   const style = (): CiteStyle => (props.doc.cite_style === 'numeric' ? 'numeric' : 'author-year');
   const papers = createMemo(() => ordered().map(toPaper), [], { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) });
-  const cited = createMemo(() => countCites(text(props.doc)));
+  // How often the text cites each paper, by record key, under either of its keys.
+  const cited = createMemo(() => {
+    const counts = countCitations(text(props.doc), isTex() ? 'tex' : 'markdown');
+    return new Map(props.papers.map((p) => [idKey(p.id), (counts.get(idKey(p.id)) ?? 0) + (p.cite_key ? (counts.get(p.cite_key) ?? 0) : 0)]));
+  });
+  const byRecord = (key: string) => papers().find((p) => p.id === key || p.key === key);
 
   const [view, setView] = createSignal<EditorView>();
   createEffect(() => {
@@ -140,18 +176,49 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
   const [showPapers, setShowPapers] = createSignal(wide());
   const [reading, setReading] = createSignal<Reading | null>(null);
 
-  const cite = (key: string, locator?: string) => {
+  const cite = (paper: string, locator?: string) => {
     const v = view();
-    if (!v) return;
+    const key = byRecord(paper)?.key;
+    if (!v || !key) return;
     // On a phone the papers cover the text: get them out of the way.
     if (!wide()) setShowPapers(false);
-    insertCitation(v, key, locator);
+    if (isTex()) insertTexCitation(v, key, locator);
+    else insertCitation(v, key, locator);
   };
   // Opened from a citation in the text.
   const openCited = (key: string, page: number | null) => {
-    setReading({ key, page });
+    const paper = byRecord(key);
+    if (!paper?.id) return;
+    setReading({ key: paper.id, page });
     setShowPapers(true);
   };
+
+  // ── LaTeX: source, rendering, downloads ────────────────────────────────
+
+  const [texView, setTexView] = createSignal<'source' | 'split' | 'preview'>(
+    (localStorage.getItem(TEX_VIEW_KEY) as 'source' | 'split' | 'preview' | null) ?? 'split',
+  );
+  const chooseTexView = (v: 'source' | 'split' | 'preview') => {
+    setTexView(v);
+    localStorage.setItem(TEX_VIEW_KEY, v);
+  };
+  // The preview follows the text a moment after typing stops.
+  const [previewSource, setPreviewSource] = createSignal(markdown());
+  let previewTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(() => {
+    const md = markdown();
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => setPreviewSource(md), 250);
+  });
+  onCleanup(() => clearTimeout(previewTimer));
+  const preview = createMemo(() => {
+    const printed = printCitations(previewSource(), papers(), style());
+    const refs = printed.cited.map((p, i) => `${style() === 'numeric' ? `[${i + 1}] ` : ''}${referenceMarkdown(p, style())}`);
+    return renderMarkdown(`${printed.markdown}${refs.length ? `\n\n## References\n\n${refs.join('\n\n')}` : ''}`);
+  });
+  const downloadTex = () => download(`${fileName(props.doc.title)}.tex`, text(props.doc), 'text/x-tex');
+  // As \bibliography{references} reads it.
+  const downloadBib = () => download('references.bib', `${papers().map(bibtexEntry).join('\n\n')}\n`, 'text/x-bibtex');
   const extensions = [citations(openCited)];
 
   onMount(() => {
@@ -226,6 +293,45 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
 
       <div class="relative mt-4 flex items-start gap-0">
         <div class="relative min-w-0 flex-1">
+          <Show
+            when={!isTex()}
+            fallback={
+              <div class="sticky top-3 flex h-[calc(100dvh-7.5rem)] min-w-0 flex-col gap-3">
+                <div class="flex shrink-0 flex-wrap items-center gap-2">
+                  <Segmented
+                    label="Editor view"
+                    value={texView()}
+                    options={[
+                      { value: 'source', label: 'Source' },
+                      { value: 'split', label: 'Split' },
+                      { value: 'preview', label: 'Preview' },
+                    ]}
+                    onChange={chooseTexView}
+                  />
+                  <span class="flex-1" />
+                  <Button variant="ghost" size="sm" onClick={downloadTex} title="Download the LaTeX source">
+                    <FileCode2 size={15} stroke-width={1.75} /> .tex
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={downloadBib} title="Download the papers as references.bib, for \bibliography{references}">
+                    <Library size={15} stroke-width={1.75} /> .bib
+                  </Button>
+                </div>
+                <div class="min-h-0 flex-1">
+                  <Suspense fallback={<div class="h-40 animate-pulse rounded-xl bg-soft" />}>
+                    <TexDocumentEditor
+                      content={() => textOf(id)}
+                      onInput={(t) => edit(id, t)}
+                      onBlur={saveAll}
+                      onView={setView}
+                      preview={preview}
+                      view={wide() ? texView() : texView() === 'split' ? 'source' : texView()}
+                      label={props.doc.title}
+                    />
+                  </Suspense>
+                </div>
+              </div>
+            }
+          >
           <div class="mx-auto max-w-3xl px-1 sm:px-4">
             <Suspense fallback={<div class="h-40 animate-pulse rounded-xl bg-soft" />}>
               <Editor
@@ -244,6 +350,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
               />
             </Suspense>
           </div>
+          </Show>
         </div>
 
         {/* Wide screens: the papers beside the text, as wide as they are dragged. */}
@@ -283,7 +390,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
       </Show>
 
       <Portal ref={(el) => el.classList.add('homework-print')}>
-        <PrintView title={props.doc.title} text={text(props.doc)} papers={papers()} style={style()} />
+        <PrintView title={props.doc.title} text={markdown()} papers={papers()} style={style()} />
       </Portal>
     </div>
   );
@@ -317,6 +424,16 @@ function EditableTitle(props: { value: string; onSave: (v: string) => void }) {
       />
     </Show>
   );
+}
+
+/** A reference list entry as Markdown, for the LaTeX preview. */
+function referenceMarkdown(p: Paper, style: CiteStyle): string {
+  const authors = joinAuthors(p.authors);
+  const venue = p.venue?.trim() ? ` *${p.venue.trim()}*${style === 'numeric' ? ',' : '.'}` : '';
+  const url = p.url?.trim() ? ` <${p.url.trim()}>` : '';
+  return style === 'numeric'
+    ? `${authors ? `${authors}, ` : ''}“${p.title},”${venue} ${citeYear(p)}.${url}`
+    : `${authors ? `${authors} ` : ''}(${citeYear(p)}). ${p.title}.${venue}${url}`;
 }
 
 /** "A, B and C", as a reference list writes the authors. */

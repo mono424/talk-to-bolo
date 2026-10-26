@@ -1,5 +1,5 @@
 import { lectureMarkdown } from '../../../shared/lecture';
-import { draftMarkdown, findReferences, matchMaterials } from '../../../shared/references';
+import { countCitations, draftMarkdown, findReferences, makeCiteKey, matchMaterials } from '../../../shared/references';
 import { appendText, applyEdits, type AnswerEdit, type AnswerText } from './homework';
 import { BadRequest, NotFound, recordId, type Surreal } from './surreal';
 
@@ -7,8 +7,10 @@ import { BadRequest, NotFound, recordId, type Surreal } from './surreal';
  * Documents for AI clients (mcp.ts): free writing in a course, such as a
  * research proposal, with the papers it cites (schema `document`, `paper`).
  * Runs with the student's own session, so SurrealDB's permissions apply as in
- * the app, whose editor follows the row live. The text cites a paper as
- * `[@<paper key>]` or `[@<paper key>, p. 4]`, several as `[@a; @b]`.
+ * the app, whose editor follows the row live. A Markdown document cites a
+ * paper as `[@key]` or `[@key, p. 4]`, several as `[@a; @b]`; a LaTeX one as
+ * `\cite{key}` or `\cite[p.~4]{key}`. The key is the paper's cite_key, or
+ * its record key for papers from before cite keys.
  *
  * Writes are compare-and-set against the text that was read, so text the
  * student typed meanwhile fails the write instead of being overwritten.
@@ -19,6 +21,7 @@ interface DocumentRow {
   title: string;
   course: string;
   source?: string | null;
+  format?: string | null;
   content: string;
   cite_style?: string | null;
   updated_at: string;
@@ -26,6 +29,7 @@ interface DocumentRow {
 
 interface PaperRow {
   id: string;
+  cite_key?: string | null;
   material?: string | null;
   material_course?: string | null;
   material_kind?: string | null;
@@ -42,26 +46,16 @@ export interface DocumentLinks {
 }
 
 const key = (id: string) => id.slice(id.indexOf(':') + 1);
-const CITE = /\[(@[A-Za-z0-9_]+(?:,[^\]\n;]*)?(?:;\s*@[A-Za-z0-9_]+(?:,[^\]\n;]*)?)*)\]/g;
-
-function citeCounts(text: string): Map<string, number> {
-  const out = new Map<string, number>();
-  for (const m of text.matchAll(CITE)) {
-    for (const part of m[1].split(';')) {
-      const k = /@([A-Za-z0-9_]+)/.exec(part)?.[1];
-      if (k) out.set(k, (out.get(k) ?? 0) + 1);
-    }
-  }
-  return out;
-}
+const citeKey = (p: { id: string; cite_key?: string | null }) => p.cite_key?.trim() || key(p.id);
+const isTex = (doc: { format?: string | null }) => doc.format === 'tex';
 
 const present = (v: string | null | undefined) => (v?.trim() ? v.trim() : undefined);
 
 async function loadDocument(user: Surreal, documentId: string) {
   const id = recordId('document', documentId);
   const [doc, papers] = await user.queryAll(
-    `SELECT id, title, course, source, content, cite_style, updated_at FROM ONLY type::record($id);
-     SELECT id, created_at, material, material.course AS material_course, material.kind AS material_kind, title, authors, year, venue, url
+    `SELECT id, title, course, source, format, content, cite_style, updated_at FROM ONLY type::record($id);
+     SELECT id, cite_key, created_at, material, material.course AS material_course, material.kind AS material_kind, title, authors, year, venue, url
        FROM paper WHERE document = type::record($id) ORDER BY created_at;`,
     { id },
   ) as [DocumentRow | null, PaperRow[]];
@@ -72,19 +66,21 @@ async function loadDocument(user: Surreal, documentId: string) {
 /** A document with its text and its papers, each with the citation to write for it. */
 export async function readDocument(user: Surreal, links: DocumentLinks, text: AnswerText, documentId: string) {
   const { doc, papers } = await loadDocument(user, documentId);
-  const counts = citeCounts(doc.content ?? '');
+  const counts = countCitations(doc.content ?? '', isTex(doc) ? 'tex' : 'markdown');
   return {
     id: doc.id,
     title: doc.title,
     course: doc.course,
     url: links.document(doc.course, doc.id),
     ...(doc.source ? { started_from: doc.source } : {}),
+    format: doc.format ?? 'markdown',
     cite_style: doc.cite_style ?? 'author-year',
     updated_at: doc.updated_at,
     content: text.external(doc.content ?? ''),
     papers: papers.map((p) => ({
       id: p.id,
-      cite: `[@${key(p.id)}]`,
+      cite_key: citeKey(p),
+      cite: isTex(doc) ? `\\cite{${citeKey(p)}}` : `[@${citeKey(p)}]`,
       title: p.title,
       authors: present(p.authors),
       year: present(p.year),
@@ -92,7 +88,7 @@ export async function readDocument(user: Surreal, links: DocumentLinks, text: An
       url: present(p.url),
       ...(p.material ? { material: p.material, material_kind: p.material_kind ?? undefined } : {}),
       ...(p.material && p.material_course ? { material_url: links.material(p.material_course, p.material) } : {}),
-      cited: counts.get(key(p.id)) ?? 0,
+      cited: (counts.get(key(p.id)) ?? 0) + (p.cite_key ? (counts.get(p.cite_key) ?? 0) : 0),
     })),
   };
 }
@@ -110,11 +106,17 @@ export async function listDocuments(user: Surreal, courseId: string | null): Pro
 }
 
 /** Starts a document in a course, optionally with its first text. */
-export async function createDocument(user: Surreal, text: AnswerText, input: { course_id: string; title: string; content?: string }) {
+export async function createDocument(user: Surreal, text: AnswerText, input: { course_id: string; title: string; content?: string; format?: 'markdown' | 'tex' }) {
   const id = `document:k${crypto.randomUUID().replaceAll('-', '')}`;
   const rows = await user.query<unknown[]>(
-    `CREATE type::record($id) CONTENT { owner: $auth.id, course: type::record($course), title: $title, content: $content } RETURN VALUE id;`,
-    { id, course: recordId('course', input.course_id), title: input.title.trim() || 'Untitled document', content: text.internal(input.content ?? '') },
+    `CREATE type::record($id) CONTENT { owner: $auth.id, course: type::record($course), title: $title, format: $format, content: $content } RETURN VALUE id;`,
+    {
+      id,
+      course: recordId('course', input.course_id),
+      title: input.title.trim() || 'Untitled document',
+      format: input.format ?? 'markdown',
+      content: text.internal(input.content ?? ''),
+    },
   );
   if (!rows?.length) throw new NotFound('Course not found.');
   return id;
@@ -135,22 +137,26 @@ export async function documentFromMaterial(user: Surreal, materialId: string): P
   ) as [{ id: string; course: string; title: string; kind: string; status: string; content: string } | null, string | null];
   if (!m) throw new NotFound('Material not found.');
   if (existing) return { id: existing, created: false };
-  const content = draftMarkdown(lectureMarkdown(m.kind, m.content ?? ''));
-  if (!content) throw new BadRequest(m.status === 'ready' ? 'The material has no text to start from.' : 'The material is still being processed; list_materials shows when it is ready.');
+  const tex = m.kind === 'tex';
+  const markdown = draftMarkdown(lectureMarkdown(m.kind, m.content ?? ''));
+  const content = tex ? (m.content ?? '') : markdown;
+  if (!content.trim()) throw new BadRequest(m.status === 'ready' ? 'The material has no text to start from.' : 'The material is still being processed; list_materials shows when it is ready.');
   const others = (await user.query<{ id: string; title: string }[]>('SELECT id, title FROM material WHERE course = type::record($course) AND id != type::record($material)', {
     course: m.course,
     material,
   })) ?? [];
-  const refs = findReferences(content);
+  const refs = findReferences(markdown);
   const matches = matchMaterials(refs, others);
+  const keys: string[] = [];
+  for (const r of refs) keys.push(makeCiteKey(r, keys));
   const id = `document:k${crypto.randomUUID().replaceAll('-', '')}`;
   await user.query(
     `BEGIN;
-     CREATE type::record($id) CONTENT { owner: $auth.id, course: type::record($course), source: type::record($material), title: $title, content: $content };
+     CREATE type::record($id) CONTENT { owner: $auth.id, course: type::record($course), source: type::record($material), title: $title, format: $format, content: $content };
      FOR $p IN $papers {
        CREATE type::record($p.id) CONTENT {
          owner: $auth.id, document: type::record($id), material: IF $p.material { type::record($p.material) } ELSE { NONE },
-         title: $p.title, authors: $p.authors, year: $p.year, url: $p.url
+         cite_key: $p.cite_key, title: $p.title, authors: $p.authors, year: $p.year, url: $p.url
        };
      };
      COMMIT;`,
@@ -159,11 +165,13 @@ export async function documentFromMaterial(user: Surreal, materialId: string): P
       course: m.course,
       material,
       title: m.title,
+      format: tex ? 'tex' : 'markdown',
       content,
       // Null fields are dropped on the way, so they arrive as NONE.
       papers: refs.map((r, i) => ({
         id: `paper:k${crypto.randomUUID().replaceAll('-', '')}`,
         material: matches[i]?.id ?? null,
+        cite_key: keys[i],
         title: r.title,
         authors: r.authors,
         year: r.year,
@@ -208,6 +216,7 @@ export async function editDocument(user: Surreal, text: AnswerText, documentId: 
 }
 
 export interface PaperDetails {
+  cite_key?: string;
   title?: string;
   authors?: string;
   year?: string;
@@ -223,23 +232,29 @@ export async function addPaper(user: Surreal, documentId: string, input: PaperDe
   if (material) {
     const [m, existing] = await user.queryAll(
       `SELECT title FROM ONLY type::record($material);
-       RETURN (SELECT VALUE id FROM paper WHERE document = type::record($document) AND material = type::record($material) LIMIT 1)[0];`,
+       RETURN (SELECT id, cite_key FROM paper WHERE document = type::record($document) AND material = type::record($material) LIMIT 1)[0];`,
       { material, document },
-    ) as [{ title: string } | null, string | null];
+    ) as [{ title: string } | null, { id: string; cite_key?: string | null } | null];
     if (!m) throw new NotFound('Material not found.');
-    if (existing) return { id: existing, cite: `[@${key(existing)}]`, created: false };
+    if (existing) return { id: existing.id, cite_key: citeKey(existing), created: false };
     title ||= m.title;
   }
   if (!title) throw new BadRequest('A paper needs a title, or a material_id to take it from.');
+  const taken = (await user.query<string[]>('SELECT VALUE cite_key FROM paper WHERE document = type::record($document) AND cite_key != NONE', { document })) ?? [];
+  const wanted = input.cite_key?.trim();
+  if (wanted && !/^[A-Za-z0-9_][A-Za-z0-9_:-]*$/.test(wanted)) throw new BadRequest('A cite key has letters, digits, _ : and - only.');
+  if (wanted && taken.some((k) => k.toLowerCase() === wanted.toLowerCase())) throw new BadRequest(`Another paper of this document has the cite key ${wanted}.`);
+  const cite_key = wanted || makeCiteKey({ authors: input.authors, year: input.year, title }, taken);
   const id = `paper:k${crypto.randomUUID().replaceAll('-', '')}`;
   // Null fields are dropped on the way, so they arrive as NONE.
   const rows = await user.query<unknown[]>(
     `CREATE type::record($id) CONTENT {
        owner: $auth.id, document: type::record($document), material: IF $material { type::record($material) } ELSE { NONE },
-       title: $title, authors: $authors, year: $year, venue: $venue, url: $url
+       cite_key: $cite_key, title: $title, authors: $authors, year: $year, venue: $venue, url: $url
      } RETURN VALUE id;`,
     {
       id,
+      cite_key,
       document,
       material,
       title,
@@ -250,20 +265,21 @@ export async function addPaper(user: Surreal, documentId: string, input: PaperDe
     },
   );
   if (!rows?.length) throw new NotFound('Document not found.');
-  return { id, cite: `[@${key(id)}]`, created: true };
+  return { id, cite_key, created: true };
 }
 
 /** Changes a paper's bibliography details. An empty string clears a field. */
 export async function updatePaper(user: Surreal, paperId: string, details: PaperDetails) {
   const id = recordId('paper', paperId);
   const set: Record<string, string> = {};
-  for (const field of ['title', 'authors', 'year', 'venue', 'url'] as const) {
+  for (const field of ['cite_key', 'title', 'authors', 'year', 'venue', 'url'] as const) {
     const v = details[field];
     if (v !== undefined) set[field] = v.trim();
   }
   if (set.title === '') throw new BadRequest('A paper keeps its title.');
+  if (set.cite_key !== undefined && !/^[A-Za-z0-9_][A-Za-z0-9_:-]*$/.test(set.cite_key)) throw new BadRequest('A cite key has letters, digits, _ : and - only.');
   if (!Object.keys(set).length) throw new BadRequest('Nothing to change.');
   const rows = await user.query<unknown[]>('UPDATE type::record($id) MERGE $set RETURN VALUE id;', { id, set });
   if (!rows?.length) throw new NotFound('Paper not found.');
-  return { id, cite: `[@${key(id)}]`, updated: Object.keys(set) };
+  return { id, updated: Object.keys(set) };
 }

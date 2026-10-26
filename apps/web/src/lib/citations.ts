@@ -4,19 +4,26 @@ import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 import { autocompletion, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import type { MarkdownConfig } from '@lezer/markdown';
 import { Tag } from '@lezer/highlight';
+import { CITATION_SOURCE, citationPattern, parseCitation } from '../../../../shared/references';
 import { focusField } from './live-markdown';
 
 /**
- * Citations in a document (schema `paper`), written Pandoc style: `[@key]`,
- * `[@key, p. 4]`, several as `[@a; @b, ch. 2]`, the key being the paper's
- * record key. In the editor a citation reads as it prints, "(Vaswani et al.,
- * 2017, p. 4)" or "[1, p. 4]", until the cursor enters it; a click opens the
- * paper beside the text. `[@` offers the document's papers by author, title
- * or year. Export PDF formats them the same way and lists what was cited.
+ * Citations in a document (schema `paper`). Markdown cites Pandoc style:
+ * `[@key]`, `[@key, p. 4]`, several as `[@a; @b, ch. 2]`; LaTeX with
+ * `\cite{key}`, `\cite[p.~4]{key}` (shared/references.ts). The key is the
+ * paper's cite key ("stark2019"), or its record key for papers from before
+ * cite keys. In the Markdown editor a citation reads as it prints, "(Vaswani
+ * et al., 2017, p. 4)" or "[1, p. 4]", until the cursor enters it; a click
+ * opens the paper beside the text. `[@` (or `\cite{` in LaTeX) offers the
+ * document's papers by author, title or year. Export PDF formats them the
+ * same way and lists what was cited.
  */
 
 export interface Paper {
+  /** What the text cites it by: its cite key, or its record key. */
   key: string;
+  /** Its record key, which older text may cite it by. */
+  id?: string;
   title: string;
   authors?: string | null;
   year?: string | null;
@@ -32,24 +39,19 @@ export interface Cite {
   locator: string;
 }
 
-const ITEM = String.raw`@[A-Za-z0-9_]+(?:,[^\]\n;]*)?`;
-const CITATION_SRC = String.raw`\[${ITEM}(?:;\s*${ITEM})*\]`;
-const CITATION = new RegExp(CITATION_SRC, 'g');
-const CITATION_AT = new RegExp(`^${CITATION_SRC}`);
+const CITATION = citationPattern();
+const CITATION_AT = new RegExp(`^${CITATION_SOURCE}`);
 
 /** The papers a citation names, from its text with or without the brackets. */
-export function parseCites(src: string): Cite[] {
-  const inner = src.startsWith('[') ? src.slice(1, -1) : src;
-  return inner.split(';').flatMap((part) => {
-    const m = /^\s*@([A-Za-z0-9_]+)\s*(?:,\s*(.*))?$/.exec(part);
-    return m ? [{ key: m[1], locator: (m[2] ?? '').trim() }] : [];
-  });
-}
+export const parseCites = (src: string): Cite[] => parseCitation(src);
 
-/** How often the text cites each paper, by key. */
-export function countCites(text: string): Map<string, number> {
-  const out = new Map<string, number>();
-  for (const m of text.matchAll(CITATION)) for (const c of parseCites(m[0])) out.set(c.key, (out.get(c.key) ?? 0) + 1);
+/** The papers by every key the text may cite them by. */
+export function paperIndex(papers: readonly Paper[]): Map<string, Paper> {
+  const out = new Map<string, Paper>();
+  for (const p of papers) {
+    if (p.id) out.set(p.id, p);
+    out.set(p.key, p);
+  }
   return out;
 }
 
@@ -116,7 +118,10 @@ export interface CiteContext {
 export function numbering(text: string, papers: ReadonlyMap<string, Paper>): Map<string, number> {
   const out = new Map<string, number>();
   for (const m of text.matchAll(CITATION)) {
-    for (const c of parseCites(m[0])) if (papers.has(c.key) && !out.has(c.key)) out.set(c.key, out.size + 1);
+    for (const c of parseCites(m[0])) {
+      const p = papers.get(c.key);
+      if (p && !out.has(p.key)) out.set(p.key, out.size + 1);
+    }
   }
   return out;
 }
@@ -126,7 +131,7 @@ export function formatCite(cites: Cite[], cx: CiteContext): string {
   const items = cites.map((c) => {
     const paper = cx.papers.get(c.key);
     const loc = c.locator ? `, ${c.locator}` : '';
-    if (cx.style === 'numeric') return `${cx.numbers.get(c.key) ?? '?'}${loc}`;
+    if (cx.style === 'numeric') return `${(paper && cx.numbers.get(paper.key)) ?? '?'}${loc}`;
     return paper ? `${citeNames(paper)}, ${citeYear(paper)}${loc}` : `?${loc}`;
   });
   return cx.style === 'numeric' ? `[${items.join('; ')}]` : `(${items.join('; ')})`;
@@ -143,13 +148,16 @@ const escapeMd = (s: string) => s.replace(/[`*_<>]/g, '\\$&');
  * by author and year.
  */
 export function printCitations(md: string, papers: readonly Paper[], style: CiteStyle): { markdown: string; cited: Paper[] } {
-  const byKey = new Map(papers.map((p) => [p.key, p]));
+  const byKey = paperIndex(papers);
   const cx: CiteContext = { papers: byKey, style, numbers: numbering(md, byKey) };
-  const cited = new Set<string>();
+  const cited = new Set<Paper>();
   const format = (part: string) =>
     part.replace(CITATION, (src) => {
       const cites = parseCites(src);
-      for (const c of cites) if (byKey.has(c.key)) cited.add(c.key);
+      for (const c of cites) {
+        const p = byKey.get(c.key);
+        if (p) cited.add(p);
+      }
       return escapeMd(formatCite(cites, cx));
     });
   let text = '';
@@ -159,7 +167,7 @@ export function printCitations(md: string, papers: readonly Paper[], style: Cite
     at = m.index + m[0].length;
   }
   text += format(md.slice(at));
-  const list = [...cited].map((k) => byKey.get(k)!);
+  const list = [...cited];
   if (style === 'numeric') list.sort((a, b) => cx.numbers.get(a.key)! - cx.numbers.get(b.key)!);
   else list.sort((a, b) => citeNames(a).localeCompare(citeNames(b)) || citeYear(a).localeCompare(citeYear(b)));
   return { markdown: text, cited: list };
@@ -197,7 +205,7 @@ const papersField = StateField.define<PapersState>({
   create: () => ({ list: [], byKey: new Map(), style: 'author-year' }),
   update(value, tr) {
     for (const e of tr.effects) {
-      if (e.is(setPapers)) value = { list: e.value.papers, byKey: new Map(e.value.papers.map((p) => [p.key, p])), style: e.value.style };
+      if (e.is(setPapers)) value = { list: e.value.papers, byKey: paperIndex(e.value.papers), style: e.value.style };
     }
     return value;
   },
@@ -355,4 +363,59 @@ export function citations(onOpen: (key: string, page: number | null) => void): E
     openCite.of(onOpen),
     autocompletion({ override: [suggest], icons: false }),
   ];
+}
+
+// ── In the LaTeX editor ───────────────────────────────────────────────────
+
+/** The document's papers inside `\cite{…}`, after `{` or a comma. */
+function suggestTex(cx: CompletionContext): CompletionResult | null {
+  const line = cx.state.doc.lineAt(cx.pos);
+  const before = cx.state.sliceDoc(line.from, cx.pos);
+  const open = /\\(?:cite|citep|citet|parencite|textcite|autocite)\*?(?:\[[^\]]*\]){0,2}\{([^}]*)$/.exec(before);
+  if (!open) return null;
+  const word = /([^,\s{]*)$/.exec(open[1])?.[1] ?? '';
+  const { list } = cx.state.field(papersField);
+  if (!list.length) return null;
+  const query = word.toLowerCase();
+  const options: Completion[] = list
+    .filter((p) => !query || p.key.toLowerCase().startsWith(query) || [p.authors, p.title, p.year].some((v) => v?.toLowerCase().includes(query)))
+    .map((p, i) => ({
+      label: p.key,
+      detail: `${paperLabel(p)} · ${p.title}`,
+      boost: -i,
+      apply: (view, _completion, start, end) => {
+        // Closes the braces when nothing does yet.
+        const close = /^[^{}\n]*\}/.test(view.state.sliceDoc(end, line.to)) ? '' : '}';
+        view.dispatch({ changes: { from: start, to: end, insert: p.key + close }, selection: { anchor: start + p.key.length + close.length }, userEvent: 'input.complete' });
+      },
+    }));
+  return options.length ? { from: cx.pos - word.length, options, filter: false } : null;
+}
+
+/**
+ * Inserts a citation at the cursor in LaTeX: into the `\cite{…}` the cursor
+ * is in (`,key`), or as `\cite{key}`, `\cite[p.~4]{key}`.
+ */
+export function insertTexCitation(view: EditorView, key: string, locator = '') {
+  const { state } = view;
+  const { from, to } = state.selection.main;
+  const line = state.doc.lineAt(from);
+  const before = state.sliceDoc(line.from, from);
+  const inside = from === to && /\\(?:cite|citep|citet|parencite|textcite|autocite)\*?(?:\[[^\]]*\]){0,2}\{[^}]*$/.test(before) && /^[^{]*\}/.test(state.sliceDoc(from, line.to));
+  let insert: string;
+  if (inside) {
+    const prev = state.sliceDoc(from - 1, from);
+    insert = `${prev === '{' || prev === ',' ? '' : ','}${key}`;
+  } else {
+    const prev = state.sliceDoc(from - 1, from);
+    const loc = locator ? `[${locator.replace(/\. /g, '.~')}]` : '';
+    insert = `${prev && !/[\s(~[{]/.test(prev) ? '~' : ''}\\cite${loc}{${key}}`;
+  }
+  view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length }, scrollIntoView: true, userEvent: 'input' });
+  view.focus();
+}
+
+/** Citations for the LaTeX editor: the papers, offered inside `\cite{`. */
+export function texCitations(): Extension {
+  return [papersField, autocompletion({ override: [suggestTex], icons: false })];
 }

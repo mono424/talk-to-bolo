@@ -329,12 +329,13 @@ DEFINE INDEX OVERWRITE answer_homework ON TABLE answer FIELDS homework, position
 -- ##################################################################
 -- DOCUMENTS
 --
--- Free writing in a course, a research proposal or an essay: one Markdown
--- text in the app's editor, with the papers it draws on beside it. A
--- `paper` is an entry of a document's bibliography: a course material (its
--- PDF opens next to the text) or a reference typed in by hand. The text
--- cites one as `[@<paper key>]` or `[@<paper key>, p. 4]`, several as
--- `[@a; @b]`; Export PDF formats them and lists the cited papers.
+-- Free writing in a course, a research proposal or an essay: one text in
+-- the app's editor, Markdown or LaTeX, with the papers it draws on beside
+-- it. A `paper` is an entry of a document's bibliography: a course material
+-- (its PDF opens next to the text) or a reference typed in by hand. Markdown
+-- cites one as `[@key]` or `[@key, p. 4]`, several as `[@a; @b]`; LaTeX as
+-- `\cite{key}` or `\cite[p.~4]{key}`. The key is the paper's cite_key, or
+-- its record key. Export PDF formats them and lists the cited papers.
 -- ##################################################################
 
 DEFINE TABLE OVERWRITE document SCHEMAFULL
@@ -347,7 +348,10 @@ DEFINE FIELD OVERWRITE course ON TABLE document TYPE record<course> READONLY; --
 DEFINE FIELD OVERWRITE title ON TABLE document TYPE string ASSERT string::len($value) > 0;
 -- The material the document was started from (a draft uploaded to the course), if any.
 DEFINE FIELD OVERWRITE source ON TABLE document TYPE option<record<material>>;
--- The text, as Markdown with $math$ and citations. Pasted images are `answer-image:<id>`.
+-- What the text is written in: Markdown with $math$, citing `[@key]`, or
+-- LaTeX source, citing `\cite{key}`. Pasted images are `answer-image:<id>`.
+DEFINE FIELD OVERWRITE format ON TABLE document TYPE string DEFAULT 'markdown'
+  ASSERT $value IN ['markdown', 'tex'];
 DEFINE FIELD OVERWRITE content ON TABLE document TYPE string DEFAULT '';
 -- How citations print: (Author, 2024) or [1].
 DEFINE FIELD OVERWRITE cite_style ON TABLE document TYPE string DEFAULT 'author-year'
@@ -373,6 +377,9 @@ DEFINE FIELD OVERWRITE document ON TABLE paper TYPE record<document> READONLY; -
 -- The course material holding the paper. NONE for a reference typed in, or once the material is deleted.
 DEFINE FIELD OVERWRITE material ON TABLE paper TYPE option<record<material>>;
 DEFINE FIELD OVERWRITE title ON TABLE paper TYPE string ASSERT string::len($value) > 0;
+-- The key the text cites it by, BibTeX style ("stark2019b"). Papers added
+-- before keys existed have none and are cited by their record key.
+DEFINE FIELD OVERWRITE cite_key ON TABLE paper TYPE option<string>;
 -- As the bibliography writes them: "Vaswani, A.; Shazeer, N.", "2017", "NeurIPS".
 DEFINE FIELD OVERWRITE authors ON TABLE paper TYPE option<string>;
 DEFINE FIELD OVERWRITE year ON TABLE paper TYPE option<string>;

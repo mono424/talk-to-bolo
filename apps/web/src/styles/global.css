@@ -483,12 +483,14 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
 .answer-editor .cm-cite:hover { background: color-mix(in srgb, var(--blue) 16%, transparent); }
 .answer-editor .cm-cite-missing { color: var(--red); background: var(--red-soft); cursor: default; }
 .answer-editor .cm-cite-src { font-family: var(--font-mono); font-size: 0.88em; color: color-mix(in srgb, var(--blue) 80%, var(--fg)); }
-.answer-editor .cm-editor .cm-tooltip.cm-tooltip-autocomplete { padding: 4px; }
-.answer-editor .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul { max-height: 16rem; max-width: min(28rem, 90vw); font-family: var(--font-sans); }
-.answer-editor .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.35rem 0.6rem; border-radius: 7px; }
-.answer-editor .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--soft); color: var(--fg); }
-.answer-editor .cm-completionLabel { font-size: 14px; font-weight: 500; white-space: nowrap; }
-.answer-editor .cm-completionDetail { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-style: normal; color: var(--muted); }
+:is(.answer-editor, .tex-editor) .cm-editor .cm-tooltip.cm-tooltip-autocomplete { padding: 4px; }
+:is(.answer-editor, .tex-editor) .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul { max-height: 16rem; max-width: min(28rem, 90vw); font-family: var(--font-sans); }
+:is(.answer-editor, .tex-editor) .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.35rem 0.6rem; border-radius: 7px; }
+:is(.answer-editor, .tex-editor) .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--soft); color: var(--fg); }
+:is(.answer-editor, .tex-editor) .cm-completionLabel { font-size: 14px; font-weight: 500; white-space: nowrap; }
+:is(.answer-editor, .tex-editor) .cm-completionDetail { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-style: normal; color: var(--muted); }
+.tex-editor .cm-editor .cm-tooltip { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--fg); box-shadow: var(--shadow-card); }
+.tex-editor .cm-completionLabel { font-family: var(--font-mono); font-size: 13px; }
 
 .sheet-excerpt canvas { border-radius: 6px; }
 

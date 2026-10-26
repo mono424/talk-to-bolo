@@ -5,6 +5,7 @@ import type { schema } from '../schema.gen';
 import { lectureMarkdown } from '../../../../shared/lecture';
 import { materialPath } from '../lib/api';
 import type { CiteStyle } from '../lib/citations';
+import { makeCiteKey } from '../../../../shared/references';
 import { addPdfMaterial } from '../lib/documents';
 import { idKey, idString, newId } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
@@ -27,6 +28,7 @@ export interface Reading {
 }
 
 interface Details {
+  cite_key: string;
   title: string;
   authors: string;
   year: string;
@@ -104,6 +106,7 @@ export function PapersPanel(props: {
                     {(p) => (
                       <PaperForm
                         initial={p}
+                        taken={props.papers.filter((o) => o.id !== p.id).map((o) => o.cite_key ?? '')}
                         submit="Save"
                         onCancel={() => setView('list')}
                         onSave={async (d) => {
@@ -149,7 +152,12 @@ export function PapersPanel(props: {
                         <li class="rounded-xl px-3 py-2.5 transition-colors hover:bg-soft">
                           <button type="button" class="block w-full text-left" onClick={() => props.onRead({ key: idKey(p.id), page: null })} title="Open the paper">
                             <span class="line-clamp-2 text-[14px] font-medium leading-snug">{p.title}</span>
-                            <span class="mt-0.5 block truncate text-[12px] text-muted">{byline(p) || 'No authors or year yet'}</span>
+                            <span class="mt-0.5 block truncate text-[12px] text-muted">
+                              <Show when={p.cite_key}>
+                                <span class="mr-1.5 font-mono text-faint">{p.cite_key}</span>
+                              </Show>
+                              {byline(p) || 'No authors or year yet'}
+                            </span>
                           </button>
                           <div class="mt-1.5 flex items-center gap-1.5">
                             <Button variant="soft" size="sm" onClick={() => props.onCite(idKey(p.id))} title="Cite it at the cursor">
@@ -304,9 +312,11 @@ function AddPapers(props: { owner: string; documentId: string; courseId: string;
     return (materials.data() ?? []).filter((m) => !added().has(idString(m.id)) && (!q || m.title.toLowerCase().includes(q)));
   });
 
+  const taken = () => props.papers.map((p) => p.cite_key ?? '').filter(Boolean);
   const create = (fields: Partial<Details> & { title: string; material?: string }) => {
     const clean = Object.fromEntries(Object.entries(fields).filter(([, v]) => typeof v === 'string' && v.trim()));
-    return db.create(newId('paper'), { owner: props.owner, document: props.documentId, ...clean, title: fields.title.trim() });
+    const cite_key = fields.cite_key?.trim() || makeCiteKey(fields, taken());
+    return db.create(newId('paper'), { owner: props.owner, document: props.documentId, ...clean, cite_key, title: fields.title.trim() });
   };
 
   const upload = async (files: FileList) => {
@@ -328,6 +338,7 @@ function AddPapers(props: { owner: string; documentId: string; courseId: string;
       when={!manual()}
       fallback={
         <PaperForm
+          taken={taken()}
           submit="Add paper"
           onCancel={() => setManual(false)}
           onSave={async (d) => {
@@ -393,11 +404,14 @@ function AddPapers(props: { owner: string; documentId: string; courseId: string;
 /** A paper's bibliography details. Cleared fields are saved empty. */
 function PaperForm(props: {
   initial?: Partial<Record<keyof Details, string | null | undefined>>;
+  /** The cite keys of the document's other papers. */
+  taken: string[];
   submit: string;
   onSave: (details: Details) => Promise<void>;
   onCancel: () => void;
 }) {
   const [d, setD] = createSignal<Details>({
+    cite_key: props.initial?.cite_key ?? '',
     title: props.initial?.title ?? '',
     authors: props.initial?.authors ?? '',
     year: props.initial?.year ?? '',
@@ -405,16 +419,24 @@ function PaperForm(props: {
     url: props.initial?.url ?? '',
   });
   const [saving, setSaving] = createSignal(false);
+  const keyProblem = () => {
+    const k = d().cite_key.trim();
+    if (!k) return null;
+    if (!/^[A-Za-z0-9_][A-Za-z0-9_:-]*$/.test(k)) return 'Letters, digits, _ : and - only.';
+    if (props.taken.some((t) => t.toLowerCase() === k.toLowerCase())) return 'Another paper has this key.';
+    return null;
+  };
   const set = (k: keyof Details) => (e: { currentTarget: HTMLInputElement }) => setD((v) => ({ ...v, [k]: e.currentTarget.value }));
   return (
     <form
       class="space-y-3"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!d().title.trim()) return;
+        if (!d().title.trim() || keyProblem()) return;
         setSaving(true);
         try {
-          await props.onSave({ title: d().title.trim(), authors: d().authors.trim(), year: d().year.trim(), venue: d().venue.trim(), url: d().url.trim() });
+          const details = { title: d().title.trim(), authors: d().authors.trim(), year: d().year.trim(), venue: d().venue.trim(), url: d().url.trim() };
+          await props.onSave({ ...details, cite_key: d().cite_key.trim() || makeCiteKey(details, props.taken) });
         } finally {
           setSaving(false);
         }
@@ -437,11 +459,14 @@ function PaperForm(props: {
       <Field label="Link">
         <input class={`${inputClass} text-[14px]`} value={d().url} onInput={set('url')} type="url" placeholder="https://arxiv.org/abs/1706.03762" />
       </Field>
+      <Field label="Cite key" hint={keyProblem() ?? 'What the text cites it by: \\cite{key} or [@key]. Left empty, it is made from the first author and year. Changing it does not change citations already written.'}>
+        <input class={`${inputClass} font-mono text-[14px]`} value={d().cite_key} onInput={set('cite_key')} placeholder="vaswani2017" spellcheck={false} autocapitalize="off" />
+      </Field>
       <div class="flex justify-end gap-2 pt-1">
         <Button variant="ghost" size="sm" onClick={props.onCancel}>
           Cancel
         </Button>
-        <Button type="submit" size="sm" disabled={saving() || !d().title.trim()}>
+        <Button type="submit" size="sm" disabled={saving() || !d().title.trim() || !!keyProblem()}>
           {props.submit}
         </Button>
       </div>

@@ -83,10 +83,10 @@ export default function CoursePage() {
     await reindexMaterial(db, id).catch((err) => setNotice(`${title}: ${err instanceof Error ? err.message : 'indexing failed'}`));
   }
 
-  const newDocument = async () => {
+  const newDocument = async (format: 'markdown' | 'tex') => {
     const uid = auth.userId();
     if (!uid) return;
-    const id = await createDocument(db, { owner: uid, course: courseId() });
+    const id = await createDocument(db, { owner: uid, course: courseId(), format });
     navigate(`/courses/${params.courseKey}/documents/${idKey(id)}`);
   };
 
@@ -135,7 +135,7 @@ export default function CoursePage() {
               <Waypoints size={18} stroke-width={1.75} class="sm:h-4 sm:w-4" />
               <span class="hidden lg:inline">Graph</span>
             </A>
-            <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} onSource={() => setAddingSource(true)} onDocument={() => void newDocument()} />
+            <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} onSource={() => setAddingSource(true)} onDocument={(format) => void newDocument(format)} />
             <CourseSettings course={c()} />
           </HeaderEndActions>
 
@@ -287,7 +287,7 @@ function EditableTitle(props: { value: string; onSave: (v: string) => void }) {
 }
 
 /** Upload files, write notes or start a document, from one button in the top bar. */
-function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () => void; onSource: () => void; onDocument: () => void }) {
+function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () => void; onSource: () => void; onDocument: (format: 'markdown' | 'tex') => void }) {
   const [open, setOpen] = createSignal(false);
   let input!: HTMLInputElement;
   const item = 'flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10';
@@ -356,10 +356,21 @@ function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () =>
             class={item}
             onClick={() => {
               setOpen(false);
-              props.onDocument();
+              props.onDocument('markdown');
             }}
           >
             <ScrollText size={16} stroke-width={1.75} class="text-muted" /> New document
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class={item}
+            onClick={() => {
+              setOpen(false);
+              props.onDocument('tex');
+            }}
+          >
+            <FileCode2 size={16} stroke-width={1.75} class="text-muted" /> New LaTeX document
           </button>
         </div>
       </Show>
