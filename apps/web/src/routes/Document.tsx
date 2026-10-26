@@ -3,7 +3,7 @@ import { createEffect, createMemo, createSignal, For, lazy, onCleanup, onMount, 
 import { Portal } from 'solid-js/web';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
 import type { EditorView } from '@codemirror/view';
-import { BookOpen, FileCode2, FileDown, Library, Trash2 } from 'lucide-solid';
+import { FileCode2, FileDown, Library, PanelRight, Plus, Trash2, X } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { uploadDocumentImage } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -20,15 +20,16 @@ import {
   updatePapers,
 } from '../lib/citations';
 import { latexToMarkdown } from '../../../../shared/latex';
-import { bibtexEntry, countCitations, texCitesToMarkdown } from '../../../../shared/references';
+import { bibtexEntry, countCitations, makeCiteKey, texCitesToMarkdown } from '../../../../shared/references';
 import { createDrafts } from '../lib/drafts';
-import { idKey, idString } from '../lib/ids';
+import { idKey, idString, newId } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { exportPdf } from '../lib/print';
-import { firstRow, qDocument, qPapers } from '../lib/query';
-import { Button, IconButton, PageLoader, Segmented } from '../components/ui';
+import { firstRow, qDocument, qDocumentList, qMaterials, qPapers } from '../lib/query';
+import { Button, IconButton, PageLoader } from '../components/ui';
 import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
 import { type PaperRow, PapersPanel, type Reading } from '../components/Papers';
+import { DocumentTab, MaterialTab, OpenPicker } from '../components/SideTabs';
 
 const Editor = lazy(() => import('../components/Editor'));
 const TexDocumentEditor = lazy(() => import('../components/TexDocumentEditor'));
@@ -36,12 +37,13 @@ const TexDocumentEditor = lazy(() => import('../components/TexDocumentEditor'));
 /**
  * Writing a document (a research proposal, an essay) with the papers it
  * draws on beside it. The whole window: one editor for the text on the
- * left, and on the right, in a panel as wide as you drag it, the papers to
- * cite from, each one open to read with its page (components/Papers.tsx).
+ * left, and on the right, in a panel as wide as you drag it, tabs: the
+ * papers to cite from, each one open to read with its page
+ * (components/Papers.tsx), a LaTeX document's rendering, and whatever of
+ * the course is opened beside the text (components/SideTabs.tsx).
  * A Markdown document renders as you write (components/Editor.tsx); a LaTeX
- * one is source with its rendering beside or instead of it
- * (components/TexDocumentEditor.tsx), and downloads as .tex with a .bib of
- * its papers. Cite with a paper's Cite button, or by typing [@ or \cite{
+ * one is source (components/TexDocumentEditor.tsx), and downloads as .tex
+ * with a .bib of its papers. Cite with a paper's Cite button, or by typing [@ or \cite{
  * (lib/citations.ts). On a phone the papers slide up over the text. Saved
  * as you type; Export PDF formats the citations and lists the papers cited.
  */
@@ -83,7 +85,8 @@ const toPaper = (p: PaperRow): Paper => ({
   url: p.url,
 });
 
-const TEX_VIEW_KEY = 'document-tex-view';
+/** The tabs open beside a document, remembered per document on this device. */
+const tabsKey = (documentId: string) => `document-tabs:${documentId}`;
 
 /** Saves a text as a file. */
 function download(name: string, text: string, type: string) {
@@ -190,18 +193,70 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     const paper = byRecord(key);
     if (!paper?.id) return;
     setReading({ key: paper.id, page });
+    setActive('papers');
     setShowPapers(true);
   };
 
+  // ── The panel's tabs ───────────────────────────────────────────────────
+
+  const courseId = idString(props.doc.course);
+  const materials = useQuery(() => qMaterials(db, courseId));
+  const documents = useQuery(() => qDocumentList(db, courseId));
+  const openable = createMemo(() => ({
+    materials: (materials.data() ?? []).map((m) => ({ id: idString(m.id), title: m.title })),
+    documents: (documents.data() ?? []).filter((d) => idString(d.id) !== id).map((d) => ({ id: idString(d.id), title: d.title })),
+  }));
+  const titleOf = (tab: string) =>
+    [...openable().materials, ...openable().documents].find((o) => o.id === tab)?.title ?? (materials.isLoading() ? '…' : 'Removed');
+
+  const saved = (() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(tabsKey(id)) ?? 'null') as { open?: unknown; active?: unknown } | null;
+      return {
+        open: Array.isArray(v?.open) ? v.open.filter((t): t is string => typeof t === 'string') : [],
+        active: typeof v?.active === 'string' ? v.active : null,
+      };
+    } catch {
+      return { open: [], active: null };
+    }
+  })();
+  const [opened, setOpened] = createSignal<string[]>(saved.open);
+  // 'preview', 'papers', 'open' (the list to open from) or an opened tab.
+  const [active, setActive] = createSignal(saved.active ?? (isTex() ? 'preview' : 'papers'));
+  const current = createMemo(() => {
+    const a = active();
+    if (a === 'preview') return isTex() ? a : 'papers';
+    return a === 'papers' || a === 'open' || opened().includes(a) ? a : 'papers';
+  });
+  createEffect(() => localStorage.setItem(tabsKey(id), JSON.stringify({ open: opened(), active: current() === 'open' ? null : current() })));
+  // A tab mounts when first shown and stays, so a PDF keeps its place.
+  const [visited, setVisited] = createSignal<ReadonlySet<string>>(new Set());
+  createEffect(() => {
+    const c = current();
+    if (!visited().has(c)) setVisited((v) => new Set([...v, c]));
+  });
+  const openTab = (tab: string) => {
+    if (!opened().includes(tab)) setOpened((o) => [...o, tab]);
+    setActive(tab);
+  };
+  const closeTab = (tab: string) => {
+    const list = opened();
+    const at = list.indexOf(tab);
+    setOpened(list.filter((t) => t !== tab));
+    if (current() === tab) setActive(list[at + 1] ?? list[at - 1] ?? 'papers');
+  };
+  const paperOf = (material: string) => props.papers.find((p) => p.material && idString(p.material) === material);
+  const addAsPaper = (material: string) =>
+    db.create(newId('paper'), {
+      owner: auth.userId() ?? '',
+      document: id,
+      title: titleOf(material),
+      material,
+      cite_key: makeCiteKey({ title: titleOf(material) }, props.papers.map((p) => p.cite_key ?? '').filter(Boolean)),
+    });
+
   // ── LaTeX: source, rendering, downloads ────────────────────────────────
 
-  const [texView, setTexView] = createSignal<'source' | 'split' | 'preview'>(
-    (localStorage.getItem(TEX_VIEW_KEY) as 'source' | 'split' | 'preview' | null) ?? 'source',
-  );
-  const chooseTexView = (v: 'source' | 'split' | 'preview') => {
-    setTexView(v);
-    localStorage.setItem(TEX_VIEW_KEY, v);
-  };
   // The preview follows the text a moment after typing stops.
   const [previewSource, setPreviewSource] = createSignal(markdown());
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
@@ -245,20 +300,109 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     navigate(`/courses/${props.courseKey}`);
   };
 
+  const tabClass = (on: boolean) =>
+    `flex h-8 shrink-0 items-center rounded-lg text-[13px] transition-colors ${on ? 'bg-soft font-medium text-fg' : 'text-muted hover:bg-soft hover:text-fg'}`;
+  const layer = (on: boolean) => `absolute inset-0 ${on ? '' : 'pointer-events-none invisible'}`;
   const panel = () => (
-    <PapersPanel
-      owner={auth.userId() ?? ''}
-      documentId={id}
-      courseId={idString(props.doc.course)}
-      papers={ordered()}
-      cited={cited()}
-      style={style()}
-      onStyle={(cite_style) => void db.update('document', id, { cite_style })}
-      reading={reading()}
-      onRead={setReading}
-      onCite={cite}
-      onClose={() => setShowPapers(false)}
-    />
+    <div class="flex h-full min-h-0 flex-col">
+      <div class="flex shrink-0 items-center gap-1 border-b border-line px-1.5 py-1">
+        <div role="tablist" aria-label="Beside the text" class="scroll-quiet flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+          <Show when={isTex()}>
+            <button type="button" role="tab" aria-selected={current() === 'preview'} class={`${tabClass(current() === 'preview')} px-2.5`} onClick={() => setActive('preview')}>
+              Preview
+            </button>
+          </Show>
+          <button type="button" role="tab" aria-selected={current() === 'papers'} class={`${tabClass(current() === 'papers')} gap-1 px-2.5`} onClick={() => setActive('papers')}>
+            Papers <span class="font-normal text-faint">{props.papers.length || ''}</span>
+          </button>
+          <For each={opened()}>
+            {(tab) => (
+              <div class={`${tabClass(current() === tab)} max-w-52 pl-2.5 pr-1`}>
+                <button type="button" role="tab" aria-selected={current() === tab} class="min-w-0 truncate" onClick={() => setActive(tab)} title={titleOf(tab)}>
+                  {titleOf(tab)}
+                </button>
+                <button
+                  type="button"
+                  class="ml-1 grid size-5 shrink-0 place-items-center rounded text-faint hover:bg-line hover:text-fg"
+                  aria-label={`Close ${titleOf(tab)}`}
+                  onClick={() => closeTab(tab)}
+                >
+                  <X size={12} stroke-width={2} />
+                </button>
+              </div>
+            )}
+          </For>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={current() === 'open'}
+            aria-label="Open something from the course"
+            title="Open something from the course"
+            class={`${tabClass(current() === 'open')} w-8 justify-center`}
+            onClick={() => setActive('open')}
+          >
+            <Plus size={15} stroke-width={1.9} />
+          </button>
+        </div>
+        <IconButton label="Hide the panel (⌘E)" size="sm" onClick={() => setShowPapers(false)}>
+          <X size={15} stroke-width={1.9} />
+        </IconButton>
+      </div>
+      <div class="relative min-h-0 flex-1">
+        <Show when={isTex()}>
+          <div class={`${layer(current() === 'preview')} scroll-quiet overflow-y-auto overscroll-contain px-5 py-4 sm:px-7 sm:py-5`} aria-label="Preview">
+            <Show when={preview().trim()} fallback={<p class="text-[14px] text-muted">The rendered document shows here.</p>}>
+              <div class="lecture" innerHTML={preview()} />
+            </Show>
+          </div>
+        </Show>
+        <div class={layer(current() === 'papers')}>
+          <PapersPanel
+            owner={auth.userId() ?? ''}
+            documentId={id}
+            courseId={courseId}
+            papers={ordered()}
+            cited={cited()}
+            style={style()}
+            onStyle={(cite_style) => void db.update('document', id, { cite_style })}
+            reading={reading()}
+            onRead={setReading}
+            onCite={cite}
+            citeStart={isTex() ? '\\cite{' : '[@'}
+          />
+        </div>
+        <Show when={current() === 'open'}>
+          <div class={layer(true)}>
+            <OpenPicker materials={openable().materials} documents={openable().documents} open={new Set(opened())} onOpen={openTab} />
+          </div>
+        </Show>
+        <For each={opened()}>
+          {(tab) => (
+            <Show when={visited().has(tab)}>
+              <div class={layer(current() === tab)}>
+                <Show
+                  when={tab.startsWith('document:')}
+                  fallback={
+                    <MaterialTab
+                      materialId={tab}
+                      title={titleOf(tab)}
+                      isPaper={!!paperOf(tab)}
+                      onCite={(locator) => {
+                        const p = paperOf(tab);
+                        if (p) cite(idKey(p.id), locator);
+                      }}
+                      onAddPaper={() => void addAsPaper(tab)}
+                    />
+                  }
+                >
+                  <DocumentTab documentId={tab} courseKey={props.courseKey} />
+                </Show>
+              </div>
+            </Show>
+          )}
+        </For>
+      </div>
+    </div>
   );
 
   return (
@@ -275,10 +419,18 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
         </div>
       </HeaderTitle>
       <HeaderEndActions>
-        <Button variant={showPapers() ? 'solid' : 'ghost'} size="sm" onClick={() => setShowPapers((v) => !v)} title="Show the papers (⌘E)">
-          <BookOpen size={16} stroke-width={1.75} class="lg:hidden" />
-          <span class="max-lg:sr-only">Papers</span> <span class="hidden opacity-60 lg:inline">⌘E</span>
+        <Button variant={showPapers() ? 'solid' : 'ghost'} size="sm" onClick={() => setShowPapers((v) => !v)} title="Show the papers, preview and tabs beside the text (⌘E)">
+          <PanelRight size={16} stroke-width={1.75} class="lg:hidden" />
+          <span class="max-lg:sr-only">Panel</span> <span class="hidden opacity-60 lg:inline">⌘E</span>
         </Button>
+        <Show when={isTex()}>
+          <Button variant="ghost" size="sm" onClick={downloadTex} title="Download the LaTeX source">
+            <FileCode2 size={16} stroke-width={1.75} /> <span class="hidden sm:inline">.tex</span>
+          </Button>
+          <Button variant="ghost" size="sm" onClick={downloadBib} title="Download the papers as references.bib, for \bibliography{references}">
+            <Library size={16} stroke-width={1.75} /> <span class="hidden sm:inline">.bib</span>
+          </Button>
+        </Show>
         <Button variant="ghost" size="sm" onClick={() => void exportPdf(props.doc.title)} title="Print or save as PDF">
           <FileDown size={16} stroke-width={1.75} /> <span class="hidden sm:inline">Export PDF</span>
         </Button>
@@ -296,39 +448,10 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
           <Show
             when={!isTex()}
             fallback={
-              <div class="sticky top-3 flex h-[calc(100dvh-7.5rem)] min-w-0 flex-col gap-3">
-                <div class="flex shrink-0 flex-wrap items-center gap-2">
-                  <Segmented
-                    label="Editor view"
-                    value={texView()}
-                    options={[
-                      { value: 'source', label: 'Source' },
-                      { value: 'split', label: 'Split' },
-                      { value: 'preview', label: 'Preview' },
-                    ]}
-                    onChange={chooseTexView}
-                  />
-                  <span class="flex-1" />
-                  <Button variant="ghost" size="sm" onClick={downloadTex} title="Download the LaTeX source">
-                    <FileCode2 size={15} stroke-width={1.75} /> .tex
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={downloadBib} title="Download the papers as references.bib, for \bibliography{references}">
-                    <Library size={15} stroke-width={1.75} /> .bib
-                  </Button>
-                </div>
-                <div class="min-h-0 flex-1">
-                  <Suspense fallback={<div class="h-40 animate-pulse rounded-xl bg-soft" />}>
-                    <TexDocumentEditor
-                      content={() => textOf(id)}
-                      onInput={(t) => edit(id, t)}
-                      onBlur={saveAll}
-                      onView={setView}
-                      preview={preview}
-                      view={wide() ? texView() : texView() === 'split' ? 'source' : texView()}
-                      label={props.doc.title}
-                    />
-                  </Suspense>
-                </div>
+              <div class="sticky top-3 h-[calc(100dvh-7.5rem)] min-w-0">
+                <Suspense fallback={<div class="h-40 animate-pulse rounded-xl bg-soft" />}>
+                  <TexDocumentEditor content={() => textOf(id)} onInput={(t) => edit(id, t)} onBlur={saveAll} onView={setView} label={props.doc.title} />
+                </Suspense>
               </div>
             }
           >

@@ -51,7 +51,10 @@ export function PapersPanel(props: {
   reading: Reading | null;
   onRead: (reading: Reading | null) => void;
   onCite: (key: string, locator?: string) => void;
-  onClose: () => void;
+  /** Without it the panel's own tabs close it. */
+  onClose?: () => void;
+  /** What starts a citation in the text: `[@` or `\cite{`. */
+  citeStart?: string;
 }) {
   const db = useDb<typeof schema>();
   const [view, setView] = createSignal<'list' | 'add' | { edit: string }>('list');
@@ -73,9 +76,13 @@ export function PapersPanel(props: {
   };
 
   const close = () => (
-    <IconButton label="Hide the papers (⌘E)" size="sm" onClick={props.onClose}>
-      <X size={15} stroke-width={1.9} />
-    </IconButton>
+    <Show when={props.onClose}>
+      {(onClose) => (
+        <IconButton label="Hide the papers (⌘E)" size="sm" onClick={onClose()}>
+          <X size={15} stroke-width={1.9} />
+        </IconButton>
+      )}
+    </Show>
   );
 
   return (
@@ -122,7 +129,9 @@ export function PapersPanel(props: {
           >
             <div class="flex shrink-0 items-center gap-2 border-b border-line py-1.5 pl-3.5 pr-2">
               <span class="min-w-0 flex-1 truncate text-[13px] font-medium">
-                Papers <span class="font-normal text-faint">{props.papers.length || ''}</span>
+                <Show when={props.onClose} fallback={<span class="font-normal text-muted">Cite from these, or type {props.citeStart ?? '[@'} in the text</span>}>
+                  Papers <span class="font-normal text-faint">{props.papers.length || ''}</span>
+                </Show>
               </span>
               <Button variant="ghost" size="sm" onClick={() => setView('add')}>
                 <Plus size={15} stroke-width={1.9} /> Add
@@ -269,7 +278,7 @@ function Reader(props: {
   );
 }
 
-function MaterialBody(props: { materialId: string; page: number | null; onPage: (page: number) => void; onPdf: (pdf: boolean) => void }) {
+export function MaterialBody(props: { materialId: string; page: number | null; onPage: (page: number) => void; onPdf: (pdf: boolean) => void }) {
   const db = useDb<typeof schema>();
   const material = firstRow(useQuery(() => qMaterial(db, props.materialId)));
   createEffect(() => props.onPdf(material.data()?.kind === 'pdf' && !!material.data()?.source_size));

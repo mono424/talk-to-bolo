@@ -1,4 +1,4 @@
-import { createEffect, on, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, on, onCleanup, onMount } from 'solid-js';
 import { basicSetup, EditorView } from 'codemirror';
 import { Annotation, EditorState, Transaction } from '@codemirror/state';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
@@ -8,8 +8,8 @@ import { texCitations } from '../lib/citations';
 
 /**
  * The editor of a LaTeX document (routes/Document.tsx): the source with
- * syntax highlighting, `\cite{` offering the document's papers, and the
- * rendered document beside it or instead of it (`view`). The text is the
+ * syntax highlighting and `\cite{` offering the document's papers. Its
+ * rendering is a tab of the panel beside it. The text is the
  * page's, saved as you type: it follows changes from elsewhere (another
  * device, ChatGPT) while the editor is not focused. Loaded on demand, with
  * CodeMirror.
@@ -32,9 +32,6 @@ export default function TexDocumentEditor(props: {
   onInput: (text: string) => void;
   onBlur: () => void;
   onView?: (view: EditorView) => void;
-  /** The rendered document, as HTML. */
-  preview: () => string;
-  view: 'source' | 'preview' | 'split';
   label: string;
 }) {
   let host!: HTMLDivElement;
@@ -79,16 +76,5 @@ export default function TexDocumentEditor(props: {
     });
   });
 
-  return (
-    <div class={`grid h-full min-h-0 min-w-0 gap-4 ${props.view === 'split' ? 'grid-cols-2' : 'grid-cols-1'}`}>
-      <div ref={host} class={`tex-editor h-full min-h-0 min-w-0 ${props.view === 'preview' ? 'hidden' : ''}`} />
-      <Show when={props.view !== 'source'}>
-        <div class="scroll-quiet h-full min-h-0 min-w-0 overflow-y-auto rounded-[14px] border border-line px-5 py-4 sm:px-8 sm:py-6" aria-label="Preview">
-          <Show when={props.preview().trim()} fallback={<p class="text-[14px] text-muted">The rendered document shows here.</p>}>
-            <div class="lecture" innerHTML={props.preview()} />
-          </Show>
-        </div>
-      </Show>
-    </div>
-  );
+  return <div ref={host} class="tex-editor h-full min-h-0 min-w-0" />;
 }
