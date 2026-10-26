@@ -106,7 +106,7 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
         </button>
         <Show when={menu()}>
           <div class="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-          <div role="menu" class="absolute right-0 z-50 mt-2 w-56 rounded-2xl border border-line bg-surface p-1.5 shadow-card">
+          <div role="menu" class="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-line bg-surface p-1.5 shadow-card">
             <div class="px-3 py-2 text-[13px] text-muted truncate">{auth.user()?.email}</div>
             <Show when={guide.connected()}>
               <button
