@@ -3,9 +3,10 @@ import { ensureServerSchema, readLimited } from './service';
 import { BadRequest, NotFound, Surreal, recordId, toBase64 } from './surreal';
 
 /**
- * Images pasted into a homework answer: a sketch, a photo of a drawing. Kept
- * in the `materials` bucket and served by an unguessable id, like the images
- * of a lecture (an <img> cannot send the session token).
+ * Images pasted into a homework answer or a document: a sketch, a photo of a
+ * drawing, a figure. Kept in the `materials` bucket and served by an
+ * unguessable id, like the images of a lecture (an <img> cannot send the
+ * session token).
  */
 
 export const MAX_ANSWER_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -17,16 +18,22 @@ const TYPES: { mime: string; magic: (b: Uint8Array) => boolean }[] = [
   { mime: 'image/webp', magic: (b) => b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 },
 ];
 
-/** Stores an image for one of the user's answers. Answers `answer_image:<id>`. */
-export async function storeAnswerImage(env: Env, userId: string, answerId: string, body: ReadableStream<Uint8Array> | null): Promise<string> {
-  const answer = recordId('answer', answerId);
+/** Stores an image for one of the user's answers or documents. Answers `answer_image:<id>`. */
+export async function storeAnswerImage(
+  env: Env,
+  userId: string,
+  table: 'answer' | 'document',
+  rawId: string,
+  body: ReadableStream<Uint8Array> | null,
+): Promise<string> {
+  const answer = recordId(table, rawId);
   await ensureServerSchema(env);
   const db = Surreal.system(env);
   const owned = await db.query<string | null>(
     'RETURN (SELECT VALUE id FROM type::record($answer) WHERE owner = type::record($owner))[0]',
     { answer, owner: userId },
   );
-  if (!owned) throw new NotFound('Answer not found.');
+  if (!owned) throw new NotFound(table === 'answer' ? 'Answer not found.' : 'Document not found.');
   const bytes = await readLimited(body, MAX_ANSWER_IMAGE_BYTES);
   if (!bytes.byteLength) throw new BadRequest('The image is empty.');
   const type = TYPES.find((t) => t.magic(bytes));

@@ -99,6 +99,7 @@ DEFINE EVENT OVERWRITE course_deleted ON TABLE course WHEN $event = "DELETE" THE
   DELETE call WHERE course = $before.id;
   DELETE fetcher WHERE course = $before.id;
   DELETE homework WHERE course = $before.id;
+  DELETE document WHERE course = $before.id;
 };
 
 -- ##################################################################
@@ -173,6 +174,7 @@ DEFINE INDEX OVERWRITE material_course ON TABLE material FIELDS course;
 
 DEFINE EVENT OVERWRITE material_deleted ON TABLE material WHEN $event = "DELETE" THEN {
   UPDATE homework SET sheet = NONE WHERE sheet = $before.id;
+  UPDATE paper SET material = NONE WHERE material = $before.id;
   DELETE chunk WHERE material = $before.id;
   DELETE asset WHERE material = $before.id;
   DELETE source_part WHERE material = $before.id;
@@ -322,6 +324,59 @@ DEFINE FIELD OVERWRITE created_at ON TABLE answer TYPE datetime DEFAULT time::no
 DEFINE FIELD OVERWRITE updated_at ON TABLE answer TYPE datetime VALUE time::now();
 
 DEFINE INDEX OVERWRITE answer_homework ON TABLE answer FIELDS homework, position;
+
+-- ##################################################################
+-- DOCUMENTS
+--
+-- Free writing in a course, a research proposal or an essay: one Markdown
+-- text in the app's editor, with the papers it draws on beside it. A
+-- `paper` is an entry of a document's bibliography: a course material (its
+-- PDF opens next to the text) or a reference typed in by hand. The text
+-- cites one as `[@<paper key>]` or `[@<paper key>, p. 4]`, several as
+-- `[@a; @b]`; Export PDF formats them and lists the cited papers.
+-- ##################################################################
+
+DEFINE TABLE OVERWRITE document SCHEMAFULL
+  PERMISSIONS
+    FOR select, update, delete WHERE owner = $auth.id
+    FOR create WHERE owner = $auth.id AND course.owner = $auth.id;
+
+DEFINE FIELD OVERWRITE owner ON TABLE document TYPE record<user> READONLY;
+DEFINE FIELD OVERWRITE course ON TABLE document TYPE record<course> READONLY; -- @parent
+DEFINE FIELD OVERWRITE title ON TABLE document TYPE string ASSERT string::len($value) > 0;
+-- The text, as Markdown with $math$ and citations. Pasted images are `answer-image:<id>`.
+DEFINE FIELD OVERWRITE content ON TABLE document TYPE string DEFAULT '';
+-- How citations print: (Author, 2024) or [1].
+DEFINE FIELD OVERWRITE cite_style ON TABLE document TYPE string DEFAULT 'author-year'
+  ASSERT $value IN ['author-year', 'numeric'];
+DEFINE FIELD OVERWRITE created_at ON TABLE document TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE updated_at ON TABLE document TYPE datetime VALUE time::now();
+
+DEFINE INDEX OVERWRITE document_course ON TABLE document FIELDS course;
+
+DEFINE EVENT OVERWRITE document_deleted ON TABLE document WHEN $event = "DELETE" THEN {
+  DELETE paper WHERE document = $before.id;
+};
+
+-- A paper a document draws on, in the order it was added.
+DEFINE TABLE OVERWRITE paper SCHEMAFULL
+  PERMISSIONS
+    FOR select, update, delete WHERE owner = $auth.id
+    FOR create WHERE owner = $auth.id AND document.owner = $auth.id;
+
+DEFINE FIELD OVERWRITE owner ON TABLE paper TYPE record<user> READONLY;
+DEFINE FIELD OVERWRITE document ON TABLE paper TYPE record<document> READONLY; -- @parent
+-- The course material holding the paper. NONE for a reference typed in, or once the material is deleted.
+DEFINE FIELD OVERWRITE material ON TABLE paper TYPE option<record<material>>;
+DEFINE FIELD OVERWRITE title ON TABLE paper TYPE string ASSERT string::len($value) > 0;
+-- As the bibliography writes them: "Vaswani, A.; Shazeer, N.", "2017", "NeurIPS".
+DEFINE FIELD OVERWRITE authors ON TABLE paper TYPE option<string>;
+DEFINE FIELD OVERWRITE year ON TABLE paper TYPE option<string>;
+DEFINE FIELD OVERWRITE venue ON TABLE paper TYPE option<string>;
+DEFINE FIELD OVERWRITE url ON TABLE paper TYPE option<string>;
+DEFINE FIELD OVERWRITE created_at ON TABLE paper TYPE datetime DEFAULT time::now() READONLY;
+
+DEFINE INDEX OVERWRITE paper_document ON TABLE paper FIELDS document;
 
 -- ##################################################################
 -- SOURCES

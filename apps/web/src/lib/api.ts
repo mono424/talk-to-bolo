@@ -266,3 +266,11 @@ export const uploadAnswerImage = (db: Db, answerId: string, file: Blob) =>
     headers: { 'content-type': file.type || 'application/octet-stream' },
     body: file,
   });
+
+/** Stores an image pasted into a document; the text refers to it as `answer-image:<key>`. */
+export const uploadDocumentImage = (db: Db, documentId: string, file: Blob) =>
+  api<{ id: string }>(db, `/api/documents/${encodeURIComponent(documentId)}/images`, {
+    method: 'POST',
+    headers: { 'content-type': file.type || 'application/octet-stream' },
+    body: file,
+  });

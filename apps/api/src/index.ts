@@ -150,7 +150,13 @@ app.get('/api/courses/:id/graph', async (c) => {
 
 // An image pasted into one of the user's answers; the body is the image.
 app.post('/api/answers/:id/images', async (c) => {
-  const id = await storeAnswerImage(c.env, c.var.caller.userId, c.req.param('id'), c.req.raw.body);
+  const id = await storeAnswerImage(c.env, c.var.caller.userId, 'answer', c.req.param('id'), c.req.raw.body);
+  return c.json({ id });
+});
+
+// The same for an image pasted into one of the user's documents.
+app.post('/api/documents/:id/images', async (c) => {
+  const id = await storeAnswerImage(c.env, c.var.caller.userId, 'document', c.req.param('id'), c.req.raw.body);
   return c.json({ id });
 });
 

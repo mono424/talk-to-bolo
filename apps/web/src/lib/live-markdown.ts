@@ -369,10 +369,10 @@ const highlight = HighlightStyle.define([
   { tag: mathTag, color: 'color-mix(in srgb, var(--blue) 80%, var(--fg))', fontFamily: 'var(--font-mono)', fontSize: '0.9em' },
 ]);
 
-/** Markdown with math, previewed in place. */
-export function liveMarkdown(): Extension {
+/** Markdown with math, previewed in place. `syntax` extends the parser (a document's citations). */
+export function liveMarkdown(syntax: MarkdownConfig[] = []): Extension {
   return [
-    markdown({ base: markdownLanguage, extensions: [math] }),
+    markdown({ base: markdownLanguage, extensions: [math, ...syntax] }),
     syntaxHighlighting(highlight),
     focusField,
     previewField,

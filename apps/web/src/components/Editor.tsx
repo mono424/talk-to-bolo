@@ -4,6 +4,8 @@ import {
   type ChangeSpec,
   EditorSelection,
   EditorState,
+  type Extension,
+  Facet,
   type Range,
   type StateCommand,
   StateField,
@@ -12,21 +14,24 @@ import {
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
+import type { MarkdownConfig } from '@lezer/markdown';
 import { defaultKeymap, history, historyKeymap, indentLess, indentMore } from '@codemirror/commands';
 import { focusField, liveMarkdown } from '../lib/live-markdown';
 
 /**
- * Every answer of a homework as one document: a single editor in which the
- * parts follow each other in sheet order, each question under its heading
- * and each part's label in the margin, so writing feels like one page. The
- * parts are still separate texts: their boundaries are tracked through
- * every edit and no edit may remove one (a selection across parts clears
- * each of them, Backspace at a part's start steps back into the one
- * before). Markdown and $math$ render in place (lib/live-markdown.ts).
- * Loaded on demand, with CodeMirror.
+ * The app's writing editor: one or more texts as one document. A homework
+ * gives it every answer, and the parts follow each other in sheet order,
+ * each question under its heading and each part's label in the margin, so
+ * writing feels like one page. The parts are still separate texts: their
+ * boundaries are tracked through every edit and no edit may remove one (a
+ * selection across parts clears each of them, Backspace at a part's start
+ * steps back into the one before). A document gives it a single text with
+ * no label. Markdown and $math$ render in place (lib/live-markdown.ts);
+ * `extensions` add to that (a document's citations). Loaded on demand, with
+ * CodeMirror.
  */
 
-export interface AnswerPart {
+export interface EditorPart {
   id: string;
   question: string;
   questionTitle: string;
@@ -34,7 +39,7 @@ export interface AnswerPart {
 }
 
 interface Props {
-  parts: AnswerPart[];
+  parts: EditorPart[];
   /** A part's current text (the saved row or a draft): followed when it changes elsewhere. */
   content: (id: string) => string;
   onInput: (id: string, text: string) => void;
@@ -45,6 +50,16 @@ interface Props {
   uploadImage: (id: string, file: File) => Promise<string | null>;
   /** Room taken at the top of the window (the exercise pinned on phones). */
   topInset?: () => number;
+  /** Shown in an empty part, default "Write your answer". */
+  placeholder?: string;
+  /** What a screen reader calls the editor, default "Answers". */
+  label?: string;
+  class?: string;
+  /** More Markdown syntax and CodeMirror extensions, given once. */
+  syntax?: MarkdownConfig[];
+  extensions?: Extension[];
+  /** The view, once made: for the page to insert text or send it effects. */
+  onView?: (view: EditorView) => void;
 }
 
 // ── The parts and their boundaries ────────────────────────────────────────
@@ -54,7 +69,7 @@ interface Props {
 // belongs to the part it ends, so they map forward (assoc 1).
 
 interface Layout {
-  parts: readonly AnswerPart[];
+  parts: readonly EditorPart[];
   seps: readonly number[];
 }
 
@@ -144,25 +159,29 @@ class QuestionWidget extends WidgetType {
 }
 
 class PlaceholderWidget extends WidgetType {
-  eq() {
-    return true;
+  constructor(readonly text: string) {
+    super();
+  }
+  eq(other: PlaceholderWidget) {
+    return other.text === this.text;
   }
   toDOM() {
     const el = document.createElement('span');
     el.className = 'cm-hw-placeholder';
     el.setAttribute('aria-hidden', 'true');
-    el.textContent = 'Write your answer';
+    el.textContent = this.text;
     return el;
   }
 }
 
-const placeholder = Decoration.widget({ widget: new PlaceholderWidget(), side: 1 });
+const placeholderText = Facet.define<string, string>({ combine: (values) => values[0] ?? 'Write your answer' });
 const activeLine = Decoration.line({ class: 'cm-hw-active' });
 
 function structure(state: EditorState): DecorationSet {
   const layout = state.field(layoutField);
   const focused = state.field(focusField);
   const active = focused ? partAt(layout, state.selection.main.head) : -1;
+  const placeholder = Decoration.widget({ widget: new PlaceholderWidget(state.facet(placeholderText)), side: 1 });
   const out: Range<Decoration>[] = [];
   layout.parts.forEach((part, i) => {
     const { from, to } = bounds(layout, state.doc.length, i);
@@ -174,6 +193,8 @@ function structure(state: EditorState): DecorationSet {
     out.push(
       Decoration.line({ class: newQuestion ? 'cm-hw-part' : 'cm-hw-part cm-hw-gap', attributes: { 'data-label': part.label } }).range(from),
     );
+    // A single text asks to be written in even before it is focused.
+    if (from === to && i !== active && layout.parts.length === 1) out.push(placeholder.range(from));
     if (i !== active) return;
     for (let pos = from; ; ) {
       const line = state.doc.lineAt(pos);
@@ -248,7 +269,7 @@ const toggleWrap =
 
 const imagesOf = (data: DataTransfer | null) => [...(data?.files ?? [])].filter((f) => f.type.startsWith('image/'));
 
-export default function AnswerEditor(props: Props) {
+export default function Editor(props: Props) {
   let host!: HTMLDivElement;
 
   onMount(() => {
@@ -317,8 +338,10 @@ export default function AnswerEditor(props: Props) {
           history(),
           EditorView.lineWrapping,
           EditorState.allowMultipleSelections.of(false),
-          liveMarkdown(),
+          liveMarkdown(props.syntax),
+          placeholderText.of(props.placeholder ?? 'Write your answer'),
           structureField,
+          ...(props.extensions ?? []),
           keymap.of([
             { key: 'Tab', run: (v) => (inList(v.state) ? indentMore(v) : toPart(1)(v)) },
             { key: 'Shift-Tab', run: (v) => (inList(v.state) ? indentLess(v) : toPart(-1)(v)) },
@@ -355,7 +378,7 @@ export default function AnswerEditor(props: Props) {
           }),
           EditorView.scrollMargins.of(() => ({ top: (props.topInset?.() ?? 0) + 16, bottom: 48 })),
           EditorView.contentAttributes.of({
-            'aria-label': 'Answers',
+            'aria-label': props.label ?? 'Answers',
             spellcheck: 'true',
             autocorrect: 'on',
             autocapitalize: 'sentences',
@@ -387,6 +410,8 @@ export default function AnswerEditor(props: Props) {
       }),
     });
 
+    props.onView?.(view);
+
     // Text that changed elsewhere (another device, a save coming back) flows in.
     createEffect(
       on(
@@ -402,5 +427,5 @@ export default function AnswerEditor(props: Props) {
     });
   });
 
-  return <div ref={host} class="answer-editor" />;
+  return <div ref={host} class={`answer-editor ${props.class ?? ''}`} />;
 }

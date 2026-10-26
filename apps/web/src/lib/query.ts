@@ -64,6 +64,16 @@ export const qSheetHomework = (db: Db, sheetId: string) => db.query('homework').
 export const qAnswers = (db: Db, homeworkId: string) =>
   db.query('answer').where({ homework: homeworkId }).orderBy('position', 'asc').build();
 
+/** A course's documents (free writing: a proposal, an essay), newest first. */
+export const qDocumentList = (db: Db, courseId: string) =>
+  db.query('document').where({ course: courseId }).orderBy('updated_at', 'desc').build();
+
+export const qDocument = (db: Db, documentId: string) => db.query('document').where({ id: documentId }).build();
+
+/** The papers a document draws on, in the order they were added. */
+export const qPapers = (db: Db, documentId: string) =>
+  db.query('paper').where({ document: documentId }).orderBy('created_at', 'asc').orderBy('id', 'asc').build();
+
 /** A course's sources (bCourses courses, web pages that import material by themselves). */
 export const qFetchers = (db: Db, courseId: string) =>
   db.query('fetcher').where({ course: courseId }).orderBy('created_at', 'asc').build();

@@ -14,9 +14,16 @@ const ZOOMS = [1, 1.25, 1.5, 2, 3];
  * The original PDF of a material, page by page. Pages are placeholders sized
  * like the page until they come near the screen; only those get a canvas, and
  * canvases far off screen are dropped again, which keeps phones within their
- * canvas memory. `page` scrolls that page into view (a citation link).
+ * canvas memory. `page` scrolls that page into view (a citation link);
+ * `onPage` follows the page being read.
  */
-export function PdfViewer(props: { materialId: string; size?: number | null; fileName?: string | null; page?: number | null }) {
+export function PdfViewer(props: {
+  materialId: string;
+  size?: number | null;
+  fileName?: string | null;
+  page?: number | null;
+  onPage?: (page: number) => void;
+}) {
   const db = useDb<typeof schema>();
   const [doc, setDoc] = createSignal<PDFDocumentProxy | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -27,6 +34,7 @@ export function PdfViewer(props: { materialId: string; size?: number | null; fil
   const [current, setCurrent] = createSignal(1);
   // Bumped by "Try again": a failed load is not cached, so this fetches anew.
   const [attempt, setAttempt] = createSignal(0);
+  createEffect(() => props.onPage?.(current()));
   const pages: HTMLDivElement[] = [];
   const near = new Set<number>();
   const tasks = new Map<number, RenderTask>();

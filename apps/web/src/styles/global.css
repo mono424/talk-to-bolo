@@ -368,7 +368,7 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
 }
 
 /*
- * The homework editor (components/AnswerEditor.tsx): one page of answers.
+ * The writing editor (components/Editor.tsx): one page of answers.
  * Lines carry 14px of left padding, where the active part's thin line runs;
  * part labels and question numbers sit in the content's left margin.
  */
@@ -463,6 +463,33 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
 .answer-editor .cm-md-math-tip { padding: 0.35rem 0.6rem; font-size: 15px; }
 .answer-editor .cm-editor .cm-tooltip-arrow { display: none; }
 
+/* A document (routes/Document.tsx): one text, no part labels in the margin. */
+.document-editor .cm-editor { font-size: 17px; }
+@media (min-width: 640px) { .document-editor .cm-editor { font-size: 16px; } }
+.document-editor .cm-editor .cm-content { padding-left: 0; }
+@media (min-width: 640px) { .document-editor .cm-editor .cm-content { padding-left: 0; } }
+.document-editor .cm-hw-active::after,
+.document-editor .cm-hw-active + .cm-md-math-display::after { display: none; }
+
+/* Citations (lib/citations.ts): as they print, until the cursor walks in. */
+.answer-editor .cm-cite {
+  padding: 0.05em 0.3em;
+  border-radius: 6px;
+  color: color-mix(in srgb, var(--blue) 85%, var(--fg));
+  background: color-mix(in srgb, var(--blue) 9%, transparent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.answer-editor .cm-cite:hover { background: color-mix(in srgb, var(--blue) 16%, transparent); }
+.answer-editor .cm-cite-missing { color: var(--red); background: var(--red-soft); cursor: default; }
+.answer-editor .cm-cite-src { font-family: var(--font-mono); font-size: 0.88em; color: color-mix(in srgb, var(--blue) 80%, var(--fg)); }
+.answer-editor .cm-editor .cm-tooltip.cm-tooltip-autocomplete { padding: 4px; }
+.answer-editor .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul { max-height: 16rem; max-width: min(28rem, 90vw); font-family: var(--font-sans); }
+.answer-editor .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.35rem 0.6rem; border-radius: 7px; }
+.answer-editor .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--soft); color: var(--fg); }
+.answer-editor .cm-completionLabel { font-size: 14px; font-weight: 500; white-space: nowrap; }
+.answer-editor .cm-completionDetail { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-style: normal; color: var(--muted); }
+
 .sheet-excerpt canvas { border-radius: 6px; }
 
 /* Export PDF prints only the homework's answers. */
@@ -521,4 +548,13 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
   .homework-print-body .answer td { padding: 2pt 7pt; text-align: left; font-weight: 400; }
   .homework-print-body .answer .katex { font-size: 1em; }
   .homework-print-body .answer .math-display { margin: 6pt 0 8pt; text-align: center; overflow: visible; break-inside: avoid; }
+
+  /* A document's reference list: hanging indent, or numbered labels. */
+  .homework-print-body .references-title { margin-top: 22pt; }
+  .homework-print-body .references { margin: 0; padding: 0; list-style: none; text-align: left; }
+  .homework-print-body .references li { margin: 0 0 5pt; padding-left: 2em; text-indent: -2em; break-inside: avoid; overflow-wrap: anywhere; }
+  .homework-print-body .references.numeric li { padding-left: 2.4em; text-indent: 0; position: relative; }
+  .homework-print-body .references.numeric .label { position: absolute; left: 0; }
+  .homework-print-body .references em { font-style: italic; }
+  .homework-print-body .references .url { font-family: KaTeX_Typewriter, 'Latin Modern Mono', monospace; font-size: 0.92em; }
 }

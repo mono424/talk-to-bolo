@@ -9,6 +9,8 @@ import { fetchPdf, materialPath, uploadAnswerImage } from '../lib/api';
 import { idKey, idString } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { useAuth } from '../lib/auth';
+import { createDrafts } from '../lib/drafts';
+import { exportPdf } from '../lib/print';
 import { loadPdfjs } from '../lib/pdfjs';
 import { firstRow, qAnswers, qHomework, qMaterial } from '../lib/query';
 import { locateParts, parseRegion } from '../lib/sheet-regions';
@@ -16,14 +18,14 @@ import { Button, PageLoader, Segmented } from '../components/ui';
 import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
 import { PdfViewer } from '../components/PdfViewer';
 import { SheetExcerpt } from '../components/SheetExcerpt';
-import type { AnswerPart } from '../components/AnswerEditor';
+import type { EditorPart } from '../components/Editor';
 
-const AnswerEditor = lazy(() => import('../components/AnswerEditor'));
+const Editor = lazy(() => import('../components/Editor'));
 
 /**
  * Doing homework: every answer of an exercise sheet in one document, part by
  * part in sheet order, with the whole window (no sidebars). It is one editor
- * (components/AnswerEditor.tsx), a quiet label in the margin saying which
+ * (components/Editor.tsx), a quiet label in the margin saying which
  * part each answer is for. Beside the answers, in a panel as wide as you drag
  * it, the exercise of the part being written: its page with the part marked
  * and the rest dimmed, or the entire sheet. On a phone it is pinned above the
@@ -33,8 +35,6 @@ const AnswerEditor = lazy(() => import('../components/AnswerEditor'));
 
 type AnswerRow = TableModel<GetTable<typeof schema, 'answer'>>;
 type MaterialRow = TableModel<GetTable<typeof schema, 'material'>>;
-
-const SAVE_DELAY_MS = 500;
 
 const PANEL_WIDTH_KEY = 'homework-panel-width';
 
@@ -143,64 +143,18 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
   // ── Editing ────────────────────────────────────────────────────────────
 
   const [active, setActive] = createSignal<string | null>(null);
-  const [drafts, setDrafts] = createSignal<Record<string, string>>({});
   const [pending, setPending] = createSignal(0);
   const [notice, setNotice] = createSignal<string | null>(null);
-  const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
   onMount(() => {
     setPending(db.pendingMutationCount);
     onCleanup(db.subscribeToPendingMutations((n) => setPending(n)));
   });
 
-  const text = (a: AnswerRow) => drafts()[idString(a.id)] ?? a.content ?? '';
-  const textOf = (id: string) => {
-    const a = props.answers.find((row) => idString(row.id) === id);
-    return a ? text(a) : '';
-  };
-
-  // A saved draft stays until its row has caught up: the editor follows the
-  // row, and must not be handed the text from before the save.
-  const settling = new Map<string, { value: string; stale: string }>();
-  const settle = (id: string, value: string) =>
-    setDrafts((d) => {
-      if (d[id] !== value) return d;
-      const { [id]: _saved, ...rest } = d;
-      return rest;
-    });
-  createEffect(() => {
-    for (const a of props.answers) {
-      const id = idString(a.id);
-      const wait = settling.get(id);
-      // The row now holds the save, or something newer from another device.
-      if (wait && (a.content === wait.value || a.content !== wait.stale)) {
-        settling.delete(id);
-        settle(id, wait.value);
-      }
-    }
+  const { text, textOf, edit, saveAll, unsaved } = createDrafts({
+    rows: () => props.answers,
+    save: (id, content) => db.update('answer', id, { content }),
   });
-
-  const save = (id: string) => {
-    clearTimeout(timers.get(id));
-    timers.delete(id);
-    const value = drafts()[id];
-    if (value === undefined) return;
-    void db.update('answer', id, { content: value }).then(() => {
-      const row = props.answers.find((a) => idString(a.id) === id);
-      if (!row || row.content === value) settle(id, value);
-      else settling.set(id, { value, stale: row.content ?? '' });
-    });
-  };
-  const saveAll = () => {
-    for (const id of [...timers.keys()]) save(id);
-  };
-  onCleanup(saveAll);
-
-  const edit = (id: string, value: string) => {
-    setDrafts((d) => ({ ...d, [id]: value }));
-    clearTimeout(timers.get(id));
-    timers.set(id, setTimeout(() => save(id), SAVE_DELAY_MS));
-  };
 
   const uploadImage = async (id: string, file: File) => {
     setNotice('Adding the image…');
@@ -215,7 +169,7 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
   };
 
   // The editor is built once per set of parts; their texts flow in through `textOf`.
-  const parts = createMemo<AnswerPart[]>(
+  const parts = createMemo<EditorPart[]>(
     () =>
       props.answers.map((a) => ({
         id: idString(a.id),
@@ -306,7 +260,7 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
           <span class="text-faint">/</span>
           <h1 class="min-w-0 truncate text-[16px] font-semibold tracking-tight sm:text-[17px]">{props.title}</h1>
           <span class="hidden shrink-0 text-[12px] text-muted sm:inline">
-            {pending() > 0 || Object.keys(drafts()).length ? 'Saving…' : `${answered()} of ${props.answers.length} answered · saved`}
+            {pending() > 0 || unsaved() ? 'Saving…' : `${answered()} of ${props.answers.length} answered · saved`}
           </span>
         </div>
       </HeaderTitle>
@@ -377,7 +331,7 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
               <Suspense fallback={<div class="mx-12 h-40 animate-pulse rounded-xl bg-soft sm:mx-16" />}>
                 <Show when={parts()} keyed>
                   {(list) => (
-                    <AnswerEditor
+                    <Editor
                       parts={list}
                       content={textOf}
                       onInput={edit}
@@ -476,15 +430,3 @@ function PrintView(props: { title: string; answers: AnswerRow[]; text: (a: Answe
 
 /** A part's label as a printed sheet writes it: "b (ii)" becomes "(b) (ii)". */
 const printLabel = (label: string) => label.split(' ').map((t) => (/^[a-z]{1,4}$/.test(t) ? `(${t})` : t)).join(' ');
-
-/** Prints once the print typeface is loaded, named after the homework (the PDF's file name). */
-async function exportPdf(title: string) {
-  await Promise.all(
-    ['400 11pt KaTeX_Main', 'italic 400 11pt KaTeX_Main', '700 11pt KaTeX_Main', 'italic 700 11pt KaTeX_Main', '400 11pt KaTeX_Typewriter']
-      .map((font) => document.fonts.load(font).catch(() => [])),
-  );
-  const before = document.title;
-  document.title = title;
-  addEventListener('afterprint', () => (document.title = before), { once: true });
-  window.print();
-}

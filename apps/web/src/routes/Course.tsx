@@ -1,14 +1,14 @@
 import { A, useNavigate, useParams } from '@solidjs/router';
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { FileCode2, FileText, FileType2, Folder, NotebookPen, PenLine, Plus, Radar, Settings2, Trash2, Upload, Waypoints } from 'lucide-solid';
+import { FileCode2, FileText, FileType2, Folder, NotebookPen, PenLine, Plus, Radar, ScrollText, Settings2, Trash2, Upload, Waypoints } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
-import { ApiError, uploadPdf } from '../lib/api';
+import { addPdfMaterial, createDocument } from '../lib/documents';
 import { reindexMaterial } from '../lib/jobs';
 import { idKey, newId, whenSynced } from '../lib/ids';
 import { COURSE_COLORS, courseColor, LANGUAGES, type CourseColor } from '../lib/palette';
-import { qHomeworkList, qMaterialsPage, useCourse } from '../lib/query';
+import { qDocumentList, qHomeworkList, qMaterialsPage, useCourse } from '../lib/query';
 import { Button, buttonClass, Field, formatDate, IconButton, inputClass, PageLoader, StatusText } from '../components/ui';
 import { scrollParent, VirtualList } from '../components/VirtualList';
 import { CourseSearch } from '../components/CourseSearch';
@@ -20,6 +20,7 @@ export default function CoursePage() {
   const params = useParams();
   const db = useDb<typeof schema>();
   const auth = useAuth();
+  const navigate = useNavigate();
   const courseId = () => `course:${params.courseKey}`;
 
   const course = useCourse(db, auth.userId, courseId);
@@ -61,20 +62,8 @@ export default function CoursePage() {
     for (const file of Array.from(files)) {
       const name = file.name.replace(/\.(pdf|md|markdown|txt|tex)$/i, '');
       if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
-        const id = newId('material');
-        await db.create(id, { owner: uid, course: courseId(), title: name, kind: 'pdf', content: '', status: 'pending' });
-        void (async () => {
-          try {
-            await whenSynced(db);
-            await uploadPdf(db, id, file);
-          } catch (err) {
-            // A refused file (400) is marked failed on its row by the API;
-            // this covers the request itself failing.
-            if (!(err instanceof ApiError && err.status === 400)) {
-              setNotice(`${file.name}: ${err instanceof Error ? err.message : 'upload failed'}`);
-            }
-          }
-        })();
+        const { uploaded } = await addPdfMaterial(db, { owner: uid, course: courseId(), file });
+        uploaded.catch((err) => setNotice(`${file.name}: ${err instanceof Error ? err.message : 'upload failed'}`));
       } else if (/\.tex$/i.test(file.name) || file.type === 'text/x-tex' || file.type === 'application/x-tex') {
         await addText(name, await file.text(), 'tex');
       } else if (/\.(md|markdown|txt)$/i.test(file.name) || file.type.startsWith('text/')) {
@@ -93,6 +82,13 @@ export default function CoursePage() {
     await whenSynced(db);
     await reindexMaterial(db, id).catch((err) => setNotice(`${title}: ${err instanceof Error ? err.message : 'indexing failed'}`));
   }
+
+  const newDocument = async () => {
+    const uid = auth.userId();
+    if (!uid) return;
+    const id = await createDocument(db, { owner: uid, course: courseId() });
+    navigate(`/courses/${params.courseKey}/documents/${idKey(id)}`);
+  };
 
   const removeMaterial = async (id: string, title: string) => {
     if (confirm(`Delete “${title}”? Its images and search index go with it.`)) await db.delete('material', id);
@@ -139,7 +135,7 @@ export default function CoursePage() {
               <Waypoints size={18} stroke-width={1.75} class="sm:h-4 sm:w-4" />
               <span class="hidden lg:inline">Graph</span>
             </A>
-            <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} onSource={() => setAddingSource(true)} />
+            <AddMaterial onFiles={(files) => void addFiles(files)} onWrite={write} onSource={() => setAddingSource(true)} onDocument={() => void newDocument()} />
             <CourseSettings course={c()} />
           </HeaderEndActions>
 
@@ -154,6 +150,7 @@ export default function CoursePage() {
             />
           </div>
 
+          <DocumentsSection courseId={c().id} courseKey={params.courseKey ?? ''} />
           <HomeworkSection courseId={c().id} courseKey={params.courseKey ?? ''} />
           <SourcesSection courseId={c().id} onOpen={setOpenSource} />
           <Show when={addingSource()}>
@@ -289,8 +286,8 @@ function EditableTitle(props: { value: string; onSave: (v: string) => void }) {
   );
 }
 
-/** Upload files or write notes, from one button in the top bar. */
-function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () => void; onSource: () => void }) {
+/** Upload files, write notes or start a document, from one button in the top bar. */
+function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () => void; onSource: () => void; onDocument: () => void }) {
   const [open, setOpen] = createSignal(false);
   let input!: HTMLInputElement;
   const item = 'flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[15px] hover:bg-soft md:h-10';
@@ -352,6 +349,17 @@ function AddMaterial(props: { onFiles: (files: FileList) => void; onWrite: () =>
             }}
           >
             <Radar size={16} stroke-width={1.75} class="text-muted" /> Add a source
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class={item}
+            onClick={() => {
+              setOpen(false);
+              props.onDocument();
+            }}
+          >
+            <ScrollText size={16} stroke-width={1.75} class="text-muted" /> New document
           </button>
         </div>
       </Show>
@@ -474,6 +482,30 @@ function CourseSettings(props: { course: CourseRow }) {
         </Sheet>
       </Show>
     </>
+  );
+}
+
+/** The course's documents: a proposal, an essay, written with papers beside them. Nothing when none. */
+function DocumentsSection(props: { courseId: string; courseKey: string }) {
+  const db = useDb<typeof schema>();
+  const documents = useQuery(() => qDocumentList(db, props.courseId));
+  return (
+    <Show when={(documents.data() ?? []).length > 0}>
+      <section class="-mx-3 mb-5">
+        <h2 class="px-3 pb-1 text-[13px] text-muted">Documents</h2>
+        <For each={documents.data() ?? []}>
+          {(d) => (
+            <A href={`/courses/${props.courseKey}/documents/${idKey(d.id)}`} class="flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-soft">
+              <span class="shrink-0 text-faint">
+                <ScrollText size={18} stroke-width={1.6} />
+              </span>
+              <span class="min-w-0 flex-1 truncate text-[15px]">{d.title}</span>
+              <span class="shrink-0 text-[13px] text-faint">{formatDate(d.updated_at)}</span>
+            </A>
+          )}
+        </For>
+      </section>
+    </Show>
   );
 }
 

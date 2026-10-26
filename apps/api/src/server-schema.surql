@@ -359,18 +359,20 @@ DEFINE EVENT OVERWRITE material_fetched_deleted ON TABLE material WHEN $event = 
 };
 
 -- ##################################################################
--- HOMEWORK IMAGES (index.ts /api/answers/:id/images)
+-- HOMEWORK IMAGES (index.ts /api/answers/:id/images, /api/documents/:id/images)
 --
--- Images pasted into an answer (main schema `answer`): a sketch, a photo of
--- a drawing. The bytes are the file /answers/<id> of the `materials`
--- bucket; the answer's Markdown refers to them as `answer-image:<id>`.
+-- Images pasted into an answer or a document (main schema `answer`,
+-- `document`): a sketch, a photo of a drawing, a figure. The bytes are the
+-- file /answers/<id> of the `materials` bucket; the Markdown refers to them
+-- as `answer-image:<id>`.
 -- ##################################################################
 
 DEFINE TABLE OVERWRITE answer_image SCHEMAFULL
   COMMENT 'sp00ky:nosync'
   PERMISSIONS NONE;
 DEFINE FIELD OVERWRITE owner ON TABLE answer_image TYPE record<user>;
-DEFINE FIELD OVERWRITE answer ON TABLE answer_image TYPE record<answer>;
+-- The answer or document the image was pasted into.
+DEFINE FIELD OVERWRITE answer ON TABLE answer_image TYPE record<answer | document>;
 DEFINE FIELD OVERWRITE mime ON TABLE answer_image TYPE string;
 DEFINE FIELD OVERWRITE size ON TABLE answer_image TYPE int;
 DEFINE FIELD OVERWRITE created_at ON TABLE answer_image TYPE datetime DEFAULT time::now();
@@ -380,5 +382,8 @@ DEFINE INDEX IF NOT EXISTS answer_image_answer ON TABLE answer_image FIELDS answ
 DEFINE EVENT OVERWRITE answer_image_file ON TABLE answer_image WHEN $event = 'DELETE'
   THEN type::file('materials', '/answers/' + <string>record::id($before.id)).delete();
 DEFINE EVENT OVERWRITE answer_images_deleted ON TABLE answer WHEN $event = 'DELETE' THEN {
+  DELETE answer_image WHERE answer = $before.id;
+};
+DEFINE EVENT OVERWRITE document_images_deleted ON TABLE document WHEN $event = 'DELETE' THEN {
   DELETE answer_image WHERE answer = $before.id;
 };
