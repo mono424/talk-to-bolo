@@ -1,4 +1,4 @@
-import { A, useNavigate, useParams } from '@solidjs/router';
+import { useNavigate, useParams } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, For, lazy, onCleanup, onMount, Show, Suspense } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
@@ -29,6 +29,7 @@ import { exportPdf } from '../lib/print';
 import { firstRow, qDocument, qDocumentList, qMaterials, qPapers } from '../lib/query';
 import { Button, IconButton, PageLoader } from '../components/ui';
 import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
+import { CourseCrumb } from '../components/CourseCrumb';
 import { type PaperRow, PapersPanel, type Reading } from '../components/Papers';
 import { DocumentTab, MaterialTab, OpenPicker } from '../components/SideTabs';
 
@@ -426,8 +427,8 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     <div class="w-full px-3 pb-24 sm:px-6">
       <Focus />
       <HeaderTitle>
-        <div class="flex min-w-0 items-baseline gap-2.5">
-          <A href={`/courses/${props.courseKey}`} class="shrink-0 text-[14px] text-muted hover:text-fg">Course</A>
+        <div class="flex min-w-0 items-center gap-2.5">
+          <CourseCrumb courseKey={props.courseKey} />
           <span class="text-faint">/</span>
           <EditableTitle value={props.doc.title} onSave={(title) => void db.update('document', id, { title })} />
           <span class="hidden shrink-0 text-[12px] text-muted sm:inline">

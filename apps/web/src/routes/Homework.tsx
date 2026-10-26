@@ -16,6 +16,7 @@ import { firstRow, qAnswers, qHomework, qMaterial } from '../lib/query';
 import { locateParts, parseRegion } from '../lib/sheet-regions';
 import { Button, PageLoader, Segmented } from '../components/ui';
 import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
+import { CourseCrumb } from '../components/CourseCrumb';
 import { PdfViewer } from '../components/PdfViewer';
 import { SheetExcerpt } from '../components/SheetExcerpt';
 import type { EditorPart } from '../components/Editor';
@@ -255,8 +256,8 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
     <div class="w-full px-3 pb-24 sm:px-6">
       <Focus />
       <HeaderTitle>
-        <div class="flex min-w-0 items-baseline gap-2.5">
-          <A href={`/courses/${props.courseKey}`} class="shrink-0 text-[14px] text-muted hover:text-fg">Course</A>
+        <div class="flex min-w-0 items-center gap-2.5">
+          <CourseCrumb courseKey={props.courseKey} />
           <span class="text-faint">/</span>
           <h1 class="min-w-0 truncate text-[16px] font-semibold tracking-tight sm:text-[17px]">{props.title}</h1>
           <span class="hidden shrink-0 text-[12px] text-muted sm:inline">
