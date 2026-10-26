@@ -583,7 +583,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
     document: (courseId, documentId) => `${links.app}/courses/${courseId.slice(courseId.indexOf(':') + 1)}/documents/${documentId.slice(documentId.indexOf(':') + 1)}`,
   };
   const DOCUMENT_FORMAT =
-    "A document's format (get_document) is markdown or tex. Markdown: # headings, lists, tables, inline math $...$, display math $$...$$ on lines of its own (KaTeX); cite a paper with [@key], with a locator [@key, p. 4], several as [@a; @b]. LaTeX: the full source, edited as such; cite with \\cite{key}, \\cite[p.~4]{key}, several as \\cite{a,b}, the papers come as a .bib the student downloads. The key is the paper's cite_key from get_document. The app formats citations as (Author, year) or [1] and lists the cited papers, so write no reference list yourself. Cite only papers the document has; add_paper adds one.";
+    "A document's format (get_document) is markdown or tex. Markdown: # headings, lists, tables, inline math $...$, display math $$...$$ on lines of its own (KaTeX); cite a paper with [@key], with a locator [@key, p. 4], several as [@a; @b]. LaTeX: the full source, edited as such; cite with \\cite{key}, \\cite[p.~4]{key}, several as \\cite{a,b}, the papers come as a .bib the student downloads. The key is the paper's cite_key from get_document. Keep to the document's format: never write Markdown into a LaTeX document (the server refuses it) or LaTeX into a Markdown one. The app formats citations as (Author, year) or [1] and lists the cited papers, so write no reference list yourself. Cite only papers the document has; add_paper adds one.";
   const PAPER_KEY = z.string().max(80).optional().describe('The key the text cites it by, BibTeX style ("stark2019"). Made from the first author and year when left out.');
   const PAPER_DETAILS = {
     cite_key: PAPER_KEY,
@@ -1067,13 +1067,24 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
     {
       title: 'Open a result',
       description:
-        'Opens an id from search (a lecture section), or a lecture (material:...), a course overview (course:...), a past session with its recap, transcript and recorded understanding (call:...), or a concept with its evidence (concept:...).',
+        "Opens an id from search (a lecture section), or a lecture (material:...), a course overview (course:...), a past session with its recap, transcript and recorded understanding (call:...), a concept with its evidence (concept:...), or one of the student's documents (document:...) with its text as it is written, LaTeX source for a LaTeX document; get_document gives its papers and cite keys too.",
       inputSchema: z.object({ id: z.string().min(1) }),
       outputSchema: Document,
       annotations: READ,
       _meta: meta('Opening…', 'Opened'),
     },
-    ({ id }) => run(async () => structured(await fetchDocument(env, userId, links, id, toExternal))),
+    ({ id }) =>
+      run(async () => {
+        if (!id.startsWith('document:')) return structured(await fetchDocument(env, userId, links, id, toExternal));
+        const d = await readDocument(user, documentLinks, answerText, id);
+        return structured({
+          id: d.id,
+          title: d.title,
+          text: d.content,
+          url: d.url,
+          metadata: { format: d.format, writing: d.writing, papers: d.papers.map((p) => `${p.cite} ${p.title}`).join('\n') },
+        });
+      }),
   );
 
   return server;

@@ -112,6 +112,31 @@ export function texCitesToMarkdown(tex: string): string {
   });
 }
 
+/**
+ * Markdown citations as LaTeX ones, for text written into a LaTeX document:
+ * `[@a; @b, p. 4]` becomes `\cite[p.~4]{a,b}`.
+ */
+export function markdownCitesToTex(md: string): string {
+  return md.replace(citationPattern(), (src) => {
+    const items = parseCitation(src);
+    if (!items.length) return src;
+    const post = items.map((i) => i.locator).filter(Boolean).at(-1) ?? '';
+    return `\\cite${post ? `[${post.replace(/^p\.\s*/, 'p.~')}]` : ''}{${items.map((i) => i.key).join(',')}}`;
+  });
+}
+
+/**
+ * What gives Markdown away in text bound for a LaTeX document, or null:
+ * headings, bold, links. LaTeX itself has none of them.
+ */
+export function markdownInTex(text: string): string | null {
+  if (/^#{1,6}\s/m.test(text)) return 'Markdown headings (# ...): use \\section{...}';
+  if (/\*\*[^*\n]+\*\*/.test(text)) return 'Markdown bold (**...**): use \\textbf{...}';
+  if (/(^|[^\\!])\[[^\]\n]+\]\(https?:\/\//.test(text)) return 'Markdown links ([text](url)): use \\href{url}{text}';
+  if (/^```/m.test(text)) return 'Markdown code fences (```): use verbatim';
+  return null;
+}
+
 /** How often a text cites each key. LaTeX is read through its `\cite`s. */
 export function countCitations(text: string, format: 'markdown' | 'tex' = 'markdown'): Map<string, number> {
   const md = format === 'tex' ? texCitesToMarkdown(text) : text;

@@ -1,5 +1,15 @@
 import { lectureMarkdown } from '../../../shared/lecture';
-import { bibtexEntry, countCitations, draftMarkdown, findReferences, makeCiteKey, matchMaterials } from '../../../shared/references';
+import {
+  bibtexEntry,
+  countCitations,
+  draftMarkdown,
+  findReferences,
+  makeCiteKey,
+  markdownCitesToTex,
+  markdownInTex,
+  matchMaterials,
+  texCitesToMarkdown,
+} from '../../../shared/references';
 import { appendText, applyEdits, type AnswerEdit, type AnswerText } from './homework';
 import { BadRequest, NotFound, recordId, type Surreal } from './surreal';
 
@@ -51,6 +61,25 @@ const isTex = (doc: { format?: string | null }) => doc.format === 'tex';
 
 const present = (v: string | null | undefined) => (v?.trim() ? v.trim() : undefined);
 
+/** How each format is written, said with every read so a client keeps to it. */
+const WRITING = {
+  tex: 'LaTeX source, shown and edited as such in the app. Write and edit it only as LaTeX: \\section{...}, \\textbf{...}, \\emph{...}, itemize and enumerate, \\href{url}{text}, math in $...$ or \\[...\\]. Cite with \\cite{key}, never [@key], and never write Markdown into it.',
+  markdown: 'Markdown: # headings, **bold**, lists, $...$ math. Cite with [@key].',
+};
+
+/**
+ * Text from an AI client in the document's format: its citations in that
+ * format's syntax, and no Markdown in a LaTeX document, which would land in
+ * the source as it is.
+ */
+function inFormat(format: string | null | undefined, content: string): string {
+  if (format !== 'tex') return texCitesToMarkdown(content);
+  const tex = markdownCitesToTex(content);
+  const found = markdownInTex(tex);
+  if (found) throw new BadRequest(`This is a LaTeX document (format tex): write LaTeX source, not Markdown. Found ${found}. Cite with \\cite{key}.`);
+  return tex;
+}
+
 async function loadDocument(user: Surreal, documentId: string) {
   const id = recordId('document', documentId);
   const [doc, papers] = await user.queryAll(
@@ -74,6 +103,7 @@ export async function readDocument(user: Surreal, links: DocumentLinks, text: An
     url: links.document(doc.course, doc.id),
     ...(doc.source ? { started_from: doc.source } : {}),
     format: doc.format ?? 'markdown',
+    writing: isTex(doc) ? WRITING.tex : WRITING.markdown,
     cite_style: doc.cite_style ?? 'author-year',
     updated_at: doc.updated_at,
     content: text.external(doc.content ?? ''),
@@ -98,7 +128,7 @@ export async function readDocument(user: Surreal, links: DocumentLinks, text: An
 /** The student's documents, newest first: of one course, or of all. */
 export async function listDocuments(user: Surreal, courseId: string | null): Promise<unknown[]> {
   const rows = await user.query<unknown[]>(
-    `SELECT id, title, course, course.title AS course_title, updated_at,
+    `SELECT id, title, format ?? 'markdown' AS format, course, course.title AS course_title, updated_at,
        string::len(content) AS characters,
        count((SELECT id FROM paper WHERE document = $parent.id)) AS papers
      FROM document ${courseId ? 'WHERE course = type::record($course)' : ''} ORDER BY updated_at DESC`,
@@ -117,7 +147,7 @@ export async function createDocument(user: Surreal, text: AnswerText, input: { c
       course: recordId('course', input.course_id),
       title: input.title.trim() || 'Untitled document',
       format: input.format ?? 'markdown',
-      content: text.internal(input.content ?? ''),
+      content: text.internal(inFormat(input.format, input.content ?? '')),
     },
   );
   if (!rows?.length) throw new NotFound('Course not found.');
@@ -202,19 +232,19 @@ async function save(user: Surreal, id: string, before: string, content: string) 
 export async function writeDocument(user: Surreal, text: AnswerText, documentId: string, content: string, mode: 'replace' | 'append' = 'replace') {
   const { doc } = await loadDocument(user, documentId);
   const before = doc.content ?? '';
-  const incoming = text.internal(content);
+  const incoming = text.internal(inFormat(doc.format, content));
   const next = mode === 'append' ? appendText(before, incoming) : incoming;
   const status = await save(user, doc.id, before, next);
-  return { document: doc.id, status, characters: next.length };
+  return { document: doc.id, format: doc.format ?? 'markdown', status, characters: next.length };
 }
 
 /** Find-and-replace inside the text. */
 export async function editDocument(user: Surreal, text: AnswerText, documentId: string, edits: AnswerEdit[]) {
   const { doc } = await loadDocument(user, documentId);
   const before = doc.content ?? '';
-  const next = text.internal(applyEdits(text.external(before), edits));
+  const next = text.internal(applyEdits(text.external(before), edits.map((e) => ({ ...e, new_text: inFormat(doc.format, e.new_text) }))));
   const status = await save(user, doc.id, before, next);
-  return { document: doc.id, status, content: text.external(next) };
+  return { document: doc.id, format: doc.format ?? 'markdown', status, content: text.external(next) };
 }
 
 export interface PaperDetails {
@@ -305,7 +335,8 @@ export async function updateDocument(
   }
   if (input.cite_style) set.cite_style = input.cite_style;
   const before = doc.content ?? '';
-  let content: string | undefined = input.content !== undefined ? text.internal(input.content) : undefined;
+  const format = input.format ?? doc.format ?? 'markdown';
+  let content: string | undefined = input.content !== undefined ? text.internal(inFormat(format, input.content)) : undefined;
   if (input.format && input.format !== (doc.format ?? 'markdown')) {
     if (content === undefined && input.format === 'tex' && doc.source) {
       const m = await user.query<{ kind: string; content: string } | null>('SELECT kind, content FROM ONLY type::record($id)', { id: doc.source });
