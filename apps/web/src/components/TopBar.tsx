@@ -77,8 +77,8 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
         </div>
       </header>
 
-      {/* The account, at the screen's lower right on every page, its menu opening upwards. */}
-      <div class="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-30 sm:bottom-5 sm:right-5">
+      {/* The account, at the screen's lower left on every page, its menu opening upwards. */}
+      <div class="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 z-30 sm:bottom-5 sm:left-5">
         <button
           type="button"
           onClick={() => setMenu(!menu())}
@@ -98,7 +98,7 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
         </button>
         <Show when={menu()}>
           <div class="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-          <div role="menu" class="absolute bottom-full right-0 z-50 mb-2 w-60 rounded-2xl border border-line bg-surface p-1.5 shadow-card">
+          <div role="menu" class="absolute bottom-full left-0 z-50 mb-2 w-60 rounded-2xl border border-line bg-surface p-1.5 shadow-card">
             <div class="px-3 py-2">
               <p class="truncate text-[14px] font-medium">{auth.user()?.name ?? 'Account'}</p>
               <p class="truncate text-[13px] text-muted">{auth.user()?.email}</p>
