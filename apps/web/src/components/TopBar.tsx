@@ -45,38 +45,44 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
   });
 
   return (
-    <header ref={header} class="relative flex h-16 shrink-0 items-center gap-2 px-3 sm:px-5">
-      {/* A page in focus has no sidebar to open: its own way back stands here. */}
-      <Show when={!focused()}>
-        <button
-          type="button"
-          class="inline-flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-soft hover:text-fg md:hidden"
-          aria-label={props.menuOpen ? 'Close navigation' : 'Open navigation'}
-          aria-expanded={props.menuOpen}
-          aria-controls="app-navigation"
-          onClick={props.onMenu}
-        >
-          {props.menuOpen ? <X size={20} stroke-width={1.75} /> : <Menu size={20} stroke-width={1.75} />}
-        </button>
-      </Show>
-      <Show when={!titled()}>
-        <A href="/" class="mr-1 inline-flex shrink-0 items-center text-fg sm:mr-3" aria-label="TalkToBolo home">
-          <Logo />
-        </A>
-      </Show>
-      {/* A page's own title, in place of the logo: within the sidebar's width beside it, unless the sidebar is hidden. */}
-      <HeaderTitleSlot class={`flex min-w-0 items-center empty:hidden ${focused() ? '' : 'md:max-w-[252px]'}`} />
+    <>
+      <header ref={header} class="relative flex h-16 shrink-0 items-center gap-2 px-3 sm:px-5">
+        {/* A page in focus has no sidebar to open: its own way back stands here. */}
+        <Show when={!focused()}>
+          <button
+            type="button"
+            class="inline-flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-soft hover:text-fg md:hidden"
+            aria-label={props.menuOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={props.menuOpen}
+            aria-controls="app-navigation"
+            onClick={props.onMenu}
+          >
+            {props.menuOpen ? <X size={20} stroke-width={1.75} /> : <Menu size={20} stroke-width={1.75} />}
+          </button>
+        </Show>
+        <Show when={!titled()}>
+          <A href="/" class="mr-1 inline-flex shrink-0 items-center text-fg sm:mr-3" aria-label="TalkToBolo home">
+            <Logo />
+          </A>
+        </Show>
+        {/* A page's own title, in place of the logo: within the sidebar's width beside it, unless the sidebar is hidden. */}
+        <HeaderTitleSlot class={`flex min-w-0 items-center empty:hidden ${focused() ? '' : 'md:max-w-[252px]'}`} />
 
-      {/* Beside the sidebar, the slot spans the page below it, so pages can line controls up with their content.
-          Wide windows end it at the recent sessions column, clear of the account menu above it. */}
-      <HeaderSlot class="flex min-w-0 flex-1 items-center gap-2 md:pointer-events-none md:absolute md:inset-y-0 md:left-[288px] md:right-0 xl:right-[288px] xl:[--account-w:0px]" />
+        {/* Beside the sidebar, the slot spans the page below it, so pages can line controls up with their content.
+            Wide windows end it at the recent sessions column, clear of the account menu above it. */}
+        <HeaderSlot class="flex min-w-0 flex-1 items-center gap-2 md:pointer-events-none md:absolute md:inset-y-0 md:left-[288px] md:right-0 xl:right-[288px] xl:[--account-w:0px]" />
 
-      <div ref={account} class="relative ml-auto flex shrink-0 items-center gap-2">
-        <HeaderEndSlot class="flex items-center gap-1 empty:hidden" />
+        <div ref={account} class="relative ml-auto flex shrink-0 items-center gap-2">
+          <HeaderEndSlot class="flex items-center gap-1 empty:hidden" />
+        </div>
+      </header>
+
+      {/* The account, at the screen's lower right on every page, its menu opening upwards. */}
+      <div class="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-30 sm:bottom-5 sm:right-5">
         <button
           type="button"
           onClick={() => setMenu(!menu())}
-          class="inline-flex h-11 min-w-11 items-center justify-center gap-2.5 rounded-full bg-soft px-1 text-[14px] text-fg hover:bg-hover md:h-10 sm:pr-3.5"
+          class="inline-flex h-11 w-11 items-center justify-center rounded-full border border-line bg-surface shadow-card transition-colors hover:bg-soft"
           aria-label="Account menu"
           aria-haspopup="menu"
           aria-expanded={menu()}
@@ -89,12 +95,14 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
               </span>
             </Show>
           </span>
-          <span class="hidden max-w-40 truncate sm:inline">{auth.user()?.name ?? 'Account'}</span>
         </button>
         <Show when={menu()}>
           <div class="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-          <div role="menu" class="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-line bg-surface p-1.5 shadow-card">
-            <div class="px-3 py-2 text-[13px] text-muted truncate">{auth.user()?.email}</div>
+          <div role="menu" class="absolute bottom-full right-0 z-50 mb-2 w-60 rounded-2xl border border-line bg-surface p-1.5 shadow-card">
+            <div class="px-3 py-2">
+              <p class="truncate text-[14px] font-medium">{auth.user()?.name ?? 'Account'}</p>
+              <p class="truncate text-[13px] text-muted">{auth.user()?.email}</p>
+            </div>
             {/* The ChatGPT guide: to connect, or once connected, how to study there. */}
             <button
               type="button"
@@ -126,6 +134,6 @@ export function TopBar(props: { onMenu: () => void; menuOpen: boolean }) {
           </div>
         </Show>
       </div>
-    </header>
+    </>
   );
 }
