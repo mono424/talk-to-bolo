@@ -425,7 +425,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
   );
 
   return (
-    <div class="w-full px-3 pb-24 sm:px-6">
+    <div class="w-full px-3 sm:px-6">
       <Focus />
       <HeaderTitle>
         <div class="flex min-w-0 items-center gap-2.5">
@@ -468,7 +468,8 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
       </Show>
 
       <div class="relative mt-4 flex items-start gap-0">
-        <div class="relative min-w-0 flex-1">
+        {/* The room after the text is the text's own: a short one never scrolls the page, and the panel stays put. */}
+        <div class={`relative min-w-0 flex-1 ${isTex() ? '' : 'pb-24'}`}>
           <Show
             when={!isTex()}
             fallback={

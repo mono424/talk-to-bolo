@@ -253,7 +253,7 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
   );
 
   return (
-    <div class="w-full px-3 pb-24 sm:px-6">
+    <div class="w-full px-3 sm:px-6">
       <Focus />
       <HeaderTitle>
         <div class="flex min-w-0 items-center gap-2.5">
@@ -326,7 +326,7 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
       </Show>
 
       <div class="relative mt-4 flex items-start gap-0">
-        <div class="relative min-w-0 flex-1">
+        <div class="relative min-w-0 flex-1 pb-24">
           <div class="mx-auto max-w-3xl">
             <Show when={props.answers.length} fallback={<p class="py-10 text-center text-muted">This sheet has no parts to answer.</p>}>
               <Suspense fallback={<div class="mx-12 h-40 animate-pulse rounded-xl bg-soft sm:mx-16" />}>
