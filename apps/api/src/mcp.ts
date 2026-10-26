@@ -12,7 +12,7 @@ import {
 } from './study';
 import { OUTCOMES, recordUnderstanding, studentModel, type Outcome } from './understanding';
 import { editAnswer, listHomework, readHomework, startHomework, writeAnswers, type AnswerText, type HomeworkLinks } from './homework';
-import { addPaper, createDocument, editDocument, listDocuments, readDocument, updatePaper, writeDocument, type DocumentLinks } from './documents';
+import { addPaper, createDocument, documentFromMaterial, editDocument, listDocuments, readDocument, updatePaper, writeDocument, type DocumentLinks } from './documents';
 import { createSource } from './fetch/routes';
 import { getOwnedFetcher, startFetch } from './fetch/run';
 
@@ -603,17 +603,23 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
     'create_document',
     {
       title: 'Start a document',
-      description: `Starts a document in a course, as the app's New document does, optionally with its first text. Returns it as get_document. ${DOCUMENT_FORMAT}`,
+      description: `Starts a document in a course, as the app's New document does, optionally with its first text. With from_material_id instead, starts it from a material (a draft the student uploaded), as the app's Write button does: the material's text as Markdown, and the papers it mentions ("Stark et al. (2019): [title](link)") as the document's papers, linked to the course material holding each; a material with a document already hands that one back. Returns it as get_document. ${DOCUMENT_FORMAT}`,
       inputSchema: z.object({
-        course_id: z.string(),
-        title: z.string().min(1).max(300),
+        course_id: z.string().optional().describe('Needed without from_material_id.'),
+        title: z.string().min(1).max(300).optional().describe('Needed without from_material_id.'),
         content: z.string().max(400_000).optional(),
+        from_material_id: z.string().optional().describe('A material:... id to start from.'),
       }),
       annotations: WRITE,
       _meta: meta('Starting your document…', 'Document started'),
     },
-    ({ course_id, title, content }) =>
+    ({ course_id, title, content, from_material_id }) =>
       run(async () => {
+        if (from_material_id) {
+          const { id, created } = await documentFromMaterial(user, from_material_id);
+          return text({ created, ...(await readDocument(user, documentLinks, answerText, id)) });
+        }
+        if (!course_id || !title) return fail('Give course_id and title, or from_material_id.');
         const id = await createDocument(user, answerText, { course_id, title, content });
         return text(await readDocument(user, documentLinks, answerText, id));
       }),

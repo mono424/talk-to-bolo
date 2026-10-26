@@ -70,6 +70,9 @@ export const qDocumentList = (db: Db, courseId: string) =>
 
 export const qDocument = (db: Db, documentId: string) => db.query('document').where({ id: documentId }).build();
 
+/** The document started from a material, if the student started one. */
+export const qSourceDocument = (db: Db, materialId: string) => db.query('document').where({ source: materialId }).limit(1).build();
+
 /** The papers a document draws on, in the order they were added. */
 export const qPapers = (db: Db, documentId: string) =>
   db.query('paper').where({ document: documentId }).orderBy('created_at', 'asc').orderBy('id', 'asc').build();

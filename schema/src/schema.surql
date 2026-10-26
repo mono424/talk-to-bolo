@@ -175,6 +175,7 @@ DEFINE INDEX OVERWRITE material_course ON TABLE material FIELDS course;
 DEFINE EVENT OVERWRITE material_deleted ON TABLE material WHEN $event = "DELETE" THEN {
   UPDATE homework SET sheet = NONE WHERE sheet = $before.id;
   UPDATE paper SET material = NONE WHERE material = $before.id;
+  UPDATE document SET source = NONE WHERE source = $before.id;
   DELETE chunk WHERE material = $before.id;
   DELETE asset WHERE material = $before.id;
   DELETE source_part WHERE material = $before.id;
@@ -344,6 +345,8 @@ DEFINE TABLE OVERWRITE document SCHEMAFULL
 DEFINE FIELD OVERWRITE owner ON TABLE document TYPE record<user> READONLY;
 DEFINE FIELD OVERWRITE course ON TABLE document TYPE record<course> READONLY; -- @parent
 DEFINE FIELD OVERWRITE title ON TABLE document TYPE string ASSERT string::len($value) > 0;
+-- The material the document was started from (a draft uploaded to the course), if any.
+DEFINE FIELD OVERWRITE source ON TABLE document TYPE option<record<material>>;
 -- The text, as Markdown with $math$ and citations. Pasted images are `answer-image:<id>`.
 DEFINE FIELD OVERWRITE content ON TABLE document TYPE string DEFAULT '';
 -- How citations print: (Author, 2024) or [1].
@@ -353,6 +356,7 @@ DEFINE FIELD OVERWRITE created_at ON TABLE document TYPE datetime DEFAULT time::
 DEFINE FIELD OVERWRITE updated_at ON TABLE document TYPE datetime VALUE time::now();
 
 DEFINE INDEX OVERWRITE document_course ON TABLE document FIELDS course;
+DEFINE INDEX OVERWRITE document_source ON TABLE document FIELDS source;
 
 DEFINE EVENT OVERWRITE document_deleted ON TABLE document WHEN $event = "DELETE" THEN {
   DELETE paper WHERE document = $before.id;

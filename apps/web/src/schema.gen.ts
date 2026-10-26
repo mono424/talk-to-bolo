@@ -276,6 +276,7 @@ export const schema = {
      * Relationships:
      * - `course` → `course` (one)
      * - `owner` → `user` (one)
+     * - `source` → `material` (one)
      * - `papers` → `paper` (many)
      *
      * @example
@@ -312,6 +313,12 @@ export const schema = {
          * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
          */
         owner: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `source?` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        source: { type: 'string' as const, recordId: true, optional: true },
         title: { type: 'string' as const, optional: false },
         /**
          * `updated_at?` — string
@@ -585,6 +592,7 @@ export const schema = {
      * - `fetcher` → `fetcher` (one)
      * - `owner` → `user` (one)
      * - `calls` → `call` (many)
+     * - `documents` → `document` (many)
      * - `homeworks` → `homework` (many)
      * - `jobs` → `job` (many)
      * - `papers` → `paper` (many)
@@ -657,6 +665,7 @@ export const schema = {
          */
         updated_at: { type: 'string' as const, dateTime: true, optional: true },
         calls: { type: 'string' as const, array: true, optional: true },
+        documents: { type: 'string' as const, array: true, optional: true },
         homeworks: { type: 'string' as const, array: true, optional: true },
         jobs: { type: 'string' as const, array: true, optional: true },
         papers: { type: 'string' as const, array: true, optional: true },
@@ -939,6 +948,12 @@ export const schema = {
     },
     {
       from: 'document' as const,
+      field: 'source' as const,
+      to: 'material' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'document' as const,
       field: 'papers' as const,
       to: 'paper' as const,
       cardinality: 'many' as const
@@ -1031,6 +1046,12 @@ export const schema = {
       from: 'material' as const,
       field: 'calls' as const,
       to: 'call' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'material' as const,
+      field: 'documents' as const,
+      to: 'document' as const,
       cardinality: 'many' as const
     },
     {
@@ -1375,6 +1396,7 @@ DEFINE INDEX OVERWRITE material_course ON TABLE material FIELDS course;
 DEFINE EVENT OVERWRITE material_deleted ON TABLE material WHEN $event = "DELETE" THEN {
   UPDATE homework SET sheet = NONE WHERE sheet = $before.id;
   UPDATE paper SET material = NONE WHERE material = $before.id;
+  UPDATE document SET source = NONE WHERE source = $before.id;
   DELETE chunk WHERE material = $before.id;
   DELETE asset WHERE material = $before.id;
   DELETE source_part WHERE material = $before.id;
@@ -1535,6 +1557,8 @@ DEFINE FIELD OVERWRITE owner ON TABLE document TYPE option<record<user> READONLY
 DEFINE FIELD OVERWRITE course ON TABLE document TYPE option<record<course> READONLY>;
  -- @parent
 DEFINE FIELD OVERWRITE title ON TABLE document TYPE option<string> ASSERT string::len($value) > 0;
+-- The material the document was started from (a draft uploaded to the course), if any.
+DEFINE FIELD OVERWRITE source ON TABLE document TYPE option<record<material>>;
 -- The text, as Markdown with $math$ and citations. Pasted images are \`answer-image:<id>\`.
 DEFINE FIELD OVERWRITE content ON TABLE document TYPE option<string> DEFAULT '';
 -- How citations print: (Author, 2024) or [1].
@@ -1543,6 +1567,7 @@ DEFINE FIELD OVERWRITE created_at ON TABLE document TYPE option<datetime> DEFAUL
 DEFINE FIELD OVERWRITE updated_at ON TABLE document TYPE option<datetime>;
 
 DEFINE INDEX OVERWRITE document_course ON TABLE document FIELDS course;
+DEFINE INDEX OVERWRITE document_source ON TABLE document FIELDS source;
 
 DEFINE EVENT OVERWRITE document_deleted ON TABLE document WHEN $event = "DELETE" THEN {
   DELETE paper WHERE document = $before.id;

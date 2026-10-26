@@ -256,7 +256,8 @@ function preview(state: EditorState): DecorationSet {
             out.push(hidden.range(marks[1].from, to));
           }
           out.push(Decoration.mark({ class: 'cm-md-link' }).range(marks[0]?.to ?? from, marks[1]?.from ?? to));
-          return false;
+          // Into the text, for emphasis in it: [*title*](url).
+          return;
         }
         case 'Image': {
           const url = node.getChild('URL');

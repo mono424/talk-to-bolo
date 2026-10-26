@@ -1,14 +1,15 @@
 import { A, useNavigate, useParams, useSearchParams } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, lazy, Show, Suspense, type JSX } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
-import { Download, NotebookPen, Pencil, Waypoints } from 'lucide-solid';
+import { Download, NotebookPen, Pencil, ScrollText, Waypoints } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { PROGRESS_JOB, reindexMaterial, saveLectureProgress } from '../lib/jobs';
 import { chunkMarkdown, chunkPages, lectureMarkdown } from '../../../../shared/lecture';
 import { idKey, idString, whenSynced } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
-import { firstRow, qMaterial, qMaterialJobs, qSheetHomework } from '../lib/query';
+import { firstRow, qMaterial, qMaterialJobs, qMaterials, qSheetHomework, qSourceDocument } from '../lib/query';
 import { createHomework } from '../lib/homework';
+import { createDocumentFromMaterial } from '../lib/documents';
 import { useAuth } from '../lib/auth';
 import { Button, buttonClass, inputClass, Loader, PageLoader, StatusText } from '../components/ui';
 import { HeaderActions, SideActions } from '../components/HeaderSlot';
@@ -149,6 +150,7 @@ export default function MaterialPage() {
                     <Waypoints size={14} stroke-width={1.75} /> <span class="hidden sm:inline">Graph</span>
                   </A>
                   <AnswerButton material={m()} courseKey={params.courseKey ?? ''} />
+                  <WriteButton material={m()} courseKey={params.courseKey ?? ''} />
                 </Show>
                 <Show
                   when={editing()}
@@ -290,6 +292,41 @@ function downloadTex(title: string, content: string) {
   a.download = `${title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'document'}.tex`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Opens the document started from this material (a draft, a proposal), making
+ * it the first time: the text in the editor, the papers it mentions beside it.
+ */
+function WriteButton(props: { material: { id: unknown; course: unknown; title: string; kind: string; content: string }; courseKey: string }) {
+  const db = useDb<typeof schema>();
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const draft = firstRow(useQuery(() => qSourceDocument(db, idString(props.material.id))));
+  const materials = useQuery(() => qMaterials(db, idString(props.material.course)));
+  const [busy, setBusy] = createSignal(false);
+  const open = async () => {
+    const existing = draft.data();
+    if (existing) return navigate(`/courses/${props.courseKey}/documents/${idKey(existing.id)}`);
+    const owner = auth.userId();
+    if (!owner || busy()) return;
+    setBusy(true);
+    try {
+      const id = await createDocumentFromMaterial(db, {
+        owner,
+        material: { id: idString(props.material.id), course: idString(props.material.course), title: props.material.title, kind: props.material.kind, content: props.material.content },
+        materials: (materials.data() ?? []).map((m) => ({ id: idString(m.id), title: m.title })),
+      });
+      navigate(`/courses/${props.courseKey}/documents/${idKey(id)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button variant="soft" size="sm" class="max-sm:w-11 max-sm:px-0" onClick={open} disabled={busy()} title="Write it as a document, with the papers it mentions beside it">
+      <ScrollText size={14} stroke-width={1.75} /> <span class="hidden sm:inline">{draft.data() ? 'My document' : 'Write'}</span>
+    </Button>
+  );
 }
 
 /** Opens the homework answering this sheet, starting it the first time. */

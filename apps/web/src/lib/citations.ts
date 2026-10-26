@@ -88,8 +88,11 @@ const shortTitle = (title: string) => {
 
 /** Who a citation names: "Vaswani", "Vaswani and Shazeer", "Vaswani et al.", or the title. */
 export function citeNames(paper: Paper): string {
-  const names = authorList(paper.authors).map(surname);
+  // "Stark et al." as written stands for three or more.
+  const etAl = /\s+et\s+al\.?$/i;
+  const names = authorList(paper.authors?.replace(etAl, '')).map(surname);
   if (!names.length) return `“${shortTitle(paper.title)}”`;
+  if (etAl.test(paper.authors?.trim() ?? '')) return `${names[0]} et al.`;
   if (names.length === 1) return names[0];
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
   return `${names[0]} et al.`;

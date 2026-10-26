@@ -1,3 +1,5 @@
+import { lectureMarkdown } from '../../../shared/lecture';
+import { draftMarkdown, findReferences, matchMaterials } from '../../../shared/references';
 import { appendText, applyEdits, type AnswerEdit, type AnswerText } from './homework';
 import { BadRequest, NotFound, recordId, type Surreal } from './surreal';
 
@@ -16,6 +18,7 @@ interface DocumentRow {
   id: string;
   title: string;
   course: string;
+  source?: string | null;
   content: string;
   cite_style?: string | null;
   updated_at: string;
@@ -57,7 +60,7 @@ const present = (v: string | null | undefined) => (v?.trim() ? v.trim() : undefi
 async function loadDocument(user: Surreal, documentId: string) {
   const id = recordId('document', documentId);
   const [doc, papers] = await user.queryAll(
-    `SELECT id, title, course, content, cite_style, updated_at FROM ONLY type::record($id);
+    `SELECT id, title, course, source, content, cite_style, updated_at FROM ONLY type::record($id);
      SELECT id, created_at, material, material.course AS material_course, material.kind AS material_kind, title, authors, year, venue, url
        FROM paper WHERE document = type::record($id) ORDER BY created_at;`,
     { id },
@@ -75,6 +78,7 @@ export async function readDocument(user: Surreal, links: DocumentLinks, text: An
     title: doc.title,
     course: doc.course,
     url: links.document(doc.course, doc.id),
+    ...(doc.source ? { started_from: doc.source } : {}),
     cite_style: doc.cite_style ?? 'author-year',
     updated_at: doc.updated_at,
     content: text.external(doc.content ?? ''),
@@ -114,6 +118,60 @@ export async function createDocument(user: Surreal, text: AnswerText, input: { c
   );
   if (!rows?.length) throw new NotFound('Course not found.');
   return id;
+}
+
+/**
+ * Starts a document from a material, as the app's Write button does: its
+ * text as Markdown, and the papers it mentions as the document's papers,
+ * each linked to the course material holding it. A material with a document
+ * already hands that one back.
+ */
+export async function documentFromMaterial(user: Surreal, materialId: string): Promise<{ id: string; created: boolean }> {
+  const material = recordId('material', materialId);
+  const [m, existing] = await user.queryAll(
+    `SELECT id, course, title, kind, status, content FROM ONLY type::record($material);
+     RETURN (SELECT VALUE id FROM document WHERE source = type::record($material) LIMIT 1)[0];`,
+    { material },
+  ) as [{ id: string; course: string; title: string; kind: string; status: string; content: string } | null, string | null];
+  if (!m) throw new NotFound('Material not found.');
+  if (existing) return { id: existing, created: false };
+  const content = draftMarkdown(lectureMarkdown(m.kind, m.content ?? ''));
+  if (!content) throw new BadRequest(m.status === 'ready' ? 'The material has no text to start from.' : 'The material is still being processed; list_materials shows when it is ready.');
+  const others = (await user.query<{ id: string; title: string }[]>('SELECT id, title FROM material WHERE course = type::record($course) AND id != type::record($material)', {
+    course: m.course,
+    material,
+  })) ?? [];
+  const refs = findReferences(content);
+  const matches = matchMaterials(refs, others);
+  const id = `document:k${crypto.randomUUID().replaceAll('-', '')}`;
+  await user.query(
+    `BEGIN;
+     CREATE type::record($id) CONTENT { owner: $auth.id, course: type::record($course), source: type::record($material), title: $title, content: $content };
+     FOR $p IN $papers {
+       CREATE type::record($p.id) CONTENT {
+         owner: $auth.id, document: type::record($id), material: IF $p.material { type::record($p.material) } ELSE { NONE },
+         title: $p.title, authors: $p.authors, year: $p.year, url: $p.url
+       };
+     };
+     COMMIT;`,
+    {
+      id,
+      course: m.course,
+      material,
+      title: m.title,
+      content,
+      // Null fields are dropped on the way, so they arrive as NONE.
+      papers: refs.map((r, i) => ({
+        id: `paper:k${crypto.randomUUID().replaceAll('-', '')}`,
+        material: matches[i]?.id ?? null,
+        title: r.title,
+        authors: r.authors,
+        year: r.year,
+        url: r.url,
+      })),
+    },
+  );
+  return { id, created: true };
 }
 
 const CONFLICT = 'conflict: the student changed the document while you wrote. Read it again with get_document and retry.';

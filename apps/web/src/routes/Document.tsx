@@ -110,8 +110,25 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
 
   // ── Papers and citations ───────────────────────────────────────────────
 
+  // Papers in the order they were added. Rows just made here have no
+  // created_at yet (the database sets it), so ties go by where the text
+  // first mentions each: a document started from a draft lists them as it does.
+  const ordered = createMemo(() => {
+    const body = text(props.doc);
+    const at = (p: PaperRow) => {
+      const spots = [body.indexOf(`@${idKey(p.id)}`), p.url ? body.indexOf(p.url) : -1].filter((i) => i >= 0);
+      return spots.length ? Math.min(...spots) : Infinity;
+    };
+    const time = (p: PaperRow) => (p.created_at ? new Date(p.created_at as unknown as string).getTime() : Infinity);
+    return [...props.papers].sort((a, b) => {
+      const ta = time(a);
+      const tb = time(b);
+      return ta === tb || !Number.isFinite(ta) || !Number.isFinite(tb) ? at(a) - at(b) || ta - tb : ta - tb;
+    });
+  });
+
   const style = (): CiteStyle => (props.doc.cite_style === 'numeric' ? 'numeric' : 'author-year');
-  const papers = createMemo(() => props.papers.map(toPaper), [], { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) });
+  const papers = createMemo(() => ordered().map(toPaper), [], { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) });
   const cited = createMemo(() => countCites(text(props.doc)));
 
   const [view, setView] = createSignal<EditorView>();
@@ -166,7 +183,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
       owner={auth.userId() ?? ''}
       documentId={id}
       courseId={idString(props.doc.course)}
-      papers={props.papers}
+      papers={ordered()}
       cited={cited()}
       style={style()}
       onStyle={(cite_style) => void db.update('document', id, { cite_style })}
