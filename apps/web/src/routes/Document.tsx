@@ -20,7 +20,8 @@ import {
   updatePapers,
 } from '../lib/citations';
 import { latexToMarkdown } from '../../../../shared/latex';
-import { bibtexEntry, countCitations, makeCiteKey, texCitesToMarkdown } from '../../../../shared/references';
+import { lectureMarkdown } from '../../../../shared/lecture';
+import { bibtexEntry, countCitations, draftMarkdown, makeCiteKey, texCitesToMarkdown } from '../../../../shared/references';
 import { createDrafts } from '../lib/drafts';
 import { idKey, idString, newId } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
@@ -245,6 +246,22 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     setOpened(list.filter((t) => t !== tab));
     if (current() === tab) setActive(list[at + 1] ?? list[at - 1] ?? 'papers');
   };
+  // A Markdown copy of a LaTeX draft (made before documents kept LaTeX) can
+  // go back to the draft's source, with the papers it has.
+  const texSource = createMemo(() => {
+    const source = props.doc.source ? idString(props.doc.source) : null;
+    const m = source && !isTex() ? (materials.data() ?? []).find((x) => idString(x.id) === source) : null;
+    return m && m.kind === 'tex' && m.content.trim() ? m : null;
+  });
+  const switchToTex = async () => {
+    const m = texSource();
+    if (!m) return;
+    const untouched = text(props.doc).trim() === draftMarkdown(lectureMarkdown('tex', m.content)).trim();
+    if (!untouched && !confirm(`Switch to LaTeX? The text becomes the LaTeX source of “${m.title}” again, so what you changed here since is replaced. The papers stay.`)) return;
+    edit(id, m.content);
+    await db.update('document', id, { format: 'tex' });
+    saveAll();
+  };
   const paperOf = (material: string) => props.papers.find((p) => p.material && idString(p.material) === material);
   const addAsPaper = (material: string) =>
     db.create(newId('paper'), {
@@ -423,6 +440,11 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
           <PanelRight size={16} stroke-width={1.75} class="lg:hidden" />
           <span class="max-lg:sr-only">Panel</span> <span class="hidden opacity-60 lg:inline">⌘E</span>
         </Button>
+        <Show when={texSource()}>
+          <Button variant="soft" size="sm" onClick={() => void switchToTex()} title="Edit it as the LaTeX source of the draft it came from">
+            <FileCode2 size={16} stroke-width={1.75} /> <span class="hidden sm:inline">Switch to LaTeX</span>
+          </Button>
+        </Show>
         <Show when={isTex()}>
           <Button variant="ghost" size="sm" onClick={downloadTex} title="Download the LaTeX source">
             <FileCode2 size={16} stroke-width={1.75} /> <span class="hidden sm:inline">.tex</span>
@@ -448,7 +470,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
           <Show
             when={!isTex()}
             fallback={
-              <div class="sticky top-3 h-[calc(100dvh-7.5rem)] min-w-0">
+              <div class="sticky top-3 mx-auto h-[calc(100dvh-7.5rem)] min-w-0 max-w-[58rem]">
                 <Suspense fallback={<div class="h-40 animate-pulse rounded-xl bg-soft" />}>
                   <TexDocumentEditor content={() => textOf(id)} onInput={(t) => edit(id, t)} onBlur={saveAll} onView={setView} label={props.doc.title} />
                 </Suspense>
@@ -492,7 +514,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
             }}
           />
           <aside
-            class="sticky top-3 flex h-[calc(100dvh-7.5rem)] shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface"
+            class="sticky top-3 flex h-[calc(100dvh-7.5rem)] shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-frame"
             style={{ width: `${panelWidth()}px` }}
             aria-label="Papers"
           >

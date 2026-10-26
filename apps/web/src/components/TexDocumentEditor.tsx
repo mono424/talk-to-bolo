@@ -76,5 +76,5 @@ export default function TexDocumentEditor(props: {
     });
   });
 
-  return <div ref={host} class="tex-editor h-full min-h-0 min-w-0" />;
+  return <div ref={host} class="tex-editor flat h-full min-h-0 min-w-0" />;
 }

@@ -1,5 +1,5 @@
 import { lectureMarkdown } from '../../../shared/lecture';
-import { countCitations, draftMarkdown, findReferences, makeCiteKey, matchMaterials } from '../../../shared/references';
+import { bibtexEntry, countCitations, draftMarkdown, findReferences, makeCiteKey, matchMaterials } from '../../../shared/references';
 import { appendText, applyEdits, type AnswerEdit, type AnswerText } from './homework';
 import { BadRequest, NotFound, recordId, type Surreal } from './surreal';
 
@@ -90,6 +90,8 @@ export async function readDocument(user: Surreal, links: DocumentLinks, text: An
       ...(p.material && p.material_course ? { material_url: links.material(p.material_course, p.material) } : {}),
       cited: (counts.get(key(p.id)) ?? 0) + (p.cite_key ? (counts.get(p.cite_key) ?? 0) : 0),
     })),
+    // The references.bib the app downloads beside the .tex, for \bibliography{references}.
+    ...(isTex(doc) ? { bibtex: papers.map((p) => bibtexEntry({ ...p, key: citeKey(p) })).join('\n\n') } : {}),
   };
 }
 
@@ -282,4 +284,59 @@ export async function updatePaper(user: Surreal, paperId: string, details: Paper
   const rows = await user.query<unknown[]>('UPDATE type::record($id) MERGE $set RETURN VALUE id;', { id, set });
   if (!rows?.length) throw new NotFound('Paper not found.');
   return { id, updated: Object.keys(set) };
+}
+
+/**
+ * Changes a document's title, citation style or format. A new format needs
+ * the text in it, except a Markdown copy of a LaTeX draft going back to
+ * LaTeX: it takes the draft's source again.
+ */
+export async function updateDocument(
+  user: Surreal,
+  text: AnswerText,
+  documentId: string,
+  input: { title?: string; cite_style?: 'author-year' | 'numeric'; format?: 'markdown' | 'tex'; content?: string },
+) {
+  const { doc } = await loadDocument(user, documentId);
+  const set: Record<string, string> = {};
+  if (input.title !== undefined) {
+    if (!input.title.trim()) throw new BadRequest('A document keeps its title.');
+    set.title = input.title.trim();
+  }
+  if (input.cite_style) set.cite_style = input.cite_style;
+  const before = doc.content ?? '';
+  let content: string | undefined = input.content !== undefined ? text.internal(input.content) : undefined;
+  if (input.format && input.format !== (doc.format ?? 'markdown')) {
+    if (content === undefined && input.format === 'tex' && doc.source) {
+      const m = await user.query<{ kind: string; content: string } | null>('SELECT kind, content FROM ONLY type::record($id)', { id: doc.source });
+      if (m?.kind === 'tex' && m.content?.trim()) content = m.content;
+    }
+    if (content === undefined) throw new BadRequest(`Give content: the whole text written as ${input.format === 'tex' ? 'LaTeX' : 'Markdown'}.`);
+    set.format = input.format;
+  }
+  if (content !== undefined) set.content = content;
+  if (!Object.keys(set).length) throw new BadRequest('Nothing to change.');
+  // Compare-and-set when the text changes, like write_document.
+  const rows = await user.query<unknown[]>(
+    `UPDATE type::record($id) MERGE $set ${set.content !== undefined ? 'WHERE content = $before' : ''} RETURN VALUE id;`,
+    { id: doc.id, set, before },
+  );
+  if (!rows?.length) throw new BadRequest(set.content !== undefined ? CONFLICT : 'Document not found.');
+  return { document: doc.id, updated: Object.keys(set) };
+}
+
+/** Takes a paper off a document's list. The course material it reads stays. */
+export async function removePaper(user: Surreal, paperId: string) {
+  const id = recordId('paper', paperId);
+  const rows = await user.query<unknown[]>('DELETE type::record($id) RETURN BEFORE;', { id });
+  if (!rows?.length) throw new NotFound('Paper not found.');
+  return { removed: id };
+}
+
+/** Deletes a document with its list of papers. The course material stays. */
+export async function deleteDocument(user: Surreal, documentId: string) {
+  const id = recordId('document', documentId);
+  const rows = await user.query<unknown[]>('DELETE type::record($id) RETURN BEFORE;', { id });
+  if (!rows?.length) throw new NotFound('Document not found.');
+  return { deleted: id };
 }

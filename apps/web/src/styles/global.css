@@ -220,6 +220,16 @@ button, a, input, select, textarea { scroll-margin-block: 1rem; }
 .tex-editor .cm-selectionBackground,
 .tex-editor .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--blue) 22%, transparent) !important; }
 @media (max-width: 767px) { .tex-editor .cm-editor { font-size: 16px; } }
+/* A document's LaTeX: flat on the page, like the text of a Markdown document. */
+.tex-editor.flat .cm-editor { background: transparent; border: 0; border-radius: 0; font-size: 14px; }
+.tex-editor.flat .cm-editor.cm-focused { box-shadow: none; }
+.tex-editor.flat .cm-scroller { border-radius: 0; line-height: 1.7; }
+.tex-editor.flat .cm-gutters { background: transparent; border: 0; color: color-mix(in srgb, var(--faint) 60%, transparent); }
+.tex-editor.flat .cm-lineNumbers .cm-gutterElement { padding: 0 14px 0 4px; font-size: 11px; }
+.tex-editor.flat .cm-activeLine { background: transparent; }
+.tex-editor.flat .cm-activeLineGutter { background: transparent; color: var(--muted); }
+.tex-editor.flat .cm-foldGutter { opacity: 0; transition: opacity 0.15s; }
+.tex-editor.flat .cm-gutters:hover .cm-foldGutter { opacity: 1; }
 
 /* A running state's dot breathes; nothing else moves on its own. */
 @keyframes breathe {
