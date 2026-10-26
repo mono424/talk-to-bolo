@@ -17,6 +17,7 @@ import { locateParts, parseRegion } from '../lib/sheet-regions';
 import { Button, PageLoader, Segmented } from '../components/ui';
 import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
 import { CourseCrumb } from '../components/CourseCrumb';
+import { SidePanel } from '../components/SidePanel';
 import { PdfViewer } from '../components/PdfViewer';
 import { SheetExcerpt } from '../components/SheetExcerpt';
 import type { EditorPart } from '../components/Editor';
@@ -205,7 +206,6 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
   const [panelWidth, setPanelWidth] = createSignal(
     Number(localStorage.getItem(PANEL_WIDTH_KEY)) || Math.round(Math.min(820, Math.max(440, window.innerWidth * 0.46))),
   );
-  let resize: { x: number; w: number } | null = null;
   const clampWidth = (w: number) => Math.round(Math.min(window.innerWidth * 0.7, Math.max(360, w)));
 
   // Phones: how much room the pinned exercise takes (drag its handle).
@@ -349,38 +349,30 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
         </div>
 
         {/* Wide screens: the panel beside the answers, as wide as it is dragged. */}
-        <Show when={wide() && showExercise() && current()}>
-          {(a) => (
-            <>
-              <div
-                class="sticky top-3 mx-3 h-[calc(100dvh-7.5rem)] w-2 shrink-0 cursor-col-resize touch-none rounded-full transition-colors hover:bg-line"
-                title="Drag to resize"
-                onPointerDown={(e) => {
-                  resize = { x: e.clientX, w: panelWidth() };
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                }}
-                onPointerMove={(e) => resize && setPanelWidth(clampWidth(resize.w - (e.clientX - resize.x)))}
-                onPointerUp={() => {
-                  resize = null;
-                  localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth()));
-                }}
-              />
-              <aside
-                class="sticky top-3 flex h-[calc(100dvh-7.5rem)] shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface"
-                style={{ width: `${panelWidth()}px` }}
-              >
-                {panelHeader(a(), false)}
-                <div class="scroll-quiet min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
-                  <Show
-                    when={mode() === 'sheet' && hasPdf() && props.sheet}
-                    fallback={excerpt(a())}
-                  >
-                    {(sheet) => <PdfViewer materialId={idString(sheet().id)} size={sheet().source_size} fileName={sheet().source_name} page={pageOf(a())} />}
-                  </Show>
-                </div>
-              </aside>
-            </>
-          )}
+        <Show when={wide()}>
+          <SidePanel
+            open={showExercise() && !!current()}
+            width={panelWidth()}
+            onWidth={(w) => setPanelWidth(clampWidth(w))}
+            onResized={() => localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth()))}
+            label="Exercise"
+          >
+            <Show when={current()}>
+              {(a) => (
+                <>
+                  {panelHeader(a(), false)}
+                  <div class="scroll-quiet min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+                    <Show
+                      when={mode() === 'sheet' && hasPdf() && props.sheet}
+                      fallback={excerpt(a())}
+                    >
+                      {(sheet) => <PdfViewer materialId={idString(sheet().id)} size={sheet().source_size} fileName={sheet().source_name} page={pageOf(a())} />}
+                    </Show>
+                  </div>
+                </>
+              )}
+            </Show>
+          </SidePanel>
         </Show>
       </div>
 

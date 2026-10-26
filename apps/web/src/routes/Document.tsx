@@ -30,6 +30,7 @@ import { firstRow, qDocument, qDocumentList, qMaterials, qPapers } from '../lib/
 import { Button, IconButton, PageLoader } from '../components/ui';
 import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
 import { CourseCrumb } from '../components/CourseCrumb';
+import { SidePanel } from '../components/SidePanel';
 import { type PaperRow, PapersPanel, type Reading } from '../components/Papers';
 import { DocumentTab, MaterialTab, OpenPicker } from '../components/SideTabs';
 
@@ -309,7 +310,6 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
   const [panelWidth, setPanelWidth] = createSignal(
     Number(localStorage.getItem(PANEL_WIDTH_KEY)) || Math.round(Math.min(760, Math.max(400, window.innerWidth * 0.4))),
   );
-  let resize: { x: number; w: number } | null = null;
   const clampWidth = (w: number) => Math.round(Math.min(window.innerWidth * 0.7, Math.max(340, w)));
 
   const remove = async () => {
@@ -323,7 +323,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
   const layer = (on: boolean) => `absolute inset-0 ${on ? '' : 'pointer-events-none invisible'}`;
   const panel = () => (
     <div class="flex h-full min-h-0 flex-col">
-      <div class="flex shrink-0 items-center gap-1 border-b border-line px-1.5 py-1">
+      <div class="flex shrink-0 items-center gap-1 px-1.5 pt-1.5 pb-0.5">
         <div role="tablist" aria-label="Beside the text" class="scroll-quiet flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
           <Show when={isTex()}>
             <button type="button" role="tab" aria-selected={current() === 'preview'} class={`${tabClass(current() === 'preview')} px-2.5`} onClick={() => setActive('preview')}>
@@ -500,27 +500,16 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
         </div>
 
         {/* Wide screens: the papers beside the text, as wide as they are dragged. */}
-        <Show when={wide() && showPapers()}>
-          <div
-            class="sticky top-3 mx-3 h-[calc(100dvh-7.5rem)] w-2 shrink-0 cursor-col-resize touch-none rounded-full transition-colors hover:bg-line"
-            title="Drag to resize"
-            onPointerDown={(e) => {
-              resize = { x: e.clientX, w: panelWidth() };
-              e.currentTarget.setPointerCapture(e.pointerId);
-            }}
-            onPointerMove={(e) => resize && setPanelWidth(clampWidth(resize.w - (e.clientX - resize.x)))}
-            onPointerUp={() => {
-              resize = null;
-              localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth()));
-            }}
-          />
-          <aside
-            class="sticky top-3 flex h-[calc(100dvh-7.5rem)] shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-frame"
-            style={{ width: `${panelWidth()}px` }}
-            aria-label="Papers"
+        <Show when={wide()}>
+          <SidePanel
+            open={showPapers()}
+            width={panelWidth()}
+            onWidth={(w) => setPanelWidth(clampWidth(w))}
+            onResized={() => localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth()))}
+            label="Beside the text"
           >
             {panel()}
-          </aside>
+          </SidePanel>
         </Show>
       </div>
 
