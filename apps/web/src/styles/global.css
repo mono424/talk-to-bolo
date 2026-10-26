@@ -467,16 +467,58 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
 
 /* Export PDF prints only the homework's answers. */
 .homework-print { display: none; }
+/* Export PDF, set like a LaTeX article: Computer Modern (KaTeX's own fonts),
+   justified and hyphenated, numbered pages, booktabs tables. */
 @media print {
-  @page { margin: 18mm 16mm; }
+  @page {
+    size: auto;
+    margin: 25mm 27mm 28mm;
+    @bottom-center { content: counter(page); font-family: KaTeX_Main, serif; font-size: 10pt; }
+  }
   body > :not(.homework-print) { display: none !important; }
   .homework-print { display: block; color: #000; background: #fff; }
-  .homework-print-body { font-size: 11pt; line-height: 1.5; }
-  .homework-print-body h1 { font-size: 17pt; font-weight: 600; margin: 0 0 14pt; }
-  .homework-print-body h2 { font-size: 13pt; font-weight: 600; margin: 16pt 0 6pt; break-after: avoid; }
-  .homework-print-body h3 { font-size: 11pt; font-weight: 600; margin: 10pt 0 4pt; break-after: avoid; }
-  .homework-print-body h3 span { font-weight: 400; color: #555; }
-  .homework-print-body .unanswered { color: #888; font-style: italic; }
-  .homework-print-body .lecture { max-width: none; font-size: 11pt; }
-  .homework-print-body .math-display { overflow: visible; }
+  .homework-print-body {
+    font-family: KaTeX_Main, 'Latin Modern Roman', 'CMU Serif', 'STIX Two Text', 'Times New Roman', serif;
+    font-size: 11pt;
+    line-height: 1.38;
+    text-align: justify;
+    hyphens: auto;
+    font-kerning: normal;
+    font-variant-ligatures: common-ligatures;
+  }
+  .homework-print-body .title-block { text-align: center; margin: 0 0 26pt; }
+  .homework-print-body h1 { font-size: 17pt; font-weight: 400; line-height: 1.2; margin: 0 0 12pt; }
+  .homework-print-body .author, .homework-print-body .date { font-size: 12pt; margin: 0 0 4pt; text-align: center; }
+  .homework-print-body h2 { font-size: 14pt; font-weight: 700; line-height: 1.25; margin: 20pt 0 8pt; text-align: left; break-after: avoid; }
+  .homework-print-body h2 .title::before { content: ': '; }
+  .homework-print-body h3 { font-size: 11pt; font-weight: 700; margin: 10pt 0 3pt; break-after: avoid; }
+  .homework-print-body section { margin-bottom: 6pt; }
+  .homework-print-body .unanswered { font-style: italic; }
+
+  .homework-print-body .answer { overflow-wrap: break-word; }
+  .homework-print-body .answer > :first-child { margin-top: 0; }
+  .homework-print-body .answer p { margin: 0 0 7pt; orphans: 2; widows: 2; }
+  .homework-print-body .answer h1,
+  .homework-print-body .answer h2,
+  .homework-print-body .answer h3,
+  .homework-print-body .answer h4 { font-size: 11pt; font-weight: 700; margin: 8pt 0 3pt; break-after: avoid; }
+  .homework-print-body .answer em { font-style: italic; }
+  .homework-print-body .answer strong { font-weight: 700; }
+  .homework-print-body .answer a { color: inherit; text-decoration: none; }
+  .homework-print-body .answer ul,
+  .homework-print-body .answer ol { margin: 0 0 7pt; padding-left: 2em; text-align: left; }
+  .homework-print-body .answer ul { list-style: disc; }
+  .homework-print-body .answer ol { list-style: decimal; }
+  .homework-print-body .answer li { margin: 0 0 2pt; }
+  .homework-print-body .answer blockquote { margin: 0 2.5em 7pt; }
+  .homework-print-body .answer code { font-family: KaTeX_Typewriter, 'Latin Modern Mono', monospace; font-size: 1em; }
+  .homework-print-body .answer pre { margin: 0 0 7pt 1.5em; white-space: pre-wrap; text-align: left; font-size: 10pt; break-inside: avoid; }
+  .homework-print-body .answer img { display: block; max-width: 100%; max-height: 120mm; height: auto; margin: 6pt auto 9pt; break-inside: avoid; }
+  .homework-print-body .answer hr { border: 0; border-top: 0.4pt solid #000; margin: 10pt 0; }
+  .homework-print-body .answer table { border-collapse: collapse; margin: 6pt auto 9pt; border-top: 0.8pt solid #000; border-bottom: 0.8pt solid #000; break-inside: avoid; }
+  .homework-print-body .answer thead { border-bottom: 0.5pt solid #000; }
+  .homework-print-body .answer th,
+  .homework-print-body .answer td { padding: 2pt 7pt; text-align: left; font-weight: 400; }
+  .homework-print-body .answer .katex { font-size: 1em; }
+  .homework-print-body .answer .math-display { margin: 6pt 0 8pt; text-align: center; overflow: visible; break-inside: avoid; }
 }

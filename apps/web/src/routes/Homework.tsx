@@ -8,6 +8,7 @@ import type { schema } from '../schema.gen';
 import { fetchPdf, materialPath, uploadAnswerImage } from '../lib/api';
 import { idKey, idString } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
+import { useAuth } from '../lib/auth';
 import { loadPdfjs } from '../lib/pdfjs';
 import { firstRow, qAnswers, qHomework, qMaterial } from '../lib/query';
 import { locateParts, parseRegion } from '../lib/sheet-regions';
@@ -313,7 +314,7 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
         <Button variant={showExercise() ? 'solid' : 'ghost'} size="sm" onClick={() => setShowExercise((v) => !v)} title="Show the exercise (⌘E)">
           Exercise <span class="hidden opacity-60 lg:inline">⌘E</span>
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => window.print()} title="Print or save as PDF">
+        <Button variant="ghost" size="sm" onClick={() => void exportPdf(props.title)} title="Print or save as PDF">
           <FileDown size={16} stroke-width={1.75} /> <span class="hidden sm:inline">Export PDF</span>
         </Button>
       </HeaderEndActions>
@@ -435,29 +436,35 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
   );
 }
 
-/** What Export PDF prints: the answers in sheet order, under their part labels. */
+/**
+ * What Export PDF prints: the answers in sheet order, under their part
+ * labels, set like a LaTeX article (Computer Modern, which KaTeX ships).
+ */
 function PrintView(props: { title: string; answers: AnswerRow[]; text: (a: AnswerRow) => string }) {
+  const auth = useAuth();
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   return (
     <article class="homework-print-body">
-      <h1>{props.title}</h1>
+      <header class="title-block">
+        <h1>{props.title}</h1>
+        <Show when={auth.user()?.name}>{(name) => <p class="author">{name()}</p>}</Show>
+        <p class="date">{today}</p>
+      </header>
       <For each={props.answers}>
         {(a, i) => (
           <>
             <Show when={i() === 0 || props.answers[i() - 1]?.question !== a.question}>
               <h2>
-                Question {a.question}
-                {a.question_title ? `: ${a.question_title}` : ''}
+                <span class="number">Question {a.question}</span>
+                {a.question_title ? <span class="title">{a.question_title}</span> : null}
               </h2>
             </Show>
             <section>
               <Show when={a.label}>
-                <h3>
-                  {a.label}
-                  {a.points ? <span> ({a.points} points)</span> : null}
-                </h3>
+                <h3>{printLabel(a.label)}</h3>
               </Show>
               <Show when={props.text(a).trim()} fallback={<p class="unanswered">No answer.</p>}>
-                <div class="lecture" innerHTML={renderMarkdown(props.text(a))} />
+                <div class="answer" innerHTML={renderMarkdown(props.text(a))} />
               </Show>
             </section>
           </>
@@ -465,4 +472,19 @@ function PrintView(props: { title: string; answers: AnswerRow[]; text: (a: Answe
       </For>
     </article>
   );
+}
+
+/** A part's label as a printed sheet writes it: "b (ii)" becomes "(b) (ii)". */
+const printLabel = (label: string) => label.split(' ').map((t) => (/^[a-z]{1,4}$/.test(t) ? `(${t})` : t)).join(' ');
+
+/** Prints once the print typeface is loaded, named after the homework (the PDF's file name). */
+async function exportPdf(title: string) {
+  await Promise.all(
+    ['400 11pt KaTeX_Main', 'italic 400 11pt KaTeX_Main', '700 11pt KaTeX_Main', 'italic 700 11pt KaTeX_Main', '400 11pt KaTeX_Typewriter']
+      .map((font) => document.fonts.load(font).catch(() => [])),
+  );
+  const before = document.title;
+  document.title = title;
+  addEventListener('afterprint', () => (document.title = before), { once: true });
+  window.print();
 }
