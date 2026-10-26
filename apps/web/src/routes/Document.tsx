@@ -196,7 +196,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
   // ── LaTeX: source, rendering, downloads ────────────────────────────────
 
   const [texView, setTexView] = createSignal<'source' | 'split' | 'preview'>(
-    (localStorage.getItem(TEX_VIEW_KEY) as 'source' | 'split' | 'preview' | null) ?? 'split',
+    (localStorage.getItem(TEX_VIEW_KEY) as 'source' | 'split' | 'preview' | null) ?? 'source',
   );
   const chooseTexView = (v: 'source' | 'split' | 'preview') => {
     setTexView(v);
