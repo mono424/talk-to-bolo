@@ -500,19 +500,32 @@ function CourseSettings(props: { course: CourseRow }) {
 function DocumentsSection(props: { courseId: string; courseKey: string }) {
   const db = useDb<typeof schema>();
   const documents = useQuery(() => qDocumentList(db, props.courseId));
+  const remove = async (id: string, title: string) => {
+    if (confirm(`Delete “${title}”? Its text and its list of papers go with it. The papers stay in the course.`)) await db.delete('document', id);
+  };
   return (
     <Show when={(documents.data() ?? []).length > 0}>
       <section class="-mx-3 mb-5">
         <h2 class="px-3 pb-1 text-[13px] text-muted">Documents</h2>
         <For each={documents.data() ?? []}>
           {(d) => (
-            <A href={`/courses/${props.courseKey}/documents/${idKey(d.id)}`} class="flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-soft">
-              <span class="shrink-0 text-faint">
-                <ScrollText size={18} stroke-width={1.6} />
-              </span>
-              <span class="min-w-0 flex-1 truncate text-[15px]">{d.title}</span>
-              <span class="shrink-0 text-[13px] text-faint">{formatDate(d.updated_at)}</span>
-            </A>
+            <div class="group flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-soft">
+              <A href={`/courses/${props.courseKey}/documents/${idKey(d.id)}`} class="flex min-w-0 flex-1 items-center gap-3">
+                <span class="shrink-0 text-faint">
+                  <ScrollText size={18} stroke-width={1.6} />
+                </span>
+                <span class="min-w-0 flex-1 truncate text-[15px]">{d.title}</span>
+                <span class="shrink-0 text-[13px] text-faint">{formatDate(d.updated_at)}</span>
+              </A>
+              <IconButton
+                label={`Delete ${d.title}`}
+                size="sm"
+                class="shrink-0 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
+                onClick={() => void remove(d.id, d.title)}
+              >
+                <Trash2 size={16} stroke-width={1.75} />
+              </IconButton>
+            </div>
           )}
         </For>
       </section>
@@ -524,19 +537,32 @@ function DocumentsSection(props: { courseId: string; courseKey: string }) {
 function HomeworkSection(props: { courseId: string; courseKey: string }) {
   const db = useDb<typeof schema>();
   const homework = useQuery(() => qHomeworkList(db, props.courseId));
+  const remove = async (id: string, title: string) => {
+    if (confirm(`Delete your answers to “${title}”? The exercise sheet stays in the course.`)) await db.delete('homework', id);
+  };
   return (
     <Show when={(homework.data() ?? []).length > 0}>
       <section class="-mx-3 mb-5">
         <h2 class="px-3 pb-1 text-[13px] text-muted">Homework</h2>
         <For each={homework.data() ?? []}>
           {(h) => (
-            <A href={`/courses/${props.courseKey}/homework/${idKey(h.id)}`} class="flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-soft">
-              <span class="shrink-0 text-faint">
-                <NotebookPen size={18} stroke-width={1.6} />
-              </span>
-              <span class="min-w-0 flex-1 truncate text-[15px]">{h.title}</span>
-              <span class="shrink-0 text-[13px] text-faint">{formatDate(h.updated_at)}</span>
-            </A>
+            <div class="group flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-soft">
+              <A href={`/courses/${props.courseKey}/homework/${idKey(h.id)}`} class="flex min-w-0 flex-1 items-center gap-3">
+                <span class="shrink-0 text-faint">
+                  <NotebookPen size={18} stroke-width={1.6} />
+                </span>
+                <span class="min-w-0 flex-1 truncate text-[15px]">{h.title}</span>
+                <span class="shrink-0 text-[13px] text-faint">{formatDate(h.updated_at)}</span>
+              </A>
+              <IconButton
+                label={`Delete ${h.title}`}
+                size="sm"
+                class="shrink-0 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
+                onClick={() => void remove(h.id, h.title)}
+              >
+                <Trash2 size={16} stroke-width={1.75} />
+              </IconButton>
+            </div>
           )}
         </For>
       </section>

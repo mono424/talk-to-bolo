@@ -1,8 +1,8 @@
-import { A, useParams } from '@solidjs/router';
+import { A, useNavigate, useParams } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, For, lazy, on, onCleanup, onMount, Show, Suspense, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { ExternalLink, FileDown, X } from 'lucide-solid';
+import { ExternalLink, FileDown, Trash2, X } from 'lucide-solid';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { schema } from '../schema.gen';
 import { fetchPdf, materialPath, uploadAnswerImage } from '../lib/api';
@@ -14,7 +14,7 @@ import { exportPdf } from '../lib/print';
 import { loadPdfjs } from '../lib/pdfjs';
 import { firstRow, qAnswers, qHomework, qMaterial } from '../lib/query';
 import { locateParts, parseRegion } from '../lib/sheet-regions';
-import { Button, PageLoader, Segmented } from '../components/ui';
+import { Button, IconButton, PageLoader, Segmented } from '../components/ui';
 import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
 import { CourseCrumb } from '../components/CourseCrumb';
 import { SidePanel } from '../components/SidePanel';
@@ -54,19 +54,19 @@ export default function HomeworkPage() {
         <Show
           when={hw().sheet ? idString(hw().sheet) : null}
           keyed
-          fallback={<Workspace title={hw().title} answers={answers.data() ?? []} sheet={null} courseKey={params.courseKey ?? ''} />}
+          fallback={<Workspace id={hw().id} title={hw().title} answers={answers.data() ?? []} sheet={null} courseKey={params.courseKey ?? ''} />}
         >
-          {(sheetId) => <WithSheet sheetId={sheetId} title={hw().title} answers={answers.data() ?? []} courseKey={params.courseKey ?? ''} />}
+          {(sheetId) => <WithSheet id={hw().id} sheetId={sheetId} title={hw().title} answers={answers.data() ?? []} courseKey={params.courseKey ?? ''} />}
         </Show>
       )}
     </Show>
   );
 }
 
-function WithSheet(props: { sheetId: string; title: string; answers: AnswerRow[]; courseKey: string }) {
+function WithSheet(props: { id: string; sheetId: string; title: string; answers: AnswerRow[]; courseKey: string }) {
   const db = useDb<typeof schema>();
   const sheet = firstRow(useQuery(() => qMaterial(db, props.sheetId)));
-  return <Workspace title={props.title} answers={props.answers} sheet={sheet.data() ?? null} courseKey={props.courseKey} />;
+  return <Workspace id={props.id} title={props.title} answers={props.answers} sheet={sheet.data() ?? null} courseKey={props.courseKey} />;
 }
 
 function useMedia(query: string) {
@@ -94,8 +94,9 @@ function useVisualViewport() {
   return state;
 }
 
-function Workspace(props: { title: string; answers: AnswerRow[]; sheet: MaterialRow | null; courseKey: string }) {
+function Workspace(props: { id: string; title: string; answers: AnswerRow[]; sheet: MaterialRow | null; courseKey: string }) {
   const db = useDb<typeof schema>();
+  const navigate = useNavigate();
   const wide = useMedia('(min-width: 1024px)');
   const viewport = useVisualViewport();
 
@@ -157,6 +158,12 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
     rows: () => props.answers,
     save: (id, content) => db.update('answer', id, { content }),
   });
+
+  const remove = async () => {
+    if (!confirm(`Delete your answers to “${props.title}”? The exercise sheet stays in the course.`)) return;
+    await db.delete('homework', props.id);
+    navigate(`/courses/${props.courseKey}`);
+  };
 
   const uploadImage = async (id: string, file: File) => {
     setNotice('Adding the image…');
@@ -272,6 +279,9 @@ function Workspace(props: { title: string; answers: AnswerRow[]; sheet: Material
         <Button variant="ghost" size="sm" onClick={() => void exportPdf(props.title)} title="Print or save as PDF">
           <FileDown size={16} stroke-width={1.75} /> <span class="hidden sm:inline">Export PDF</span>
         </Button>
+        <IconButton label="Delete the homework" size="sm" onClick={() => void remove()}>
+          <Trash2 size={16} stroke-width={1.75} />
+        </IconButton>
       </HeaderEndActions>
 
       {/* Phones: the exercise pinned at the top of what the keyboard leaves visible. */}

@@ -199,6 +199,14 @@ export async function startHomework(user: Surreal, sheetId: string): Promise<{ i
   return { id, created: true };
 }
 
+/** Deletes a homework with its answers, as its trash button in the app does. The sheet stays. */
+export async function deleteHomework(user: Surreal, homeworkId: string) {
+  const id = recordId('homework', homeworkId);
+  const rows = await user.query<unknown[]>('DELETE type::record($id) RETURN BEFORE;', { id });
+  if (!rows?.length) throw new NotFound('Homework not found.');
+  return { deleted: id };
+}
+
 export interface AnswerWrite {
   part: string;
   content: string;
