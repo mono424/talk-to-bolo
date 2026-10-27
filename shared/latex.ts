@@ -228,6 +228,77 @@ function katexMacros(macros: Map<string, Macro>): string {
     .join('\n');
 }
 
+type Rgb = [number, number, number];
+
+// xcolor's base colors.
+const BASE_COLORS: Record<string, Rgb> = {
+  red: [1, 0, 0], green: [0, 1, 0], blue: [0, 0, 1], cyan: [0, 1, 1], magenta: [1, 0, 1], yellow: [1, 1, 0],
+  black: [0, 0, 0], white: [1, 1, 1], gray: [0.5, 0.5, 0.5], darkgray: [0.25, 0.25, 0.25],
+  lightgray: [0.75, 0.75, 0.75], brown: [0.75, 0.5, 0.25], lime: [0.75, 1, 0], olive: [0.5, 0.5, 0],
+  orange: [1, 0.5, 0], pink: [1, 0.75, 0.75], purple: [0.75, 0, 0.25], teal: [0, 0.5, 0.5], violet: [0.5, 0, 0.5],
+};
+
+/** A color given in an xcolor model (rgb, RGB, HTML, gray, cmyk), or by name with `!` mixes (`red!50!black`). */
+function parseColor(spec: string, model: string | null, named: Map<string, Rgb>): Rgb | null {
+  const n = spec.split(',').map((x) => Number.parseFloat(x));
+  const unit = (v: Rgb): Rgb | null => (v.every((x) => Number.isFinite(x)) ? (v.map((x) => Math.min(1, Math.max(0, x))) as Rgb) : null);
+  switch (model?.trim()) {
+    case 'rgb':
+      return n.length === 3 ? unit([n[0], n[1], n[2]]) : null;
+    case 'RGB':
+      return n.length === 3 ? unit([n[0] / 255, n[1] / 255, n[2] / 255]) : null;
+    case 'HTML': {
+      const h = /^\s*([0-9A-Fa-f]{6})\s*$/.exec(spec)?.[1];
+      return h ? [0, 2, 4].map((k) => Number.parseInt(h.slice(k, k + 2), 16) / 255) as Rgb : null;
+    }
+    case 'gray':
+      return n.length === 1 ? unit([n[0], n[0], n[0]]) : null;
+    case 'cmyk':
+      return n.length === 4 ? unit([(1 - n[0]) * (1 - n[3]), (1 - n[1]) * (1 - n[3]), (1 - n[2]) * (1 - n[3])]) : null;
+    case undefined:
+    case '':
+    case 'named':
+      break;
+    default:
+      return null;
+  }
+  // c1!p1!c2!p2!c3...: p1% of c1 with c2, p2% of that with c3; a missing last color is white.
+  const parts = spec.split('!').map((p) => p.trim());
+  const color = (name: string) => named.get(name) ?? BASE_COLORS[name] ?? null;
+  let out = color(parts[0]);
+  for (let k = 1; out && k < parts.length; k += 2) {
+    const p = Number.parseFloat(parts[k]) / 100;
+    const other = k + 1 < parts.length ? color(parts[k + 1]) : BASE_COLORS.white;
+    if (!Number.isFinite(p) || !other) return null;
+    const a = out;
+    out = [0, 1, 2].map((c) => a[c] * Math.min(1, Math.max(0, p)) + other[c] * (1 - Math.min(1, Math.max(0, p)))) as Rgb;
+  }
+  return out;
+}
+
+/** `\definecolor` and `\colorlet` anywhere in `s`, by name. */
+function takeColors(s: string): Map<string, Rgb> {
+  const named = new Map<string, Rgb>();
+  const def = /\\(definecolor|colorlet)(?![A-Za-z@])/g;
+  for (let m = def.exec(s); m; m = def.exec(s)) {
+    let k = m.index + m[0].length;
+    const args: string[] = [];
+    for (let n = m[1] === 'definecolor' ? 3 : 2; n > 0; n--) {
+      for (let o = optional(s, k); o; o = optional(s, k)) k = o.end;
+      const g = group(s, k);
+      if (!g) break;
+      args.push(g.text.trim());
+      k = g.end;
+    }
+    const rgb = m[1] === 'definecolor' && args.length === 3 ? parseColor(args[2], args[1], named)
+      : m[1] === 'colorlet' && args.length === 2 ? parseColor(args[1], null, named) : null;
+    if (rgb) named.set(args[0], rgb);
+  }
+  return named;
+}
+
+const hex = (c: Rgb) => `#${c.map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('')}`;
+
 const placeholder = (n: number) => `\u0000${n}\u0000`;
 
 /** How deep macros may expand into macros, and how often per document: a self-referencing one stops. */
@@ -242,7 +313,11 @@ class Converter {
   author: string | null = null;
   date: string | null = null;
 
-  constructor(private readonly macros: Map<string, Macro>) {}
+  /** `colors`: the defined colors, when the text keeps its colors (as HTML spans); null drops them. */
+  constructor(
+    private readonly macros: Map<string, Macro>,
+    private readonly colors: Map<string, Rgb> | null = null,
+  ) {}
 
   hold(text: string): string {
     this.held.push(text);
@@ -505,14 +580,24 @@ class Converter {
       case 'text':
       case 'makebox':
       case 'fbox':
-      case 'framebox':
-      case 'textcolor':
-      case 'colorbox': {
+      case 'framebox': {
         let k = j;
-        if (name === 'textcolor' || name === 'colorbox') k = argument(s, k).end;
         if (name === 'makebox' || name === 'framebox') for (let o = optional(s, k); o; o = optional(s, k)) k = o.end;
         const g = argument(s, k);
         return { text: this.convert(g.text), end: g.end };
+      }
+      case 'textcolor':
+      case 'colorbox': {
+        const model = optional(s, j);
+        const spec = argument(s, model ? model.end : j);
+        const g = argument(s, spec.end);
+        const text = this.convert(g.text);
+        const rgb = this.colors && parseColor(spec.text.trim(), model?.text ?? null, this.colors);
+        if (!rgb) return { text, end: g.end };
+        const style = `${name === 'colorbox' ? 'background-color' : 'color'}:${hex(rgb)}`;
+        // A span per paragraph: Markdown ends inline HTML at a blank line.
+        const colored = text.split(/(\n{2,})/).map((p, n) => (n % 2 || !p.trim() ? p : `<span style="${style}">${p}</span>`)).join('');
+        return { text: colored, end: g.end };
       }
       case 'url': {
         const g = argument(s, j);
@@ -748,8 +833,12 @@ function enumLabel(opt: string | null): ((n: number) => string) | null {
   return (n) => `${pre}${f(n)}${post}`;
 }
 
-/** The Markdown of a LaTeX document or fragment. */
-export function latexToMarkdown(tex: string): string {
+/**
+ * The Markdown of a LaTeX document or fragment. With `colors`, `\textcolor`
+ * and `\colorbox` keep their colors as HTML spans (for rendering); without,
+ * only their text stays (for search and the tutor).
+ */
+export function latexToMarkdown(tex: string, options: { colors?: boolean } = {}): string {
   const macros = new Map<string, Macro>();
   const source = takeMacros(stripComments((tex ?? '').replace(/\r\n?/g, '\n')), macros);
   const begin = source.indexOf('\\begin{document}');
@@ -757,7 +846,7 @@ export function latexToMarkdown(tex: string): string {
   const end = source.lastIndexOf('\\end{document}');
   let body = begin >= 0 ? source.slice(begin + '\\begin{document}'.length, end > begin ? end : undefined) : source;
 
-  const conv = new Converter(macros);
+  const conv = new Converter(macros, options.colors ? takeColors(source) : null);
   // \title, \author and \date usually sit in the preamble; \maketitle prints them.
   if (/\\(title|author|date)(?![A-Za-z])/.test(preamble)) conv.convert(conv.protect(preamble));
   body = conv.protect(body);

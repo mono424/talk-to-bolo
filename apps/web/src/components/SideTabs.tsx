@@ -115,7 +115,7 @@ export function DocumentTab(props: { documentId: string; courseKey: string }) {
   const html = createMemo(() => {
     const d = doc.data();
     if (!d) return '';
-    return renderMarkdown(d.format === 'tex' ? latexToMarkdown(texCitesToMarkdown(d.content ?? '')) : (d.content ?? ''));
+    return renderMarkdown(d.format === 'tex' ? latexToMarkdown(texCitesToMarkdown(d.content ?? ''), { colors: true }) : (d.content ?? ''));
   });
   return (
     <Show when={doc.data()} fallback={<p class="py-8 text-center text-[14px] text-muted">{doc.isLoading() ? 'Loading…' : 'This document was deleted.'}</p>}>

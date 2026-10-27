@@ -97,3 +97,15 @@ test('fragments and malformed input never throw', () => {
     assert.equal(typeof latexToMarkdown(bad), 'string');
   }
 });
+
+test('colors stay as spans when asked, and only their text otherwise', () => {
+  const tex = doc(
+    `\\placeholder{TBD} and \\textcolor[HTML]{00FF7F}{mint}, \\textcolor{red!50!black}{dark}, \\colorbox{note}{boxed}, \\textcolor{nosuch}{plain}.`,
+    `\\usepackage{xcolor}\n\\definecolor{note}{rgb}{1,1,0.5}\n\\newcommand{\\placeholder}[1]{\\textcolor{red}{#1}}`,
+  );
+  assert.equal(latexToMarkdown(tex).split('\n').at(-1), 'TBD and mint, dark, boxed, plain.');
+  assert.equal(
+    latexToMarkdown(tex, { colors: true }).split('\n').at(-1),
+    '<span style="color:#ff0000">TBD</span> and <span style="color:#00ff7f">mint</span>, <span style="color:#800000">dark</span>, <span style="background-color:#ffff80">boxed</span>, plain.',
+  );
+});

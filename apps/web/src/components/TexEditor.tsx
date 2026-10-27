@@ -28,7 +28,7 @@ const PREVIEW_DELAY_MS = 250;
 
 export default function TexEditor(props: { value: string; onChange: (value: string) => void }) {
   let host!: HTMLDivElement;
-  const render = (tex: string) => renderMarkdown(latexToMarkdown(tex));
+  const render = (tex: string) => renderMarkdown(latexToMarkdown(tex, { colors: true }));
   const [preview, setPreview] = createSignal(render(props.value));
   const [tab, setTab] = createSignal<'source' | 'preview'>('source');
   let timer: ReturnType<typeof setTimeout> | undefined;

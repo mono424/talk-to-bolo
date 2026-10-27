@@ -138,10 +138,10 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
 
   const isTex = () => props.doc.format === 'tex';
   // The text as Markdown with [@…] citations: LaTeX through its converter.
-  const markdown = createMemo(() => (isTex() ? latexToMarkdown(texCitesToMarkdown(text(props.doc))) : text(props.doc)));
+  const markdown = createMemo(() => (isTex() ? latexToMarkdown(texCitesToMarkdown(text(props.doc)), { colors: true }) : text(props.doc)));
 
   const words = createMemo(() => {
-    const plain = markdown().replace(/\[@[^\]\n]*\]/g, ' ').replace(/<!--[\s\S]*?-->/g, ' ').replace(/[#*_`>$\\]/g, ' ').trim();
+    const plain = markdown().replace(/\[@[^\]\n]*\]/g, ' ').replace(/<!--[\s\S]*?-->/g, ' ').replace(/<\/?span[^>]*>/g, ' ').replace(/[#*_`>$\\]/g, ' ').trim();
     return plain ? plain.split(/\s+/).filter((w) => /\w/.test(w)).length : 0;
   });
 
