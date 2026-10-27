@@ -141,3 +141,35 @@ test('TikZ pictures stay TikZ, with what they need of the preamble', () => {
     '```',
   ].join('\n'));
 });
+
+test('colors and styles set up in the text reach the pictures after them', () => {
+  const md = latexToMarkdown(doc(
+    `\\begin{tikzpicture}\\draw (0,0) -- (1,0);\\end{tikzpicture}
+\\begin{center}
+\\definecolor{gold}{HTML}{BD7B13}
+\\colorlet{soft}{gold!20}
+\\tikzset{beam/.style={draw=gold}}
+\\begin{tikzpicture}\\draw[beam,fill=soft] (0,0) circle (1);\\end{tikzpicture}
+\\end{center}
+\\definecolor{gold}{HTML}{BD7B13}
+\\begin{tikzpicture}\\fill[gold] (0,0) circle (1);\\end{tikzpicture}`,
+    '\\usepackage{tikz}\n\\usetikzlibrary{arrows.meta}',
+  ));
+  const setup = '\\usetikzlibrary{arrows.meta}\n\\definecolor{gold}{HTML}{BD7B13}\n\\colorlet{soft}{gold!20}\n\\tikzset{beam/.style={draw=gold}}';
+  assert.equal(md, [
+    '```tikz',
+    '\\usetikzlibrary{arrows.meta}',
+    '\\begin{tikzpicture}\\draw (0,0) -- (1,0);\\end{tikzpicture}',
+    '```',
+    '',
+    '```tikz',
+    setup,
+    '\\begin{tikzpicture}\\draw[beam,fill=soft] (0,0) circle (1);\\end{tikzpicture}',
+    '```',
+    '',
+    '```tikz',
+    setup,
+    '\\begin{tikzpicture}\\fill[gold] (0,0) circle (1);\\end{tikzpicture}',
+    '```',
+  ].join('\n'));
+});

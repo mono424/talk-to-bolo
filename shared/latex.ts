@@ -47,7 +47,7 @@ const DROP = new Set([
   'setlength', 'addtolength', 'pagestyle', 'thispagestyle', 'fancyhead', 'fancyfoot', 'lhead', 'rhead', 'chead',
   'lfoot', 'rfoot', 'cfoot', 'setcounter', 'addtocounter', 'usepackage', 'documentclass', 'bibliographystyle',
   'bibliography', 'input', 'include', 'graphicspath', 'newtheorem', 'theoremstyle', 'hypersetup', 'geometry',
-  'definecolor', 'color', 'pagenumbering', 'renewenvironment', 'newenvironment', 'setlist', 'captionsetup',
+  'definecolor', 'colorlet', 'tikzset', 'usetikzlibrary', 'pgfplotsset', 'color', 'pagenumbering', 'renewenvironment', 'newenvironment', 'setlist', 'captionsetup',
 ]);
 const WORDS: Record<string, string> = {
   LaTeX: 'LaTeX', TeX: 'TeX', ldots: '...', dots: '...', textellipsis: '...', quad: ' ', qquad: ' ', enspace: ' ',
@@ -304,44 +304,43 @@ function takeColors(s: string): Map<string, Rgb> {
   return named;
 }
 
+const TIKZ_SETUP = /\\(usepackage|usetikzlibrary|usepgfplotslibrary|tikzset|pgfplotsset|definecolor|colorlet|tikzstyle)(?![A-Za-z@])/g;
+
+/** The TikZ setup command `m` found in `s` (a package TikZJax carries, a library, a style or a color), as a picture needs it, and where it ends. */
+function tikzSetup(s: string, m: RegExpExecArray): { text: string; end: number } | null {
+  let k = m.index + m[0].length;
+  if (m[1] === 'usepackage') {
+    const o = optional(s, k);
+    const g = group(s, o ? o.end : k);
+    if (!g) return null;
+    const names = g.text.split(',').map((n) => n.trim()).filter((n) => TIKZ_PACKAGES.has(n));
+    return { text: names.length ? `\\usepackage${o ? `[${o.text}]` : ''}{${names.join(',')}}` : '', end: g.end };
+  }
+  if (m[1] === 'tikzstyle') {
+    // \tikzstyle{name}=[options]
+    const g = group(s, k);
+    const eq = g && /^\s*=/.exec(s.slice(g.end));
+    const o = g && eq ? optional(s, g.end + eq[0].length) : null;
+    return o ? { text: s.slice(m.index, o.end), end: o.end } : null;
+  }
+  for (let n = m[1] === 'definecolor' ? 3 : m[1] === 'colorlet' ? 2 : 1; n > 0; n--) {
+    for (let o = optional(s, k); o; o = optional(s, k)) k = o.end;
+    const g = group(s, k);
+    if (!g) return null;
+    k = g.end;
+  }
+  return { text: s.slice(m.index, k), end: k };
+}
+
 /** What TikZ pictures need of the preamble: packages, libraries, styles and colors. */
 function tikzPreamble(preamble: string): string {
   const lines: string[] = [];
-  const cmd = /\\(usepackage|usetikzlibrary|usepgfplotslibrary|tikzset|pgfplotsset|definecolor|colorlet|tikzstyle)(?![A-Za-z@])/g;
+  const cmd = new RegExp(TIKZ_SETUP);
   for (let m = cmd.exec(preamble); m; m = cmd.exec(preamble)) {
-    let k = m.index + m[0].length;
-    if (m[1] === 'usepackage') {
-      const o = optional(preamble, k);
-      const g = group(preamble, o ? o.end : k);
-      if (!g) continue;
-      const names = g.text.split(',').map((n) => n.trim()).filter((n) => TIKZ_PACKAGES.has(n));
-      if (names.length) lines.push(`\\usepackage${o ? `[${o.text}]` : ''}{${names.join(',')}}`);
-      cmd.lastIndex = g.end;
-      continue;
-    }
-    if (m[1] === 'tikzstyle') {
-      // \tikzstyle{name}=[options]
-      const g = group(preamble, k);
-      const eq = g && /^\s*=/.exec(preamble.slice(g.end));
-      const o = g && eq ? optional(preamble, g.end + eq[0].length) : null;
-      if (!o) continue;
-      lines.push(preamble.slice(m.index, o.end));
-      cmd.lastIndex = o.end;
-      continue;
-    }
-    let ok = true;
-    for (let n = m[1] === 'definecolor' ? 3 : m[1] === 'colorlet' ? 2 : 1; n > 0; n--) {
-      for (let o = optional(preamble, k); o; o = optional(preamble, k)) k = o.end;
-      const g = group(preamble, k);
-      if (!g) {
-        ok = false;
-        break;
-      }
-      k = g.end;
-    }
-    if (!ok) continue;
-    lines.push(preamble.slice(m.index, k));
-    cmd.lastIndex = k;
+    const setup = tikzSetup(preamble, m);
+    if (!setup) continue;
+    if (setup.text) lines.push(setup.text);
+    cmd.lastIndex = setup.end;
   }
   return lines.join('\n');
 }
@@ -431,6 +430,7 @@ class Converter {
         }
       }
       if (s[i] === '\\') {
+        this.setup(s, i);
         out += s.slice(i, i + 2);
         i += 2;
         continue;
@@ -460,6 +460,16 @@ class Converter {
       i++;
     }
     return out;
+  }
+
+  /** A color, style or library set up in the text (TeX reads it there too): the pictures after it get it. */
+  private setup(s: string, i: number) {
+    const cmd = new RegExp(TIKZ_SETUP.source, 'y');
+    cmd.lastIndex = i;
+    const m = cmd.exec(s);
+    if (!m || m[1] === 'usepackage') return;
+    const text = tikzSetup(s, m)?.text;
+    if (text && !this.tikzPreamble.split('\n').includes(text)) this.tikzPreamble = [this.tikzPreamble, text].filter(Boolean).join('\n');
   }
 
   /** A TikZ picture as TeX can draw it on its own: the preamble it needs, the macros it uses, the picture. */
@@ -736,9 +746,9 @@ class Converter {
       let k = j;
       if (s[k] === '*') k++;
       for (let o = optional(s, k); o; o = optional(s, k)) k = o.end;
-      const args = ['vspace', 'hspace', 'label', 'usepackage', 'documentclass', 'setcounter', 'addtocounter', 'pagestyle', 'thispagestyle', 'bibliographystyle', 'bibliography', 'input', 'include', 'graphicspath', 'hypersetup', 'geometry', 'color', 'pagenumbering', 'setlist', 'captionsetup'].includes(name)
+      const args = ['vspace', 'hspace', 'label', 'usepackage', 'documentclass', 'setcounter', 'addtocounter', 'pagestyle', 'thispagestyle', 'bibliographystyle', 'bibliography', 'input', 'include', 'graphicspath', 'hypersetup', 'geometry', 'color', 'pagenumbering', 'setlist', 'captionsetup', 'tikzset', 'usetikzlibrary', 'pgfplotsset'].includes(name)
         ? 1
-        : ['setlength', 'addtolength', 'fancyhead', 'fancyfoot', 'lhead', 'rhead', 'chead', 'lfoot', 'rfoot', 'cfoot', 'theoremstyle'].includes(name)
+        : ['setlength', 'addtolength', 'colorlet', 'fancyhead', 'fancyfoot', 'lhead', 'rhead', 'chead', 'lfoot', 'rfoot', 'cfoot', 'theoremstyle'].includes(name)
           ? (['lhead', 'rhead', 'chead', 'lfoot', 'rfoot', 'cfoot', 'theoremstyle', 'fancyhead', 'fancyfoot'].includes(name) ? 1 : 2)
           : name === 'newtheorem' || name === 'definecolor'
             ? 3
@@ -934,9 +944,10 @@ export function latexToMarkdown(tex: string, options: { colors?: boolean } = {})
   let body = begin >= 0 ? source.slice(begin + '\\begin{document}'.length, end > begin ? end : undefined) : source;
 
   const conv = new Converter(macros, options.colors ? takeColors(source) : null);
-  conv.tikzPreamble = tikzPreamble(preamble);
   // \title, \author and \date usually sit in the preamble; \maketitle prints them.
   if (/\\(title|author|date)(?![A-Za-z])/.test(preamble)) conv.convert(conv.protect(preamble));
+  // After that pass, which would add the preamble's setup in its own order.
+  conv.tikzPreamble = tikzPreamble(preamble);
   body = conv.protect(body);
   const text = conv.restore(conv.convert(body));
 
