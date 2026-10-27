@@ -18,6 +18,7 @@
     "@codemirror/legacy-modes": "^6.5.5",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.15",
+    "@drgrice1/tikzjax": "1.0.0-beta24",
     "@lezer/common": "^1.5.4",
     "@lezer/highlight": "^1.2.5",
     "@lezer/markdown": "^1.8.1",

@@ -109,3 +109,35 @@ test('colors stay as spans when asked, and only their text otherwise', () => {
     '<span style="color:#ff0000">TBD</span> and <span style="color:#00ff7f">mint</span>, <span style="color:#800000">dark</span>, <span style="background-color:#ffff80">boxed</span>, plain.',
   );
 });
+
+test('TikZ pictures stay TikZ, with what they need of the preamble', () => {
+  const md = latexToMarkdown(doc(
+    `\\begin{figure}\\centering
+\\resizebox{0.5\\textwidth}{!}{\\begin{tikzpicture}
+\\draw[->, accent] (0,0) -- (\\len,0) node {$\\R$}; % axis
+\\end{tikzpicture}}
+\\caption{Axis}
+\\end{figure}
+\\begin{tikzcd} A \\arrow[r] & B \\end{tikzcd}`,
+    '\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath,tikz,tikz-cd}\n\\usetikzlibrary{arrows.meta}\n\\tikzstyle{box}=[draw]\n\\definecolor{accent}{HTML}{3366CC}\n\\newcommand{\\R}{\\mathbb{R}}\n\\newcommand{\\len}{2}\n\\newcommand{\\unused}{x}',
+  ));
+  const body = md.slice(md.indexOf('-->') + 3).trim();
+  const preamble = '\\usepackage{amsmath,tikz-cd}\n\\usetikzlibrary{arrows.meta}\n\\tikzstyle{box}=[draw]\n\\definecolor{accent}{HTML}{3366CC}';
+  assert.equal(body, [
+    '```tikz',
+    preamble,
+    '\\providecommand{\\R}{}\\renewcommand{\\R}{\\mathbb{R}}',
+    '\\providecommand{\\len}{}\\renewcommand{\\len}{2}',
+    '\\begin{tikzpicture}',
+    '\\draw[->, accent] (0,0) -- (\\len,0) node {$\\R$};',
+    '\\end{tikzpicture}',
+    '```',
+    '',
+    '_Axis_',
+    '',
+    '```tikz',
+    preamble,
+    '\\begin{tikzcd} A \\arrow[r] & B \\end{tikzcd}',
+    '```',
+  ].join('\n'));
+});

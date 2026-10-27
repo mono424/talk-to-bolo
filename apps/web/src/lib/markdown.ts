@@ -4,6 +4,7 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { markdownMacros } from '../../../../shared/latex';
 import { answerImageUrl, assetUrl } from './api';
+import { tikzPlaceholder } from './tikz';
 
 const marked = new Marked({ gfm: true, breaks: false });
 
@@ -94,9 +95,38 @@ export function imageSrc(src: string): string {
   return /^https?:/i.test(src) ? src : '';
 }
 
+// ── TikZ ──────────────────────────────────────────────────────────────────
+//
+// ```tikz blocks (a LaTeX document's pictures, shared/latex.ts) are taken out
+// before math, and come back as pictures TeX draws in the browser (./tikz.ts).
+// A block in a list item is indented like the item.
+
+const TIKZ = /(^|\n)([ \t]*)(`{3,}|~{3,})tikz[ \t]*\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/g;
+const TIKZ_PLACEHOLDER = /(<p>)?TIKZPICTURE(\d+)Z(<\/p>)?/g;
+
+function extractTikz(md: string): { text: string; pictures: string[] } {
+  const pictures: string[] = [];
+  const text = md.replace(TIKZ, (_m, lead: string, indent: string, _fence: string, body: string) => {
+    pictures.push(body.split('\n').map((l) => (l.startsWith(indent) ? l.slice(indent.length) : l.trimStart())).join('\n'));
+    return `${lead}\n\n${indent}TIKZPICTURE${pictures.length - 1}Z\n\n`;
+  });
+  return { text, pictures };
+}
+
 /** Lecture markdown (with its math) to sanitized HTML. */
 export function renderMarkdown(md: string): string {
-  const { text, math } = extractMath(md ?? '');
+  const tikz = extractTikz(md ?? '');
+  const html = withMath(md ?? '', tikz.text);
+  if (!tikz.pictures.length) return html;
+  return html.replace(TIKZ_PLACEHOLDER, (m, open: string | undefined, n: string, close: string | undefined) => {
+    const source = tikz.pictures[Number(n)];
+    if (source === undefined) return m;
+    return open && close ? tikzPlaceholder(source) : `${open ?? ''}${tikzPlaceholder(source)}${close ?? ''}`;
+  });
+}
+
+function withMath(md: string, source: string): string {
+  const { text, math } = extractMath(source);
   const html = DOMPurify.sanitize(marked.parse(text, { async: false }) as string, {
     ADD_URI_SAFE_ATTR: ['src'],
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|asset|answer-image):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,

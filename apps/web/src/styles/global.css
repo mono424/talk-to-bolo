@@ -198,6 +198,17 @@ button, a, input, select, textarea { scroll-margin-block: 1rem; }
 .lecture hr { border: 0; border-top: 1px solid var(--line); margin: 2em 0; }
 .lecture .math-display { margin: 0 0 1em; overflow-x: auto; overflow-y: hidden; max-width: 100%; }
 .lecture .katex { font-size: 1.08em; }
+
+/* TikZ pictures (src/lib/tikz.ts). Drawn black on white, like a PDF figure: on a white card in dark mode. */
+.tikz { margin: 0 0 1em; max-width: 100%; overflow-x: auto; overflow-y: hidden; text-align: center; }
+.tikz svg { display: inline-block; max-width: 100%; height: auto; overflow: visible; }
+.tikz-note { font-size: 0.875rem; color: var(--muted); text-align: left; }
+.tikz-pending .tikz-note { padding: 1.5em 0; text-align: center; }
+.tikz-error { text-align: left; }
+.tikz-error pre { margin: 0.5em 0 0; }
+@media (prefers-color-scheme: dark) {
+  .tikz:not(.tikz-pending, .tikz-error) { background: #fff; color: #000; border-radius: 14px; padding: 0.75em; }
+}
 /* Formulas keep their own wrapping rules inside a lecture. */
 .lecture .katex,
 .lecture .katex * { overflow-wrap: normal; }

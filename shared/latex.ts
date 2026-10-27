@@ -4,7 +4,8 @@
  * the student's progress read sections of it, and the web app renders it with
  * its math. Covers what course handouts use: sections, lists, theorem-like
  * environments, text formatting, links, tables, verbatim, and every kind of
- * math, which stays LaTeX for KaTeX. `\newcommand`s become KaTeX macros
+ * math, which stays LaTeX for KaTeX. TikZ pictures stay TikZ, in a ```tikz block
+ * with what they need of the preamble, for the web app to draw. `\newcommand`s become KaTeX macros
  * (in a `latex-macros` comment, which the index drops) and are expanded in
  * the text. Deterministic, so server and client get the same sections.
  */
@@ -21,6 +22,12 @@ const MATH_ENVS = new Set([
   'displaymath', 'math', 'flalign', 'flalign*', 'alignat', 'alignat*',
 ]);
 const VERBATIM_ENVS = new Set(['verbatim', 'verbatim*', 'Verbatim', 'lstlisting', 'minted', 'comment']);
+const TIKZ_ENVS = new Set(['tikzpicture', 'tikzcd']);
+// The packages a picture may load: the ones TikZJax (apps/web/src/lib/tikz.ts) carries. It preloads tikz and xcolor.
+const TIKZ_PACKAGES = new Set([
+  'amsmath', 'amssymb', 'amsfonts', 'amsbsy', 'amstext', 'amsopn', 'amsgen', 'array', 'etoolbox', 'xparse',
+  'pgfplots', 'tikz-cd', 'tikz-3dplot', 'hf-tikz',
+]);
 const LIST_ENVS = new Set(['itemize', 'enumerate', 'description', 'compactitem', 'compactenum', 'asparaenum', 'inparaenum']);
 const THEOREMS: Record<string, string> = {
   theorem: 'Theorem', lemma: 'Lemma', corollary: 'Corollary', proposition: 'Proposition', claim: 'Claim', fact: 'Fact',
@@ -297,6 +304,48 @@ function takeColors(s: string): Map<string, Rgb> {
   return named;
 }
 
+/** What TikZ pictures need of the preamble: packages, libraries, styles and colors. */
+function tikzPreamble(preamble: string): string {
+  const lines: string[] = [];
+  const cmd = /\\(usepackage|usetikzlibrary|usepgfplotslibrary|tikzset|pgfplotsset|definecolor|colorlet|tikzstyle)(?![A-Za-z@])/g;
+  for (let m = cmd.exec(preamble); m; m = cmd.exec(preamble)) {
+    let k = m.index + m[0].length;
+    if (m[1] === 'usepackage') {
+      const o = optional(preamble, k);
+      const g = group(preamble, o ? o.end : k);
+      if (!g) continue;
+      const names = g.text.split(',').map((n) => n.trim()).filter((n) => TIKZ_PACKAGES.has(n));
+      if (names.length) lines.push(`\\usepackage${o ? `[${o.text}]` : ''}{${names.join(',')}}`);
+      cmd.lastIndex = g.end;
+      continue;
+    }
+    if (m[1] === 'tikzstyle') {
+      // \tikzstyle{name}=[options]
+      const g = group(preamble, k);
+      const eq = g && /^\s*=/.exec(preamble.slice(g.end));
+      const o = g && eq ? optional(preamble, g.end + eq[0].length) : null;
+      if (!o) continue;
+      lines.push(preamble.slice(m.index, o.end));
+      cmd.lastIndex = o.end;
+      continue;
+    }
+    let ok = true;
+    for (let n = m[1] === 'definecolor' ? 3 : m[1] === 'colorlet' ? 2 : 1; n > 0; n--) {
+      for (let o = optional(preamble, k); o; o = optional(preamble, k)) k = o.end;
+      const g = group(preamble, k);
+      if (!g) {
+        ok = false;
+        break;
+      }
+      k = g.end;
+    }
+    if (!ok) continue;
+    lines.push(preamble.slice(m.index, k));
+    cmd.lastIndex = k;
+  }
+  return lines.join('\n');
+}
+
 const hex = (c: Rgb) => `#${c.map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('')}`;
 
 const placeholder = (n: number) => `\u0000${n}\u0000`;
@@ -312,6 +361,8 @@ class Converter {
   title: string | null = null;
   author: string | null = null;
   date: string | null = null;
+  /** What the document's TikZ pictures need of its preamble. */
+  tikzPreamble = '';
 
   /** `colors`: the defined colors, when the text keeps its colors (as HTML spans); null drops them. */
   constructor(
@@ -336,6 +387,12 @@ class Converter {
     let i = 0;
     while (i < s.length) {
       const begin = /^\\begin\{([A-Za-z]+\*?)\}/.exec(s.slice(i, i + 40));
+      if (begin && TIKZ_ENVS.has(begin[1])) {
+        const { end } = envEnd(s, begin[1], i + begin[0].length);
+        out += this.hold(`\n\n\`\`\`tikz\n${this.picture(s.slice(i, end))}\n\`\`\`\n\n`);
+        i = end;
+        continue;
+      }
       if (begin && (MATH_ENVS.has(begin[1]) || VERBATIM_ENVS.has(begin[1]))) {
         const name = begin[1];
         let from = i + begin[0].length;
@@ -403,6 +460,27 @@ class Converter {
       i++;
     }
     return out;
+  }
+
+  /** A TikZ picture as TeX can draw it on its own: the preamble it needs, the macros it uses, the picture. */
+  private picture(src: string): string {
+    const used = new Set<string>();
+    const visit = (t: string) => {
+      for (const [name] of t.matchAll(/\\[A-Za-z]+/g)) {
+        const m = this.macros.get(name);
+        if (m && !used.has(name)) {
+          used.add(name);
+          visit(m.body);
+        }
+      }
+    };
+    visit(this.tikzPreamble);
+    visit(src);
+    // \providecommand first: \renewcommand then works whether TeX knows the name or not.
+    const defs = [...this.macros]
+      .filter(([name]) => used.has(name))
+      .map(([name, m]) => `\\providecommand{${name}}{}\\renewcommand{${name}}${m.args ? `[${m.args}]` : ''}${m.args && m.optional !== null ? `[${m.optional}]` : ''}{${m.body}}`);
+    return [this.tikzPreamble, ...defs, src.trim().replace(/[ \t]+$/gm, '')].filter(Boolean).join('\n');
   }
 
   convert(s: string): string {
@@ -583,6 +661,15 @@ class Converter {
       case 'framebox': {
         let k = j;
         if (name === 'makebox' || name === 'framebox') for (let o = optional(s, k); o; o = optional(s, k)) k = o.end;
+        const g = argument(s, k);
+        return { text: this.convert(g.text), end: g.end };
+      }
+      case 'scalebox':
+      case 'resizebox': {
+        // \scalebox{factor}[v]{content}, \resizebox{width}{height}{content}: the content.
+        let k = argument(s, j).end;
+        if (name === 'resizebox') k = argument(s, k).end;
+        else k = optional(s, k)?.end ?? k;
         const g = argument(s, k);
         return { text: this.convert(g.text), end: g.end };
       }
@@ -847,6 +934,7 @@ export function latexToMarkdown(tex: string, options: { colors?: boolean } = {})
   let body = begin >= 0 ? source.slice(begin + '\\begin{document}'.length, end > begin ? end : undefined) : source;
 
   const conv = new Converter(macros, options.colors ? takeColors(source) : null);
+  conv.tikzPreamble = tikzPreamble(preamble);
   // \title, \author and \date usually sit in the preamble; \maketitle prints them.
   if (/\\(title|author|date)(?![A-Za-z])/.test(preamble)) conv.convert(conv.protect(preamble));
   body = conv.protect(body);
