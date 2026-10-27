@@ -24,7 +24,15 @@ export const schema = {
         id: { type: 'string' as const, recordId: true, optional: false },
         anchor: { type: 'string' as const, optional: true },
         anchor_page: { type: 'number' as const, optional: true },
-        content: { type: 'string' as const, optional: false },
+        /**
+         * `content?` — string
+         *
+         * `@crdt text` — collaborative field. Edit it with `useCrdtField`; this column is
+         * the server-written plain text of the document (readable and filterable,
+         * set by the client only in the create that makes the record).
+         */
+        content: { type: 'string' as const, crdt: 'text' as const, optional: true },
+        content__crdt: { type: 'string' as const, optional: true },
         context: { type: 'string' as const, optional: true },
         /**
          * `created_at` — string
@@ -61,6 +69,56 @@ export const schema = {
          * ISO-8601 datetime string.
          */
         updated_at: { type: 'string' as const, dateTime: true, optional: true },
+      },
+      primaryKey: ['id'] as const
+    },
+    /**
+     * `answer__crdt_log` table.
+     *
+     * Relationships:
+     * - `doc` → `answer` (one)
+     *
+     * @example
+     * const rows = useQuery(() => db.query('answer__crdt_log').orderBy('id', 'asc').limit(20).build());
+     */
+    {
+      name: 'answer__crdt_log' as const,
+      columns: {
+        /**
+         * `id` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        id: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `author?` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        author: { type: 'string' as const, recordId: true, optional: true },
+        /**
+         * `created_at?` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        created_at: { type: 'string' as const, dateTime: true, optional: true },
+        /**
+         * `data?` — string
+         *
+         * `@opaque` — synced to the client and readable here, but the sync
+         * engine never stores the value server-side. It cannot be used in
+         * `where`, `orderBy`, joins, or table permissions; doing so throws.
+         */
+        data: { type: 'Uint8Array' as const, bytes: true, opaque: true, optional: true },
+        /**
+         * `doc?` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        doc: { type: 'string' as const, recordId: true, optional: true },
+        field: { type: 'string' as const, optional: true },
+        peer: { type: 'string' as const, optional: true },
+        size: { type: 'number' as const, optional: true },
       },
       primaryKey: ['id'] as const
     },
@@ -292,7 +350,15 @@ export const schema = {
          */
         id: { type: 'string' as const, recordId: true, optional: false },
         cite_style: { type: 'string' as const, optional: false },
-        content: { type: 'string' as const, optional: false },
+        /**
+         * `content?` — string
+         *
+         * `@crdt text` — collaborative field. Edit it with `useCrdtField`; this column is
+         * the server-written plain text of the document (readable and filterable,
+         * set by the client only in the create that makes the record).
+         */
+        content: { type: 'string' as const, crdt: 'text' as const, optional: true },
+        content__crdt: { type: 'string' as const, optional: true },
         /**
          * `course` — string
          *
@@ -328,6 +394,56 @@ export const schema = {
          */
         updated_at: { type: 'string' as const, dateTime: true, optional: true },
         papers: { type: 'string' as const, array: true, optional: true },
+      },
+      primaryKey: ['id'] as const
+    },
+    /**
+     * `document__crdt_log` table.
+     *
+     * Relationships:
+     * - `doc` → `document` (one)
+     *
+     * @example
+     * const rows = useQuery(() => db.query('document__crdt_log').orderBy('id', 'asc').limit(20).build());
+     */
+    {
+      name: 'document__crdt_log' as const,
+      columns: {
+        /**
+         * `id` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        id: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `author?` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        author: { type: 'string' as const, recordId: true, optional: true },
+        /**
+         * `created_at?` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        created_at: { type: 'string' as const, dateTime: true, optional: true },
+        /**
+         * `data?` — string
+         *
+         * `@opaque` — synced to the client and readable here, but the sync
+         * engine never stores the value server-side. It cannot be used in
+         * `where`, `orderBy`, joins, or table permissions; doing so throws.
+         */
+        data: { type: 'Uint8Array' as const, bytes: true, opaque: true, optional: true },
+        /**
+         * `doc?` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        doc: { type: 'string' as const, recordId: true, optional: true },
+        field: { type: 'string' as const, optional: true },
+        peer: { type: 'string' as const, optional: true },
+        size: { type: 'number' as const, optional: true },
       },
       primaryKey: ['id'] as const
     },
@@ -853,6 +969,12 @@ export const schema = {
       cardinality: 'one' as const
     },
     {
+      from: 'answer__crdt_log' as const,
+      field: 'doc' as const,
+      to: 'answer' as const,
+      cardinality: 'one' as const
+    },
+    {
       from: 'api_key' as const,
       field: 'owner' as const,
       to: 'user' as const,
@@ -959,6 +1081,12 @@ export const schema = {
       field: 'papers' as const,
       to: 'paper' as const,
       cardinality: 'many' as const
+    },
+    {
+      from: 'document__crdt_log' as const,
+      field: 'doc' as const,
+      to: 'document' as const,
+      cardinality: 'one' as const
     },
     {
       from: 'fetch_run' as const,
@@ -1535,6 +1663,11 @@ DEFINE FIELD OVERWRITE anchor ON TABLE answer TYPE option<string>;
 DEFINE FIELD OVERWRITE anchor_page ON TABLE answer TYPE option<int>;
 DEFINE FIELD OVERWRITE region ON TABLE answer TYPE option<string>;
 -- The answer, as Markdown with $math$. Pasted images are \`answer-image:<id>\`.
+-- Edited live from every device and by ChatGPT as one Loro text: written
+-- through its edit log (answer__crdt_log), the SSP folds it back into this
+-- column. Text from before the field was collaborative is seeded into the
+-- document by its first editor (shared/crdt.ts).
+-- @crdt text
 DEFINE FIELD OVERWRITE content ON TABLE answer TYPE option<string> DEFAULT '';
 DEFINE FIELD OVERWRITE created_at ON TABLE answer TYPE option<datetime> DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at ON TABLE answer TYPE option<datetime>;
@@ -1565,6 +1698,8 @@ DEFINE FIELD OVERWRITE source ON TABLE document TYPE option<record<material>>;
 -- What the text is written in: Markdown with $math$, citing \`[@key]\`, or
 -- LaTeX source, citing \`\\cite{key}\`. Pasted images are \`answer-image:<id>\`.
 DEFINE FIELD OVERWRITE format ON TABLE document TYPE option<string> DEFAULT 'markdown' ASSERT $value IN ['markdown', 'tex'];
+-- Collaborative like an answer's text (document__crdt_log).
+-- @crdt text
 DEFINE FIELD OVERWRITE content ON TABLE document TYPE option<string> DEFAULT '';
 -- How citations print: (Author, 2024) or [1].
 DEFINE FIELD OVERWRITE cite_style ON TABLE document TYPE option<string> DEFAULT 'author-year' ASSERT $value IN ['author-year', 'numeric'];
@@ -1698,6 +1833,41 @@ DEFINE FIELD OVERWRITE revoked_at ON TABLE api_key TYPE option<datetime>;
 
 -- Its lookup index lives in apps/api/src/server-schema.surql: sp00ky refuses an
 -- index on a field clients cannot read.
+
+
+-- ==================================================
+-- Generated by sp00ky for \`@crdt\` fields. Do not edit.
+-- ==================================================
+
+-- \`answer\`: fold stamps
+DEFINE FIELD OVERWRITE content__crdt ON TABLE answer TYPE option<object> FLEXIBLE;
+
+-- \`answer\`: append-only Loro edit log
+DEFINE TABLE OVERWRITE answer__crdt_log SCHEMAFULL PERMISSIONS FULL;
+DEFINE FIELD OVERWRITE doc ON TABLE answer__crdt_log TYPE option<record<answer>>;
+DEFINE FIELD OVERWRITE field ON TABLE answer__crdt_log TYPE option<string>;
+DEFINE FIELD OVERWRITE author ON TABLE answer__crdt_log TYPE option<record>;
+DEFINE FIELD OVERWRITE peer ON TABLE answer__crdt_log TYPE option<string>;
+-- @opaque
+DEFINE FIELD OVERWRITE data ON TABLE answer__crdt_log TYPE option<bytes>;
+DEFINE FIELD OVERWRITE size ON TABLE answer__crdt_log TYPE option<int>;
+DEFINE FIELD OVERWRITE created_at ON TABLE answer__crdt_log TYPE option<datetime>;
+DEFINE INDEX OVERWRITE answer__crdt_log_doc ON TABLE answer__crdt_log FIELDS doc, field;
+
+-- \`document\`: fold stamps
+DEFINE FIELD OVERWRITE content__crdt ON TABLE document TYPE option<object> FLEXIBLE;
+
+-- \`document\`: append-only Loro edit log
+DEFINE TABLE OVERWRITE document__crdt_log SCHEMAFULL PERMISSIONS FULL;
+DEFINE FIELD OVERWRITE doc ON TABLE document__crdt_log TYPE option<record<document>>;
+DEFINE FIELD OVERWRITE field ON TABLE document__crdt_log TYPE option<string>;
+DEFINE FIELD OVERWRITE author ON TABLE document__crdt_log TYPE option<record>;
+DEFINE FIELD OVERWRITE peer ON TABLE document__crdt_log TYPE option<string>;
+-- @opaque
+DEFINE FIELD OVERWRITE data ON TABLE document__crdt_log TYPE option<bytes>;
+DEFINE FIELD OVERWRITE size ON TABLE document__crdt_log TYPE option<int>;
+DEFINE FIELD OVERWRITE created_at ON TABLE document__crdt_log TYPE option<datetime>;
+DEFINE INDEX OVERWRITE document__crdt_log_doc ON TABLE document__crdt_log FIELDS doc, field;
 
 
 -- Backend Schema: api
@@ -1929,11 +2099,13 @@ DEFINE FIELD _00_rv ON TABLE _00_schema TYPE int DEFAULT 0 PERMISSIONS FOR selec
 DEFINE FIELD _00_rv ON TABLE _00_stream_processor_state TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE _00_user_feature TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE answer TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
+DEFINE FIELD _00_rv ON TABLE answer__crdt_log TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE api_key TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE call TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE call_turn TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE course TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE document TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
+DEFINE FIELD _00_rv ON TABLE document__crdt_log TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE fetch_run TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE fetcher TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE homework TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
@@ -1957,6 +2129,20 @@ THEN {
 
 -- Table: answer Client Deletion
 DEFINE EVENT OVERWRITE _00_answer_client_delete ON TABLE answer
+WHEN $event = "DELETE"
+THEN {
+    -- No-op for now.
+};
+
+-- Table: answer__crdt_log Client Mutation
+DEFINE EVENT OVERWRITE _00_answer__crdt_log_client_mutation ON TABLE answer__crdt_log
+WHEN $before != $after AND $event != "DELETE"
+THEN {
+    -- No-op for now. Client mutation sync logic moved to DBSP.
+};
+
+-- Table: answer__crdt_log Client Deletion
+DEFINE EVENT OVERWRITE _00_answer__crdt_log_client_delete ON TABLE answer__crdt_log
 WHEN $event = "DELETE"
 THEN {
     -- No-op for now.
@@ -2027,6 +2213,20 @@ THEN {
 
 -- Table: document Client Deletion
 DEFINE EVENT OVERWRITE _00_document_client_delete ON TABLE document
+WHEN $event = "DELETE"
+THEN {
+    -- No-op for now.
+};
+
+-- Table: document__crdt_log Client Mutation
+DEFINE EVENT OVERWRITE _00_document__crdt_log_client_mutation ON TABLE document__crdt_log
+WHEN $before != $after AND $event != "DELETE"
+THEN {
+    -- No-op for now. Client mutation sync logic moved to DBSP.
+};
+
+-- Table: document__crdt_log Client Deletion
+DEFINE EVENT OVERWRITE _00_document__crdt_log_client_delete ON TABLE document__crdt_log
 WHEN $event = "DELETE"
 THEN {
     -- No-op for now.

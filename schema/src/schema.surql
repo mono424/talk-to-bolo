@@ -320,7 +320,12 @@ DEFINE FIELD OVERWRITE anchor ON TABLE answer TYPE option<string>;
 DEFINE FIELD OVERWRITE anchor_page ON TABLE answer TYPE option<int>;
 DEFINE FIELD OVERWRITE region ON TABLE answer TYPE option<string>;
 -- The answer, as Markdown with $math$. Pasted images are `answer-image:<id>`.
-DEFINE FIELD OVERWRITE content ON TABLE answer TYPE string DEFAULT '';
+-- Edited live from every device and by ChatGPT as one Loro text: written
+-- through its edit log (answer__crdt_log), the SSP folds it back into this
+-- column. Text from before the field was collaborative is seeded into the
+-- document by its first editor (shared/crdt.ts).
+-- @crdt text
+DEFINE FIELD OVERWRITE content ON TABLE answer TYPE string;
 DEFINE FIELD OVERWRITE created_at ON TABLE answer TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at ON TABLE answer TYPE datetime VALUE time::now();
 
@@ -352,7 +357,9 @@ DEFINE FIELD OVERWRITE source ON TABLE document TYPE option<record<material>>;
 -- LaTeX source, citing `\cite{key}`. Pasted images are `answer-image:<id>`.
 DEFINE FIELD OVERWRITE format ON TABLE document TYPE string DEFAULT 'markdown'
   ASSERT $value IN ['markdown', 'tex'];
-DEFINE FIELD OVERWRITE content ON TABLE document TYPE string DEFAULT '';
+-- Collaborative like an answer's text (document__crdt_log).
+-- @crdt text
+DEFINE FIELD OVERWRITE content ON TABLE document TYPE string;
 -- How citations print: (Author, 2024) or [1].
 DEFINE FIELD OVERWRITE cite_style ON TABLE document TYPE string DEFAULT 'author-year'
   ASSERT $value IN ['author-year', 'numeric'];
