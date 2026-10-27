@@ -1,4 +1,4 @@
-import { parseSheet } from '../../../shared/homework';
+import { parseSheet, type SheetPart } from '../../../shared/homework';
 import { lectureMarkdown } from '../../../shared/lecture';
 import { BadRequest, NotFound, recordId, type Surreal } from './surreal';
 
@@ -62,7 +62,7 @@ function pick(rows: PartRow[], refs: string[] | null): PartRow[] {
   return rows.filter((r) => wanted.has(r));
 }
 
-function findPart(rows: PartRow[], ref: string): PartRow {
+function findPart<T extends { id: string; key: string }>(rows: T[], ref: string): T {
   const r = ref.trim();
   const row = rows.find((p) => p.key === r || p.id === r || p.id === `answer:${r}`);
   if (!row) throw new BadRequest(`No part "${ref}" in this homework. Parts: ${rows.map((p) => p.key).join(', ')}.`);
@@ -179,21 +179,7 @@ export async function startHomework(user: Surreal, sheetId: string): Promise<{ i
       course: m.course,
       sheet,
       title: m.title,
-      // Null fields are dropped on the way, so they arrive as NONE.
-      parts: parts.map((p, position) => ({
-        id: `answer:k${crypto.randomUUID().replaceAll('-', '')}`,
-        position,
-        key: p.key,
-        question: p.question,
-        question_title: p.questionTitle,
-        label: p.label,
-        points: p.points,
-        prompt: p.prompt,
-        context: p.context,
-        page: p.page || null,
-        anchor: p.anchor || null,
-        anchor_page: p.anchorPage || null,
-      })),
+      parts: parts.map((p, position) => ({ id: `answer:k${crypto.randomUUID().replaceAll('-', '')}`, ...partFields(p, position) })),
     },
   );
   return { id, created: true };
@@ -205,6 +191,164 @@ export async function deleteHomework(user: Surreal, homeworkId: string) {
   const rows = await user.query<unknown[]>('DELETE type::record($id) RETURN BEFORE;', { id });
   if (!rows?.length) throw new NotFound('Homework not found.');
   return { deleted: id };
+}
+
+/** What a part of the sheet becomes in the answer row: the sheet's own fields, never the answer. */
+function partFields(p: SheetPart, position: number) {
+  // Null fields are dropped on the way, so they arrive as NONE.
+  return {
+    position,
+    key: p.key,
+    question: p.question,
+    question_title: p.questionTitle,
+    label: p.label,
+    points: p.points,
+    prompt: p.prompt,
+    context: p.context,
+    page: p.page || null,
+    anchor: p.anchor || null,
+    anchor_page: p.anchorPage || null,
+  };
+}
+
+/**
+ * Lines a homework's parts up with a (new) sheet by key: a part on both keeps
+ * its answer and takes the sheet's text and place, a part only on the sheet
+ * is added empty, and a part only in the homework stays, after the others,
+ * so no answer is lost.
+ */
+export function rebaseParts(rows: { id: string; key: string }[], sheet: SheetPart[]) {
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const update: (ReturnType<typeof partFields> & { id: string })[] = [];
+  const create: (ReturnType<typeof partFields> & { id: string })[] = [];
+  sheet.forEach((p, position) => {
+    const row = byKey.get(p.key);
+    byKey.delete(p.key);
+    if (row) update.push({ id: row.id, ...partFields(p, position) });
+    else create.push({ id: `answer:k${crypto.randomUUID().replaceAll('-', '')}`, ...partFields(p, position) });
+  });
+  const kept = rows.filter((r) => byKey.has(r.key)).map((r, i) => ({ id: r.id, key: r.key, position: sheet.length + i }));
+  return { update, create, kept };
+}
+
+const PATCHABLE = new Set(['label', 'question_title', 'points', 'page', 'prompt', 'context']);
+
+export interface PartPatch {
+  part: string;
+  label?: string;
+  question_title?: string | null;
+  points?: number | null;
+  page?: number | null;
+  prompt?: string;
+  context?: string | null;
+}
+
+export interface HomeworkUpdate {
+  title?: string;
+  /** Another material of the course to answer, such as the original PDF of a sheet typed up before. */
+  sheet_id?: string;
+  /** With sheet_id: split the new sheet and line the parts up with it (default), or keep the parts as they are. */
+  resplit?: boolean;
+  parts?: PartPatch[];
+  remove_parts?: string[];
+}
+
+/**
+ * Changes a homework: its title, its sheet (answers kept, parts lined up with
+ * the new sheet by key), the sheet text of single parts, or which parts it
+ * has. A part whose place on the sheet may have moved loses its excerpt, and
+ * the app finds it again on the PDF.
+ */
+export async function updateHomework(user: Surreal, homeworkId: string, change: HomeworkUpdate) {
+  const { hw, rows } = await loadHomework(user, homeworkId);
+  const id = hw.id;
+  const report: Record<string, unknown> = { homework: id };
+  let sql = '';
+  const vars: Record<string, unknown> = { id };
+
+  if (change.title !== undefined) {
+    sql += 'UPDATE type::record($id) SET title = $title;\n';
+    vars.title = change.title;
+    report.title = change.title;
+  }
+
+  const removed = new Set((change.remove_parts ?? []).map((ref) => findPart(rows, ref)));
+  let remaining: { id: string; key: string }[] = rows.filter((r) => !removed.has(r));
+  if (removed.size) {
+    sql += 'FOR $r IN $removed { DELETE type::record($r) };\n';
+    vars.removed = [...removed].map((r) => r.id);
+    report.removed = [...removed].map((r) => r.key);
+  }
+
+  if (change.sheet_id !== undefined) {
+    const sheet = recordId('material', change.sheet_id);
+    const [m, holder] = await user.queryAll(
+      `SELECT id, course, title, kind, status, content FROM ONLY type::record($sheet);
+       RETURN (SELECT VALUE id FROM homework WHERE sheet = type::record($sheet) AND id != type::record($id) LIMIT 1)[0];`,
+      { sheet, id },
+    ) as [{ id: string; course: string; title: string; kind: string; status: string; content: string } | null, string | null];
+    if (!m) throw new NotFound('Material not found.');
+    if (m.course !== hw.course) throw new BadRequest('The sheet must be a material of the homework\'s course.');
+    if (holder) throw new BadRequest(`That sheet has homework already (${holder}). A sheet has one homework: delete that one first, or move its answers.`);
+    sql += 'UPDATE type::record($id) SET sheet = type::record($sheet);\n';
+    vars.sheet = sheet;
+    report.sheet = sheet;
+    report.sheet_kind = m.kind;
+    if (change.resplit === false) {
+      // Same parts, new sheet: the app finds each part on it again.
+      sql += 'UPDATE answer SET region = NONE WHERE homework = type::record($id);\n';
+    } else {
+      if (!m.content?.trim()) {
+        throw new BadRequest(m.status === 'ready' ? 'The sheet has no text to split into parts; pass resplit false to keep the parts.' : 'The sheet is still being processed; list_materials shows when it is ready, then call again.');
+      }
+      const plan = rebaseParts(remaining, parseSheet(lectureMarkdown(m.kind, m.content)));
+      sql += `FOR $p IN $updates {
+         UPDATE type::record($p.id) SET position = $p.position, key = $p.key, question = $p.question,
+           question_title = $p.question_title, label = $p.label, points = $p.points, prompt = $p.prompt, context = $p.context,
+           page = $p.page, anchor = $p.anchor, anchor_page = $p.anchor_page, region = NONE
+       };
+       FOR $p IN $creates {
+         CREATE type::record($p.id) CONTENT {
+           owner: $auth.id, homework: type::record($id), position: $p.position, key: $p.key, question: $p.question,
+           question_title: $p.question_title, label: $p.label, points: $p.points, prompt: $p.prompt, context: $p.context,
+           page: $p.page, anchor: $p.anchor, anchor_page: $p.anchor_page, content: ''
+         };
+       };
+       FOR $p IN $kept { UPDATE type::record($p.id) SET position = $p.position, region = NONE };\n`;
+      vars.updates = plan.update;
+      vars.creates = plan.create;
+      vars.kept = plan.kept;
+      report.parts = { matched: plan.update.map((p) => p.key), added: plan.create.map((p) => p.key), not_on_sheet: plan.kept.map((p) => p.key) };
+      if (plan.kept.length) {
+        report.note = 'Parts not on the new sheet keep their answers at the end. Move an answer into its new part with write_answers, then drop the old part with remove_parts.';
+      }
+      // Patches below address the parts as they are after the split.
+      remaining = [...plan.update, ...plan.create, ...plan.kept].map((p) => ({ id: p.id, key: p.key }));
+    }
+  }
+
+  if (change.parts?.length) {
+    const seen = new Set<string>();
+    change.parts.forEach(({ part, ...fields }, i) => {
+      const row = findPart(remaining, part);
+      if (seen.has(row.id)) throw new BadRequest(`Part ${row.key} is changed twice; send one entry per part.`);
+      seen.add(row.id);
+      const set = Object.entries(fields).filter(([k, v]) => v !== undefined && PATCHABLE.has(k));
+      if (!set.length) return;
+      // A null clears the field: null vars arrive as NONE.
+      for (const [k, v] of set) vars[`p${i}_${k}`] = v;
+      vars[`p${i}`] = row.id;
+      const assign = set.map(([k]) => `${k} = $p${i}_${k}`);
+      // A part moved to another page is found again there.
+      if ('page' in fields) assign.push(`anchor_page = $p${i}_page`, 'region = NONE');
+      sql += `UPDATE type::record($p${i}) SET ${assign.join(', ')};\n`;
+    });
+    report.changed_parts = change.parts.map((p) => findPart(remaining, p.part).key);
+  }
+
+  if (!sql) throw new BadRequest('Nothing to change.');
+  await user.query(`BEGIN;\n${sql}COMMIT;`, vars);
+  return report;
 }
 
 export interface AnswerWrite {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseSheet } from '../../../shared/homework.ts';
 import { lectureMarkdown } from '../../../shared/lecture.ts';
-import { appendText, applyEdits } from '../src/homework.ts';
+import { appendText, applyEdits, rebaseParts } from '../src/homework.ts';
 
 const brief = (parts: ReturnType<typeof parseSheet>) => parts.map((p) => `${p.key} ${p.label}|${p.points ?? '-'}|p${p.page ?? '-'}|${p.anchor}`);
 
@@ -93,4 +93,16 @@ test('AI edits to an answer apply in order and must each match exactly once', ()
 test('appended text becomes its own paragraph', () => {
   assert.equal(appendText('', 'First.'), 'First.');
   assert.equal(appendText('First.\n\n', '\nSecond.'), 'First.\n\nSecond.');
+});
+
+test('a new sheet lines up with the parts by key and loses no answer', () => {
+  const rows = [{ id: 'answer:a', key: '1' }, { id: 'answer:b', key: '2.a' }, { id: 'answer:c', key: 'x' }];
+  const sheet = parseSheet('<!-- page 1 -->\nQuestion 1. A\nDo it.\n<!-- page 2 -->\nQuestion 2. B\n(a) one\n(b) two');
+  const plan = rebaseParts(rows, sheet);
+  assert.deepEqual(plan.update.map((p) => `${p.id} ${p.key} p${p.page} #${p.position}`), ['answer:a 1 p1 #0', 'answer:b 2.a p2 #1']);
+  assert.deepEqual(plan.create.map((p) => `${p.key} #${p.position}`), ['2.b #2']);
+  assert.match(plan.create[0].id, /^answer:k[0-9a-f]{32}$/);
+  assert.deepEqual(plan.kept, [{ id: 'answer:c', key: 'x', position: 3 }]);
+  // The answer itself is never part of the plan.
+  assert.ok(plan.update.every((p) => !('content' in p)));
 });

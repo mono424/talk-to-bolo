@@ -11,7 +11,7 @@ import {
   saveStudySession, searchEverything, sectionId, studyOverview, type Links, type StudyMode,
 } from './study';
 import { OUTCOMES, recordUnderstanding, studentModel, type Outcome } from './understanding';
-import { deleteHomework, editAnswer, listHomework, readHomework, startHomework, writeAnswers, type AnswerText, type HomeworkLinks } from './homework';
+import { deleteHomework, editAnswer, listHomework, readHomework, startHomework, updateHomework, writeAnswers, type AnswerText, type HomeworkLinks } from './homework';
 import {
   addPaper,
   createDocument,
@@ -142,7 +142,7 @@ To study, call get_study_overview, then prepare_study_session for the course, le
 
 TalkToBolo keeps a map of what the student understands, concept by concept. While studying, keep it current with record_understanding: map the concepts of each section you read and what they build on, and record what the student shows after each answer. get_understanding says what to explain first, what to focus on and what is still missing.
 
-Homework lives in TalkToBolo too: get_homework reads an exercise sheet part by part with the student's answers, start_homework opens a sheet that has no homework yet, write_answers and edit_answer write into the app's editor, where the student sees it live, delete_homework deletes a homework with its answers when the student asks. Help the way the student asks (hints, checking their draft against the lecture, or writing answers out), read a part before writing it and keep the student's own work.
+Homework lives in TalkToBolo too: get_homework reads an exercise sheet part by part with the student's answers, start_homework opens a sheet that has no homework yet, update_homework renames one, attaches another sheet to it (such as the original PDF) or fixes its parts, answers kept, write_answers and edit_answer write into the app's editor, where the student sees it live, delete_homework deletes a homework with its answers when the student asks. Help the way the student asks (hints, checking their draft against the lecture, or writing answers out), read a part before writing it and keep the student's own work.
 
 Documents are the student's own writing, such as a research proposal, with the papers it cites beside it: get_document reads the text and its papers, create_document starts one, write_document and edit_document change the text, update_document renames it, sets its citation style or format, add_paper, update_paper and remove_paper keep the paper list, delete_document deletes it when the student asks. Cite a paper with the cite string get_document gives it: [@key] in Markdown, \\cite{key} in LaTeX documents, which are edited as LaTeX source; never invent references.
 
@@ -536,6 +536,40 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
         const { id, created } = await startHomework(user, sheet_id);
         return text({ created, ...(await readHomework(user, homeworkLinks, answerText, id)) });
       }),
+  );
+
+  server.registerTool(
+    'update_homework',
+    {
+      title: 'Change a homework',
+      description:
+        "Changes a homework, answers kept: title renames it. sheet_id attaches another material of the course as its exercise sheet, such as the original PDF of a sheet that was typed up, so the app shows each part's excerpt from it: the new sheet is split into parts and lined up with the homework's by key, each part keeps its answer, parts only on the new sheet are added empty and parts not on it stay at the end with their answers (resplit false keeps the parts as they are). parts changes a part's sheet text: label, question_title, points, page, prompt, context (null clears). remove_parts deletes parts with their answers. Returns what changed; get_homework shows the result.",
+      inputSchema: z.object({
+        homework_id: z.string().describe('A homework:... id from get_homework.'),
+        title: z.string().min(1).max(300).optional(),
+        sheet_id: z.string().optional().describe('The material:... id of the new sheet, in the same course and ready (list_materials).'),
+        resplit: z.boolean().optional().describe('With sheet_id: split the new sheet into parts (default true).'),
+        parts: z.array(z.object({
+          part: PART,
+          label: z.string().optional(),
+          question_title: z.string().nullable().optional(),
+          points: z.number().nullable().optional(),
+          page: z.number().int().min(1).nullable().optional().describe('The PDF page the part is on.'),
+          prompt: z.string().optional(),
+          context: z.string().nullable().optional(),
+        })).max(100).optional(),
+        remove_parts: z.array(PART).max(100).optional().describe('Parts to delete with their answers. Only when the student asks, or to drop a part whose answer moved elsewhere.'),
+      }),
+      // Removing parts drops their answers.
+      annotations: { ...WRITE, destructiveHint: true },
+      _meta: meta('Changing the homework…', 'Homework changed'),
+    },
+    ({ homework_id, parts, ...change }) =>
+      run(async () => text(await updateHomework(user, homework_id, {
+        ...change,
+        // Sheet text holds lecture images, as get_homework shows them.
+        parts: parts?.map((p) => ({ ...p, ...(p.prompt !== undefined ? { prompt: toInternal(p.prompt) } : {}), ...(p.context != null ? { context: toInternal(p.context) } : {}) })),
+      }))),
   );
 
   server.registerTool(
