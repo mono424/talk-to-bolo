@@ -193,7 +193,8 @@ button, a, input, select, textarea { scroll-margin-block: 1rem; }
 }
 .lecture table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.9375rem; }
 .lecture th,
-.lecture td { border: 1px solid var(--line); padding: 0.45em 0.75em; text-align: left; }
+.lecture td { border: 1px solid var(--line); padding: 0.45em 0.75em; }
+.lecture :is(th, td):not([align]) { text-align: left; }
 .lecture th { background: var(--soft); font-weight: 600; }
 .lecture hr { border: 0; border-top: 1px solid var(--line); margin: 2em 0; }
 .lecture .math-display { margin: 0 0 1em; overflow-x: auto; overflow-y: hidden; max-width: 100%; }
@@ -469,6 +470,13 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
 .answer-editor .cm-md-table { font-family: var(--font-mono); font-size: 0.875em; }
 .answer-editor .cm-editor .cm-line.cm-md-codeblock { background: linear-gradient(var(--soft), var(--soft)) 14px var(--gap, 0px) / calc(100% - 14px) calc(100% - var(--gap, 0px)) no-repeat; padding-left: calc(14px + 0.75em); }
 .answer-editor .cm-editor .cm-line.cm-md-quote { color: var(--muted); background: linear-gradient(var(--line-strong), var(--line-strong)) 14px var(--gap, 0px) / 3px calc(100% - var(--gap, 0px)) no-repeat; padding-left: calc(14px + 1em); }
+.answer-editor .cm-md-table-view { padding: 0.4em 0 0.4em 14px; overflow-x: auto; white-space: normal; cursor: text; }
+.answer-editor .cm-md-table-view table { border-collapse: collapse; font-size: 0.9375em; line-height: 1.5; }
+.answer-editor .cm-md-table-view th,
+.answer-editor .cm-md-table-view td { border: 1px solid var(--line); padding: 0.35em 0.75em; }
+.answer-editor .cm-md-table-view :is(th, td):not([align]) { text-align: left; }
+.answer-editor .cm-md-table-view th { background: var(--soft); font-weight: 600; }
+.answer-editor .cm-md-table-view p { margin: 0; }
 .answer-editor .cm-md-listmark { color: var(--muted); }
 .answer-editor .cm-md-bullet { display: inline-block; min-width: 0.6em; color: var(--muted); }
 .answer-editor .cm-md-hr { display: inline-block; width: 100%; vertical-align: middle; border-top: 1px solid var(--line-strong); }

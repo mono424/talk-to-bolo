@@ -5,12 +5,12 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import type { MarkdownConfig } from '@lezer/markdown';
 import type { SyntaxNode } from '@lezer/common';
 import { Tag, tags } from '@lezer/highlight';
-import { imageSrc, renderTex } from './markdown';
+import { imageSrc, renderMarkdown, renderTex } from './markdown';
 
 /**
  * Markdown that reads as rendered while you write it (CodeMirror): headings
  * at their size, emphasis, links, lists with bullets, quotes, code, images
- * and $math$ typeset by KaTeX. The markup of a construct shows only while
+ * tables and $math$ typeset by KaTeX. The markup of a construct shows only while
  * the cursor is in it, so the text stays plain Markdown underneath and
  * prints the same through `renderMarkdown`. While a formula is being
  * written its rendering floats above it (inline) or sits below it (display).
@@ -171,6 +171,25 @@ class ImageWidget extends WidgetType {
   }
 }
 
+class TableWidget extends WidgetType {
+  constructor(readonly source: string) {
+    super();
+  }
+  eq(other: TableWidget) {
+    return other.source === this.source;
+  }
+  toDOM() {
+    const el = document.createElement('div');
+    el.className = 'cm-md-table-view';
+    el.innerHTML = renderMarkdown(this.source);
+    return el;
+  }
+  // A click puts the cursor in the table, which then shows its source.
+  ignoreEvent() {
+    return false;
+  }
+}
+
 class BulletWidget extends WidgetType {
   eq() {
     return true;
@@ -303,9 +322,16 @@ function preview(state: EditorState): DecorationSet {
         case 'HorizontalRule':
           if (!lineTouched(from, to)) out.push(rule.range(from, to));
           return false;
-        case 'Table':
-          lines(from, to, 'cm-md-table');
-          return;
+        case 'Table': {
+          const start = doc.lineAt(from).from;
+          const end = doc.lineAt(to).to;
+          if (touches(start, end)) {
+            lines(from, to, 'cm-md-table');
+            return;
+          }
+          out.push(Decoration.replace({ widget: new TableWidget(doc.sliceString(start, end)), block: true }).range(start, end));
+          return false;
+        }
       }
     },
   });
