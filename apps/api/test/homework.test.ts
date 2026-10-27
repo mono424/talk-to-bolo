@@ -73,6 +73,48 @@ Pick a tool and:
   assert.equal(parts[1].prompt, 'Try it out.');
 });
 
+test('a PDF sheet with plain numbered headings splits into its questions, not their numbered steps', () => {
+  const hw3 = [
+    '<!-- page 1 -->',
+    'CS 171: Problem Set 3',
+    'Due Date: October 3rd, 2026 at 8:59pm',
+    '1. Two Versions of CPA security (10 points)',
+    'Prove that definitions 0.1 and 0.2 are equivalent.',
+    '1. The challenger samples a key k ← Gen(1n).',
+    '2. The adversary A is given input 1n and oracle access to Enc(k, ·), and outputs a pair of',
+    'messages (m0, m1) with |m0| = |m1|.',
+    '3. The challenger computes the ciphertext c ← Enc(k, mb). Then they give c to A.',
+    '<!-- page 3 -->',
+    '2. Feistel Network (10 points)',
+    'Consider the following three-round Feistel network.',
+    '1. Let f : {0, 1}n × {0, 1}n → {0, 1}n.',
+    '3. Computation:',
+    '(a) F computes L1 := R0 and R1 := L0 ⊕ f (k1, R0).',
+    '(b) F computes L2 := R1 and R2 := L1 ⊕ f (k2, R1).',
+    'Show that there exists some efficient adversary A.',
+  ].join('\n');
+  const parts = parseSheet(hw3);
+  assert.deepEqual(brief(parts), ['1 |10|p1|1. Two', '2 |10|p3|2. Feistel']);
+  assert.equal(parts[0].questionTitle, 'Two Versions of CPA security');
+  assert.match(parts[1].prompt, /\(a\) F computes L1[\s\S]*efficient adversary/);
+
+  // Headings without a dot; lettered lines with no numbered item before them are parts.
+  const hw5 = [
+    '1 Encrypt-Then-Authenticate',
+    '1. Describe a MAC MAC′ := (Gen′, Mac′, Verify′) that is secure but not strongly secure.',
+    '2. Prove that MAC′ is secure or cite a security proof given in discussion or lecture.2',
+    '2 Randomized MACs',
+    '1. Construction of ΠD:',
+    '(a) GenD(1n): Sample k and output it.',
+    '2. Claim 2.1 ΠD is a secure MAC.',
+    '3 Composing a One-Way Function with Itself',
+    '4. (optional) Exploring Kerckhoff ’s Principle',
+    '(a) Try out the tool.',
+    '(b) Confirm that the codebase is open source.',
+  ].join('\n');
+  assert.deepEqual(parseSheet(hw5).map((p) => p.key), ['1', '2', '3', '4.a', '4.b']);
+});
+
 test('a sheet without structure is one answer, and repeated labels stay unique', () => {
   assert.deepEqual(brief(parseSheet('Write an essay about light.')), ['1 Answer|-|p1|']);
   const twice = parseSheet('Question 1. A\n(i) x\n(i) y');

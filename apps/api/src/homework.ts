@@ -284,12 +284,19 @@ export async function updateHomework(user: Surreal, homeworkId: string, change: 
     const sheet = recordId('material', change.sheet_id);
     const [m, holder] = await user.queryAll(
       `SELECT id, course, title, kind, status, content FROM ONLY type::record($sheet);
-       RETURN (SELECT VALUE id FROM homework WHERE sheet = type::record($sheet) AND id != type::record($id) LIMIT 1)[0];`,
+       RETURN (SELECT id, count((SELECT id FROM answer WHERE homework = $parent.id AND string::len(string::trim(content)) > 0)) AS answered
+         FROM homework WHERE sheet = type::record($sheet) AND id != type::record($id) LIMIT 1)[0];`,
       { sheet, id },
-    ) as [{ id: string; course: string; title: string; kind: string; status: string; content: string } | null, string | null];
+    ) as [{ id: string; course: string; title: string; kind: string; status: string; content: string } | null, { id: string; answered: number } | null];
     if (!m) throw new NotFound('Material not found.');
     if (m.course !== hw.course) throw new BadRequest('The sheet must be a material of the homework\'s course.');
-    if (holder) throw new BadRequest(`That sheet has homework already (${holder}). A sheet has one homework: delete that one first, or move its answers.`);
+    if (holder?.answered) throw new BadRequest(`That sheet has homework already (${holder.id}) with answers. A sheet has one homework: delete that one first, or move its answers.`);
+    if (holder) {
+      // A sheet opened by mistake has nothing to keep: its empty homework gives way.
+      sql += 'DELETE type::record($holder);\n';
+      vars.holder = holder.id;
+      report.replaced_empty_homework = holder.id;
+    }
     sql += 'UPDATE type::record($id) SET sheet = type::record($sheet);\n';
     vars.sheet = sheet;
     report.sheet = sheet;

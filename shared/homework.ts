@@ -2,8 +2,9 @@
  * An exercise sheet split into the parts a student answers. Reads the sheet's
  * Markdown (a PDF's text layer with its `<!-- page N -->` markers, or a
  * converted LaTeX sheet) and finds its structure: questions ("Question 2",
- * "Problem 3", "### 1. Title"), their lettered parts ("Part (b)", "(c)", "a)")
- * and roman sub-parts ("(ii)"). Each deepest part becomes one answer; the
+ * "Problem 3", "### 1. Title", or on a sheet without those a plain "1. Title"
+ * line), their lettered parts ("Part (b)", "(c)", "a)") and roman sub-parts
+ * ("(ii)"). Each deepest part becomes one answer; the
  * intro text above it travels along as context. Deterministic and free of
  * I/O, so the app runs it in the browser and tests run it in Node.
  */
@@ -47,6 +48,10 @@ interface Node {
 
 const QUESTION = /^(?:question|problem|exercise|aufgabe|task|frage)\s*(\d+)\s*[.:)\-]?\s*(.*)$/i;
 const HEADING_NUMBER = /^#{1,6}\s+(?:\*\*)?(\d+)[.)](?:\*\*)?\s+(.*)$/;
+// A PDF's text layer loses heading styles: "1. Two Versions of CPA security (10 points)", "2 Randomized MACs".
+const PLAIN_HEADING = /^(\d{1,2})(\.?)\s+(\S.*)$/;
+// A numbered list item inside a question: "3. Computation:".
+const NUMBERED_ITEM = /^\d{1,2}[.)]\s+\S/;
 const LETTER = /^(?:part\s*\(?([a-z])\)?|\(([a-z])\)|([a-z])\))\s*[.:,]?\s*(.*)$/i;
 const ROMAN = /^(?:\(([ivx]{1,5})\)|([ivx]{1,5})\))\s*[.:,]?\s*(.*)$/i;
 const QUESTION_LABEL = /^((?:question|problem|exercise|aufgabe|task|frage)\s*\d+)/i;
@@ -68,6 +73,20 @@ const bare = (line: string) =>
     .replace(/^_([^_]+)_/, '$1')
     .trim();
 
+/**
+ * A plain line that reads as the heading of question `n`: short, not a
+ * sentence or a list item that runs on ("2. The adversary is given ...",
+ * "3. Computation:"), and without a dot only when it starts like a title.
+ */
+const plainHeading = (line: string, n: number) => {
+  const m = PLAIN_HEADING.exec(line);
+  if (!m || Number(m[1]) !== n) return null;
+  const title = titleOf(m[3]) ?? '';
+  if (!title || title.length > 70 || title.split(/\s+/).length > 8 || /[.,;:]$/.test(m[3].trim())) return null;
+  if (!m[2] && !/^[A-Z(]/.test(m[3])) return null;
+  return { id: m[1], rest: m[3], anchor: `${m[1]}${m[2]} ${m[3].split(/\s+/)[0]}` };
+};
+
 const pointsOf = (text: string) => {
   const m = POINTS.exec(text);
   return m ? Number(m[1]) : null;
@@ -87,6 +106,11 @@ export function parseSheet(markdown: string): SheetPart[] {
   let current: Node = root;
   let page: number | null = null;
   let ended = false;
+  // Only a sheet without labelled or Markdown questions has plain headings.
+  const lines = (markdown ?? '').split('\n');
+  const plain = !lines.some((raw) => QUESTION.test(bare(raw)) || HEADING_NUMBER.test(raw.trim()));
+  // Under a plain heading, lettered lines after a numbered item are that item's list, not parts.
+  let listed = false;
 
   const open = (level: 1 | 2 | 3, id: string, rest: string, anchor: string, parent: Node): Node => {
     const node: Node = { level, id, title: level === 1 ? titleOf(rest) : null, points: pointsOf(rest), page, anchor, lines: [], children: [], parent };
@@ -96,7 +120,7 @@ export function parseSheet(markdown: string): SheetPart[] {
     return node;
   };
 
-  for (const raw of (markdown ?? '').split('\n')) {
+  for (const raw of lines) {
     const marker = /^<!--\s*page\s+(\d+)\s*-->$/.exec(raw.trim());
     if (marker) {
       page = Number(marker[1]);
@@ -122,6 +146,19 @@ export function parseSheet(markdown: string): SheetPart[] {
       question = open(1, id, (q ?? h)![2] ?? '', q ? QUESTION_LABEL.exec(line)![1] : `${id}.`, root);
       letter = null;
       current = question;
+      continue;
+    }
+    const ph = plain ? plainHeading(line, (question ? Number(question.id) : 0) + 1) : null;
+    if (ph) {
+      question = open(1, ph.id, ph.rest, ph.anchor, root);
+      letter = null;
+      current = question;
+      listed = false;
+      continue;
+    }
+    if (plain && question && NUMBERED_ITEM.test(line)) listed = true;
+    if (listed) {
+      current.lines.push(raw.trimEnd());
       continue;
     }
 
