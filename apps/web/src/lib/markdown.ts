@@ -99,10 +99,26 @@ export function imageSrc(src: string): string {
 //
 // ```tikz blocks (a LaTeX document's pictures, shared/latex.ts) are taken out
 // before math, and come back as pictures TeX draws in the browser (./tikz.ts).
-// A block in a list item is indented like the item.
+// A block in a list item is indented like the item. A tikzpicture or tikzcd
+// written as it is, from a line's start to a line's end, or as display math
+// ($$ around it), is such a block too.
 
 const TIKZ = /(^|\n)([ \t]*)(`{3,}|~{3,})tikz[ \t]*\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/g;
 const TIKZ_PLACEHOLDER = /(<p>)?TIKZPICTURE(\d+)Z(<\/p>)?/g;
+const BARE_TIKZ =
+  /(^|\n)([ \t]*)(?:\$\$[ \t]*(?:\n[ \t]*)?(\\begin\{(tikzpicture|tikzcd)\}[\s\S]*?\\end\{\4\})[ \t]*(?:\n[ \t]*)?\$\$|(\\begin\{(tikzpicture|tikzcd)\}[\s\S]*?\\end\{\6\}))[ \t]*(?=\n|$)/g;
+
+/** Pictures written as LaTeX become ```tikz blocks; the ones in code stay code. */
+function fenceTikz(md: string): string {
+  if (!md.includes('\\begin{tikz')) return md;
+  const code = [...md.matchAll(CODE)].map((m) => [m.index, m.index + m[0].length]);
+  return md.replace(BARE_TIKZ, (m, lead: string, indent: string, wrapped: string | undefined, _w: string, bare: string | undefined, _b: string, offset: number) => {
+    const from = offset + lead.length;
+    const to = offset + m.length;
+    if (code.some(([start, end]) => start < to && end > from)) return m;
+    return `${lead}${indent}\`\`\`tikz\n${indent}${wrapped ?? bare}\n${indent}\`\`\``;
+  });
+}
 
 function extractTikz(md: string): { text: string; pictures: string[] } {
   const pictures: string[] = [];
@@ -115,7 +131,7 @@ function extractTikz(md: string): { text: string; pictures: string[] } {
 
 /** Lecture markdown (with its math) to sanitized HTML. */
 export function renderMarkdown(md: string): string {
-  const tikz = extractTikz(md ?? '');
+  const tikz = extractTikz(fenceTikz(md ?? ''));
   const html = withMath(md ?? '', tikz.text);
   if (!tikz.pictures.length) return html;
   return html.replace(TIKZ_PLACEHOLDER, (m, open: string | undefined, n: string, close: string | undefined) => {

@@ -2,18 +2,20 @@ import { type EditorState, type Extension, type Range, StateEffect, StateField }
 import { Decoration, type DecorationSet, EditorView, showTooltip, type Tooltip, WidgetType } from '@codemirror/view';
 import { ensureSyntaxTree, HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import type { MarkdownConfig } from '@lezer/markdown';
+import type { BlockContext, Line, MarkdownConfig } from '@lezer/markdown';
 import type { SyntaxNode } from '@lezer/common';
 import { Tag, tags } from '@lezer/highlight';
 import { imageSrc, renderMarkdown, renderTex } from './markdown';
+import { tikzPlaceholder } from './tikz';
 
 /**
  * Markdown that reads as rendered while you write it (CodeMirror): headings
  * at their size, emphasis, links, lists with bullets, quotes, code, images
- * tables and $math$ typeset by KaTeX. The markup of a construct shows only while
- * the cursor is in it, so the text stays plain Markdown underneath and
- * prints the same through `renderMarkdown`. While a formula is being
- * written its rendering floats above it (inline) or sits below it (display).
+ * tables, $math$ typeset by KaTeX and TikZ pictures drawn by TeX (./tikz.ts).
+ * The markup of a construct shows only while the cursor is in it, so the
+ * text stays plain Markdown underneath and prints the same through
+ * `renderMarkdown`. While a formula or picture is being written its rendering
+ * floats above it (inline) or sits below it (display, pictures).
  */
 
 // ── Focus ─────────────────────────────────────────────────────────────────
@@ -111,6 +113,77 @@ const math: MarkdownConfig = {
   ],
 };
 
+// ── TikZ syntax ───────────────────────────────────────────────────────────
+//
+// What `renderMarkdown` draws as a picture besides ```tikz blocks: a
+// tikzpicture or tikzcd from a line's start (in $$ or not) up to the line of
+// its \end. Unclosed, it runs on like a code fence. Not in quotes.
+
+const TIKZ_BEGIN = /^\\begin\{(tikzpicture|tikzcd)\}/;
+const PICTURE = /\\begin\{(tikzpicture|tikzcd)\}[\s\S]*?\\end\{\1\}/;
+
+/** The environment a line opens, with whether $$ is around it. */
+function tikzOpen(cx: BlockContext, line: Line): { env: string; dollars: boolean } | null {
+  if (!/^[ \t]*$/.test(line.text.slice(0, line.pos))) return null;
+  const text = line.text.slice(line.pos);
+  const bare = TIKZ_BEGIN.exec(text);
+  if (bare) return { env: bare[1], dollars: false };
+  if (!text.startsWith('$$')) return null;
+  const rest = text.slice(2).trim();
+  const wrapped = TIKZ_BEGIN.exec(rest || cx.peekLine().trim());
+  return wrapped ? { env: wrapped[1], dollars: true } : null;
+}
+
+// The containers that go on at a line (Line.depth, left out of the typings).
+const lineDepth = (line: Line) => (line as unknown as { depth: number }).depth;
+
+const tikz: MarkdownConfig = {
+  defineNodes: [{ name: 'TikzBlock', block: true, style: mathTag }],
+  parseBlock: [
+    {
+      name: 'TikzBlock',
+      before: 'BlockMath',
+      parse(cx, line) {
+        const open = tikzOpen(cx, line);
+        if (!open) return false;
+        const from = cx.lineStart + line.pos;
+        const close = `\\end{${open.env}}`;
+        for (let first = true; first || (cx.nextLine() && lineDepth(line) >= cx.depth); first = false) {
+          const at = line.text.indexOf(close, first ? line.pos : 0);
+          if (at < 0) continue;
+          // Its closing $$, on the line or the next.
+          if (open.dollars && !line.text.slice(at + close.length).trim() && cx.peekLine().trim() === '$$') cx.nextLine();
+          const end = cx.lineStart + line.text.length;
+          cx.nextLine();
+          cx.addElement(cx.elt('TikzBlock', from, end));
+          return true;
+        }
+        cx.addElement(cx.elt('TikzBlock', from, cx.prevLineEnd()));
+        return true;
+      },
+      endLeaf: (cx, line) => !!tikzOpen(cx, line),
+    },
+  ],
+};
+
+const unindent = (text: string, indent: string) => text.split('\n').map((l) => (l.startsWith(indent) ? l.slice(indent.length) : l.trimStart())).join('\n');
+
+/** The picture of a TikzBlock or ```tikz block, when it is closed, as `renderMarkdown` reads it. */
+function picture(state: EditorState, node: SyntaxNode): string | null {
+  const line = state.doc.lineAt(node.from);
+  const indent = state.sliceDoc(line.from, node.from);
+  if (!/^[ \t]*$/.test(indent)) return null;
+  if (node.name === 'TikzBlock') {
+    const m = PICTURE.exec(state.sliceDoc(node.from, node.to));
+    return m ? unindent(m[0], indent) : null;
+  }
+  const info = node.getChild('CodeInfo');
+  if (!info || state.sliceDoc(info.from, info.to) !== 'tikz' || node.getChildren('CodeMark').length < 2) return null;
+  const first = line.to + 1;
+  const last = state.doc.lineAt(node.to).from - 1;
+  return first < last ? unindent(state.sliceDoc(first, last), indent) : null;
+}
+
 /** The formula of a math node, when it is closed. */
 function formula(state: EditorState, node: SyntaxNode): string | null {
   const marks = node.getChildren('MathMark');
@@ -190,6 +263,37 @@ class TableWidget extends WidgetType {
   }
 }
 
+const resizing = new WeakMap<HTMLElement, ResizeObserver>();
+
+class TikzWidget extends WidgetType {
+  constructor(
+    readonly source: string,
+    readonly preview = false,
+  ) {
+    super();
+  }
+  eq(other: TikzWidget) {
+    return other.source === this.source && other.preview === this.preview;
+  }
+  toDOM(view: EditorView) {
+    const el = document.createElement('div');
+    el.className = `cm-md-tikz${this.preview ? ' cm-md-tikz-preview' : ''}`;
+    el.innerHTML = tikzPlaceholder(this.source);
+    // TeX draws it later, changing its height.
+    const observer = new ResizeObserver(() => view.requestMeasure());
+    observer.observe(el);
+    resizing.set(el, observer);
+    return el;
+  }
+  destroy(dom: HTMLElement) {
+    resizing.get(dom)?.disconnect();
+  }
+  // A click puts the cursor in the picture, which then shows its source.
+  ignoreEvent() {
+    return false;
+  }
+}
+
 class BulletWidget extends WidgetType {
   eq() {
     return true;
@@ -263,6 +367,22 @@ function preview(state: EditorState): DecorationSet {
           if (!touches(from, to)) for (const mark of node.getChildren('CodeMark')) out.push(hidden.range(mark.from, mark.to));
           return false;
         case 'FencedCode':
+        case 'TikzBlock': {
+          const source = picture(state, node);
+          if (!source && name === 'FencedCode') {
+            lines(from, to, 'cm-md-codeblock');
+            return false;
+          }
+          const start = doc.lineAt(from).from;
+          const end = doc.lineAt(to).to;
+          if (source && !touches(start, end)) {
+            out.push(Decoration.replace({ widget: new TikzWidget(source), block: true }).range(start, end));
+          } else {
+            lines(from, to, name === 'FencedCode' ? 'cm-md-codeblock' : 'cm-md-math-block');
+            if (source) out.push(Decoration.widget({ widget: new TikzWidget(source, true), block: true, side: 1 }).range(end));
+          }
+          return false;
+        }
         case 'CodeBlock':
           lines(from, to, 'cm-md-codeblock');
           return false;
@@ -399,7 +519,7 @@ const highlight = HighlightStyle.define([
 /** Markdown with math, previewed in place. `syntax` extends the parser (a document's citations). */
 export function liveMarkdown(syntax: MarkdownConfig[] = []): Extension {
   return [
-    markdown({ base: markdownLanguage, extensions: [math, ...syntax] }),
+    markdown({ base: markdownLanguage, extensions: [math, tikz, ...syntax] }),
     syntaxHighlighting(highlight),
     focusField,
     previewField,

@@ -497,7 +497,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
   const homeworkLinks: HomeworkLinks = { material: materialUrl };
   const PART = z.string().min(1).describe('A part\'s key from get_homework ("1", "2.b", "3.a.ii") or its answer:... id.');
   const ANSWER_FORMAT =
-    'Answers are Markdown: inline math $...$, display math $$...$$ on lines of its own (KaTeX), lists, tables, code. Write only the answer itself: the app shows the part\'s label and its exercise beside it.';
+    'Answers are Markdown: inline math $...$, display math $$...$$ on lines of its own (KaTeX), lists, tables, code, figures in TikZ (\\begin{tikzpicture}...\\end{tikzpicture} or tikzcd on lines of their own, or a ```tikz block with \\usetikzlibrary lines before the picture), drawn by TeX in the app. Write only the answer itself: the app shows the part\'s label and its exercise beside it.';
 
   server.registerTool(
     'get_homework',
@@ -629,7 +629,7 @@ function buildServer(env: Env, auth: AuthInfo, origin: string, ctx?: Pick<Execut
     document: (courseId, documentId) => `${links.app}/courses/${courseId.slice(courseId.indexOf(':') + 1)}/documents/${documentId.slice(documentId.indexOf(':') + 1)}`,
   };
   const DOCUMENT_FORMAT =
-    "A document's format (get_document) is markdown or tex. Markdown: # headings, lists, tables, inline math $...$, display math $$...$$ on lines of its own (KaTeX); cite a paper with [@key], with a locator [@key, p. 4], several as [@a; @b]. LaTeX: the full source, edited as such; cite with \\cite{key}, \\cite[p.~4]{key}, several as \\cite{a,b}, the papers come as a .bib the student downloads. The key is the paper's cite_key from get_document. Keep to the document's format: never write Markdown into a LaTeX document (the server refuses it) or LaTeX into a Markdown one. The app formats citations as (Author, year) or [1] and lists the cited papers, so write no reference list yourself. Cite only papers the document has; add_paper adds one.";
+    "A document's format (get_document) is markdown or tex. Markdown: # headings, lists, tables, inline math $...$, display math $$...$$ on lines of its own (KaTeX), TikZ pictures (\\begin{tikzpicture}...\\end{tikzpicture} on lines of their own); cite a paper with [@key], with a locator [@key, p. 4], several as [@a; @b]. LaTeX: the full source, edited as such; cite with \\cite{key}, \\cite[p.~4]{key}, several as \\cite{a,b}, the papers come as a .bib the student downloads. The key is the paper's cite_key from get_document. Keep to the document's format: never write Markdown into a LaTeX document (the server refuses it) or LaTeX into a Markdown one. The app formats citations as (Author, year) or [1] and lists the cited papers, so write no reference list yourself. Cite only papers the document has; add_paper adds one.";
   const PAPER_KEY = z.string().max(80).optional().describe('The key the text cites it by, BibTeX style ("stark2019"). Made from the first author and year when left out.');
   const PAPER_DETAILS = {
     cite_key: PAPER_KEY,

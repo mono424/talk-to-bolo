@@ -421,10 +421,10 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
   transition: color 120ms;
 }
 .answer-editor .cm-hw-part.cm-hw-active::before { color: var(--muted); }
-/* Through a rendered display formula of the part too. */
-.answer-editor .cm-hw-active + .cm-md-math-display { position: relative; }
+/* Through a rendered display formula or picture of the part too. */
+.answer-editor .cm-hw-active + :is(.cm-md-math-display, .cm-md-tikz) { position: relative; }
 .answer-editor .cm-hw-active::after,
-.answer-editor .cm-hw-active + .cm-md-math-display::after {
+.answer-editor .cm-hw-active + :is(.cm-md-math-display, .cm-md-tikz)::after {
   content: '';
   position: absolute;
   left: 0;
@@ -487,6 +487,9 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
 .answer-editor .cm-md-math-display { padding: 0.4em 0 0.4em 14px; overflow-x: auto; overflow-y: hidden; cursor: text; }
 .answer-editor .cm-md-math-display .katex-display { margin: 0; }
 .answer-editor .cm-md-math-preview { padding: 0.15em 0 0.6em 14px; opacity: 0.85; }
+.answer-editor .cm-md-tikz { padding: 0.4em 0 0.4em 14px; cursor: text; }
+.answer-editor .cm-md-tikz .tikz { margin: 0; }
+.answer-editor .cm-md-tikz-preview { padding: 0.15em 0 0.6em 14px; opacity: 0.85; }
 .answer-editor .cm-md-math-block { background: linear-gradient(var(--soft), var(--soft)) 14px var(--gap, 0px) / calc(100% - 14px) calc(100% - var(--gap, 0px)) no-repeat; }
 .answer-editor .cm-editor .cm-tooltip { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--fg); box-shadow: var(--shadow-card); }
 .answer-editor .cm-md-math-tip { padding: 0.35rem 0.6rem; font-size: 15px; }
@@ -498,7 +501,7 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
 .document-editor .cm-editor .cm-content { padding-left: 0; }
 @media (min-width: 640px) { .document-editor .cm-editor .cm-content { padding-left: 0; } }
 .document-editor .cm-hw-active::after,
-.document-editor .cm-hw-active + .cm-md-math-display::after { display: none; }
+.document-editor .cm-hw-active + :is(.cm-md-math-display, .cm-md-tikz)::after { display: none; }
 
 /* Citations (lib/citations.ts): as they print, until the cursor walks in. */
 .answer-editor .cm-cite {
