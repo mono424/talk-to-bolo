@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@spooky-sync/cli':
-        specifier: 0.0.1-canary.353
-        version: 0.0.1-canary.353
+        specifier: 0.0.1-canary.366
+        version: 0.0.1-canary.366
 
   apps/api:
     dependencies:
@@ -107,14 +107,14 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0(solid-js@1.9.17)
       '@spooky-sync/client-solid':
-        specifier: 0.0.1-canary.333
-        version: 0.0.1-canary.333(@opentelemetry/api@1.9.1)(@surrealdb/wasm-native@3.3.4)(solid-js@1.9.17)(tslib@2.8.1)(typescript@5.9.3)
+        specifier: 0.0.1-canary.366
+        version: 0.0.1-canary.366(@opentelemetry/api@1.9.1)(@surrealdb/wasm-native@3.3.4)(solid-js@1.9.17)(tslib@2.8.1)(typescript@5.9.3)
       '@spooky-sync/core':
-        specifier: 0.0.1-canary.333
-        version: 0.0.1-canary.333(@opentelemetry/api@1.9.1)(tslib@2.8.1)(typescript@5.9.3)
+        specifier: 0.0.1-canary.366
+        version: 0.0.1-canary.366(@opentelemetry/api@1.9.1)(tslib@2.8.1)(typescript@5.9.3)
       '@spooky-sync/query-builder':
-        specifier: 0.0.1-canary.333
-        version: 0.0.1-canary.333(tslib@2.8.1)(typescript@5.9.3)
+        specifier: 0.0.1-canary.366
+        version: 0.0.1-canary.366(tslib@2.8.1)(typescript@5.9.3)
       '@tanstack/solid-virtual':
         specifier: 3.13.40
         version: 3.13.40(solid-js@1.9.17)
@@ -1316,42 +1316,42 @@ packages:
   '@speed-highlight/core@1.2.24':
     resolution: {integrity: sha512-qeW2e1l78afw8VhRPfPQ1Gjj+KU5XFQ/OFV5ti6eTa9bruO7mJyZtA4vw0ofqmA3tKCkROE9xLk3VZoeRc98nw==}
 
-  '@spooky-sync/cli-darwin-arm64@0.0.1-canary.353':
-    resolution: {integrity: sha512-4WSlwh6P/LM1CdvjWthkSvazmBiTD8G2fAJL4YP8hNF1NRhqZY7dImMzNfuSMSJuLQk5m6/ob2eY/jCwS3Bb7Q==}
+  '@spooky-sync/cli-darwin-arm64@0.0.1-canary.366':
+    resolution: {integrity: sha512-3K6oBrGhDL9x1I3GfjCRIW6COkmCwPKC6Zge2vUCgM1uDltOivf6tRug5sREsiXb4qlnHKn1xi5okdcFP9zyBQ==}
     cpu: [arm64]
     os: [darwin]
 
-  '@spooky-sync/cli-darwin-x64@0.0.1-canary.353':
-    resolution: {integrity: sha512-W62it9H6bceC09Ggs9wJu2/E9RUTcP/ZDdlBzcVvIZselFh4JjOocuHgHZwyIBtA1im6b/kvwECCz9OTBFix9A==}
+  '@spooky-sync/cli-darwin-x64@0.0.1-canary.366':
+    resolution: {integrity: sha512-Plmzn4Rs5WEB1Pq0OSW8JIoHu+Xue0PpAZfAxWUvNSbw5ZqNnqQODi4U4TvWndzeab9AcR4zE7kBvqQcmUmShg==}
     cpu: [x64]
     os: [darwin]
 
-  '@spooky-sync/cli-linux-arm64@0.0.1-canary.353':
-    resolution: {integrity: sha512-rDNCvDR9jEM4PQ9U70kxABjLSv7EHoeobvCKJzTMLu6BkAzdHNXMc8YKyizVuTj9jdnr4ngn7scDSq8Nt6b5tQ==}
+  '@spooky-sync/cli-linux-arm64@0.0.1-canary.366':
+    resolution: {integrity: sha512-gayNjDf+YtximAaDC8bU9/YgI5SCCeWCflzFgye61BAB6rGBmfu4AzSkO+8jzxOz2eMO0ghQwfOuHdrA1gSfyA==}
     cpu: [arm64]
     os: [linux]
 
-  '@spooky-sync/cli-linux-x64@0.0.1-canary.353':
-    resolution: {integrity: sha512-y2d0LBmnXIWKSSWisau2c3bxxFq9PlSl+SYWMG3O7G4PqECEgeini6cf01SH9HUFia1942IS9pTMGa6wix+rxg==}
+  '@spooky-sync/cli-linux-x64@0.0.1-canary.366':
+    resolution: {integrity: sha512-oh7OQJz9bfXZvyql89lMCBdG/DtzbjvHO8O49gol8V/v0nqix/aKuVGvNfLTlb3riW49f++DLTJlF5cUsLp9ZA==}
     cpu: [x64]
     os: [linux]
 
-  '@spooky-sync/cli-win32-x64@0.0.1-canary.353':
-    resolution: {integrity: sha512-kV6Yb3MpyWeRVRjzkK3g2wjDrVtE0mWYUizfGf0dFVbLrlS6SOfmhzXtR0xP872FlFaPOocQ59lhu4PRsYsWQg==}
+  '@spooky-sync/cli-win32-x64@0.0.1-canary.366':
+    resolution: {integrity: sha512-BnN82rx1dfnHangHwAHs1f+pWGvTqdy+Jd8U1W2YWQg6oDuSLyaCI1AneVZ9Wcg5KZ8163GvOejmJ6B1qdqRdQ==}
     cpu: [x64]
     os: [win32]
 
-  '@spooky-sync/cli@0.0.1-canary.353':
-    resolution: {integrity: sha512-5lHsmPiS9AAak+uToUn4sZqgK40nBEtlTclbrK8REz6Gcx7Xmw+pxB1raDwxEpPKb0RjdFjpIhpeayj1IuKHNA==}
+  '@spooky-sync/cli@0.0.1-canary.366':
+    resolution: {integrity: sha512-kV1dQFazN44ywlqxZUd1WkxNet7kMUg/cL0tE7nNsER8t/jRhOfQaGxOnHDi1ZtpU2PnrzsW7NkwUygV09vgOw==}
     hasBin: true
 
-  '@spooky-sync/client-solid@0.0.1-canary.333':
-    resolution: {integrity: sha512-cBrp61N11T2zO5dHqwtM8aIb13sREEkdbAPN/gzAqQcVtOL3wDayrmtc/SNWJ8QeQu2YtPaMERHhEoKw2Wy/vg==}
+  '@spooky-sync/client-solid@0.0.1-canary.366':
+    resolution: {integrity: sha512-K+OVpaUUahj94Ikqjy0TlFxXBkLTdZ+EZ0R2Z2YSj+IRkgdS4KbdZBM8HeOg4Go1Cp/gYHb8q+49Nk67phS3bQ==}
     peerDependencies:
       solid-js: ^1.x.x
 
-  '@spooky-sync/core@0.0.1-canary.333':
-    resolution: {integrity: sha512-AKFJpgbP7W6KJxjwsq8PV2d7OIwVVIfLI1EB4rnIE8pdIOCRvK2tl6ADJmZpmlfb6RPmv+cKAs6+Db256aKZTQ==}
+  '@spooky-sync/core@0.0.1-canary.366':
+    resolution: {integrity: sha512-3uQvsKWj9EcH8gCQfcbxC/P9HXHJwEu2bYu8K51AdsZG3IZ6Z/MLraq4Goe5a3JFpULStDsFZU8z1EYdt1oHIw==}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
       '@opentelemetry/exporter-logs-otlp-proto': ^0.211.0
@@ -1370,11 +1370,11 @@ packages:
       '@opentelemetry/semantic-conventions':
         optional: true
 
-  '@spooky-sync/query-builder@0.0.1-canary.333':
-    resolution: {integrity: sha512-xmGOXZOIN7jLR7ns6K3Yffttblx3HV+Wrl4paQrNZ3Mk2YIA029t1nnSJV7lnY7eSBNj7D5fUcicDZudakDEaA==}
+  '@spooky-sync/query-builder@0.0.1-canary.366':
+    resolution: {integrity: sha512-0YGjU5nXaAKH0AeTk8cVhV5C8ckUZ6mtvcdbIm9YVBD9KKPHqt5/bqE8d3HBVsQTa/4dc+7CxP4cBqKiiUhf8w==}
 
-  '@spooky-sync/ssp-wasm@0.0.1-canary.333':
-    resolution: {integrity: sha512-kUc9mPqIAxqJl2j0XRdWOgwI2Xdshb5yWQ/w2+eqhtxHXevX6wCop4JtHAaBFntihdEqIykpKaE39NLhrpFc5w==}
+  '@spooky-sync/ssp-wasm@0.0.1-canary.366':
+    resolution: {integrity: sha512-ah/z5B0RadXJ3/ocRHooyy2kSjUpD+DsUykLd6RhLtg/bjkYg0sKDd9ZBVlKNMmNDgRYP64fvV3RMso25PuDng==}
 
   '@sqlite.org/sqlite-wasm@3.53.0-build1':
     resolution: {integrity: sha512-PfWPWN2n+/37doa8oh2/oUXk4OOsRYZsxc1W1sDXIGb/Pu5Yrb+f2eyYpgQMGITVX7HVgxhs9P18Rc6I97ym/g==}
@@ -4214,33 +4214,33 @@ snapshots:
 
   '@speed-highlight/core@1.2.24': {}
 
-  '@spooky-sync/cli-darwin-arm64@0.0.1-canary.353':
+  '@spooky-sync/cli-darwin-arm64@0.0.1-canary.366':
     optional: true
 
-  '@spooky-sync/cli-darwin-x64@0.0.1-canary.353':
+  '@spooky-sync/cli-darwin-x64@0.0.1-canary.366':
     optional: true
 
-  '@spooky-sync/cli-linux-arm64@0.0.1-canary.353':
+  '@spooky-sync/cli-linux-arm64@0.0.1-canary.366':
     optional: true
 
-  '@spooky-sync/cli-linux-x64@0.0.1-canary.353':
+  '@spooky-sync/cli-linux-x64@0.0.1-canary.366':
     optional: true
 
-  '@spooky-sync/cli-win32-x64@0.0.1-canary.353':
+  '@spooky-sync/cli-win32-x64@0.0.1-canary.366':
     optional: true
 
-  '@spooky-sync/cli@0.0.1-canary.353':
+  '@spooky-sync/cli@0.0.1-canary.366':
     optionalDependencies:
-      '@spooky-sync/cli-darwin-arm64': 0.0.1-canary.353
-      '@spooky-sync/cli-darwin-x64': 0.0.1-canary.353
-      '@spooky-sync/cli-linux-arm64': 0.0.1-canary.353
-      '@spooky-sync/cli-linux-x64': 0.0.1-canary.353
-      '@spooky-sync/cli-win32-x64': 0.0.1-canary.353
+      '@spooky-sync/cli-darwin-arm64': 0.0.1-canary.366
+      '@spooky-sync/cli-darwin-x64': 0.0.1-canary.366
+      '@spooky-sync/cli-linux-arm64': 0.0.1-canary.366
+      '@spooky-sync/cli-linux-x64': 0.0.1-canary.366
+      '@spooky-sync/cli-win32-x64': 0.0.1-canary.366
 
-  '@spooky-sync/client-solid@0.0.1-canary.333(@opentelemetry/api@1.9.1)(@surrealdb/wasm-native@3.3.4)(solid-js@1.9.17)(tslib@2.8.1)(typescript@5.9.3)':
+  '@spooky-sync/client-solid@0.0.1-canary.366(@opentelemetry/api@1.9.1)(@surrealdb/wasm-native@3.3.4)(solid-js@1.9.17)(tslib@2.8.1)(typescript@5.9.3)':
     dependencies:
-      '@spooky-sync/core': 0.0.1-canary.333(@opentelemetry/api@1.9.1)(tslib@2.8.1)(typescript@5.9.3)
-      '@spooky-sync/query-builder': 0.0.1-canary.333(tslib@2.8.1)(typescript@5.9.3)
+      '@spooky-sync/core': 0.0.1-canary.366(@opentelemetry/api@1.9.1)(tslib@2.8.1)(typescript@5.9.3)
+      '@spooky-sync/query-builder': 0.0.1-canary.366(tslib@2.8.1)(typescript@5.9.3)
       '@surrealdb/wasm': 3.1.0(@surrealdb/wasm-native@3.3.4)(surrealdb@2.1.0(tslib@2.8.1)(typescript@5.9.3))
       solid-js: 1.9.17
       surrealdb: 2.1.0(tslib@2.8.1)(typescript@5.9.3)
@@ -4257,10 +4257,10 @@ snapshots:
       - tslib
       - typescript
 
-  '@spooky-sync/core@0.0.1-canary.333(@opentelemetry/api@1.9.1)(tslib@2.8.1)(typescript@5.9.3)':
+  '@spooky-sync/core@0.0.1-canary.366(@opentelemetry/api@1.9.1)(tslib@2.8.1)(typescript@5.9.3)':
     dependencies:
-      '@spooky-sync/query-builder': 0.0.1-canary.333(tslib@2.8.1)(typescript@5.9.3)
-      '@spooky-sync/ssp-wasm': 0.0.1-canary.333
+      '@spooky-sync/query-builder': 0.0.1-canary.366(tslib@2.8.1)(typescript@5.9.3)
+      '@spooky-sync/ssp-wasm': 0.0.1-canary.366
       '@sqlite.org/sqlite-wasm': 3.53.0-build1
       '@surrealdb/wasm': 3.1.0(@surrealdb/wasm-native@3.3.4)(surrealdb@2.1.0(tslib@2.8.1)(typescript@5.9.3))
       '@surrealdb/wasm-native': 3.3.4
@@ -4275,14 +4275,14 @@ snapshots:
       - tslib
       - typescript
 
-  '@spooky-sync/query-builder@0.0.1-canary.333(tslib@2.8.1)(typescript@5.9.3)':
+  '@spooky-sync/query-builder@0.0.1-canary.366(tslib@2.8.1)(typescript@5.9.3)':
     dependencies:
       surrealdb: 2.1.0(tslib@2.8.1)(typescript@5.9.3)
     transitivePeerDependencies:
       - tslib
       - typescript
 
-  '@spooky-sync/ssp-wasm@0.0.1-canary.333': {}
+  '@spooky-sync/ssp-wasm@0.0.1-canary.366': {}
 
   '@sqlite.org/sqlite-wasm@3.53.0-build1': {}
 
