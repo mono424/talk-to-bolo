@@ -2,7 +2,7 @@ import { A, useNavigate, useParams } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, For, lazy, on, onCleanup, onMount, Show, Suspense, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { ExternalLink, FileDown, Trash2, X } from 'lucide-solid';
+import { ExternalLink, FileDown, ImagePlus, Trash2, X } from 'lucide-solid';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { schema } from '../schema.gen';
 import { fetchPdf, materialPath, uploadAnswerImage } from '../lib/api';
@@ -31,8 +31,9 @@ const Editor = lazy(() => import('../components/Editor'));
  * part each answer is for. Beside the answers, in a panel as wide as you drag
  * it, the exercise of the part being written: its page with the part marked
  * and the rest dimmed, or the entire sheet. On a phone it is pinned above the
- * keyboard. Answers are Markdown with $math$ and pasted images, rendered as
- * you write, saved as you type, and print as a PDF.
+ * keyboard. Answers are Markdown with $math$ and images (pasted, dropped in,
+ * or picked with the Image button: a photo of a drawing, a sketch), rendered
+ * as you write, saved as you type, and print as a PDF.
  */
 
 type AnswerRow = TableModel<GetTable<typeof schema, 'answer'>>;
@@ -165,8 +166,8 @@ function Workspace(props: { id: string; title: string; answers: AnswerRow[]; she
     navigate(`/courses/${props.courseKey}`);
   };
 
+  // The editor shows an image where it goes while it uploads; only a failure is said here.
   const uploadImage = async (id: string, file: File) => {
-    setNotice('Adding the image…');
     try {
       const { id: image } = await uploadAnswerImage(db, id, file);
       setNotice(null);
@@ -176,6 +177,8 @@ function Workspace(props: { id: string; title: string; answers: AnswerRow[]; she
       return null;
     }
   };
+  let addImages: ((files: File[]) => void) | undefined;
+  let picker!: HTMLInputElement;
 
   // The editor is built once per set of parts; their texts flow in through `textOf`.
   const parts = createMemo<EditorPart[]>(
@@ -276,6 +279,11 @@ function Workspace(props: { id: string; title: string; answers: AnswerRow[]; she
         <Button variant={showExercise() ? 'solid' : 'ghost'} size="sm" onClick={() => setShowExercise((v) => !v)} title="Show the exercise (⌘E)">
           Exercise <span class="hidden opacity-60 lg:inline">⌘E</span>
         </Button>
+        <Show when={props.answers.length}>
+          <IconButton label="Add an image to the answer (or drop one in)" size="sm" onClick={() => picker.click()}>
+            <ImagePlus size={16} stroke-width={1.75} />
+          </IconButton>
+        </Show>
         <Button variant="ghost" size="sm" onClick={() => void exportPdf(props.title)} title="Print or save as PDF">
           <FileDown size={16} stroke-width={1.75} /> <span class="hidden sm:inline">Export PDF</span>
         </Button>
@@ -334,6 +342,18 @@ function Workspace(props: { id: string; title: string; answers: AnswerRow[]; she
       <Show when={notice()}>
         <p class="mx-auto mt-3 max-w-3xl rounded-xl bg-soft px-3.5 py-2 text-[13px] text-muted">{notice()}</p>
       </Show>
+      <input
+        ref={picker}
+        type="file"
+        class="sr-only"
+        tabindex="-1"
+        multiple
+        accept="image/*,.heic,.heif"
+        onChange={(e) => {
+          if (e.currentTarget.files?.length) addImages?.([...e.currentTarget.files]);
+          e.currentTarget.value = '';
+        }}
+      />
 
       <div class="relative mt-4 flex items-start gap-0">
         <div class="relative min-w-0 flex-1 pb-24">
@@ -349,6 +369,7 @@ function Workspace(props: { id: string; title: string; answers: AnswerRow[]; she
                       onActive={setActive}
                       onBlur={saveAll}
                       uploadImage={uploadImage}
+                      onAddImages={(add) => (addImages = add)}
                       topInset={() => (!wide() && showExercise() && active() ? (folded() ? 40 : pinnedHeight() + 56) + 12 : 0)}
                     />
                   )}

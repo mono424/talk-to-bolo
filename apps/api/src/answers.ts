@@ -3,7 +3,7 @@ import { ensureServerSchema, readLimited } from './service';
 import { BadRequest, NotFound, Surreal, recordId, toBase64 } from './surreal';
 
 /**
- * Images pasted into a homework answer or a document: a sketch, a photo of a
+ * Images added to a homework answer or a document: a sketch, a photo of a
  * drawing, a figure. Kept in the `materials` bucket and served by an
  * unguessable id, like the images of a lecture (an <img> cannot send the
  * session token).
@@ -37,7 +37,7 @@ export async function storeAnswerImage(
   const bytes = await readLimited(body, MAX_ANSWER_IMAGE_BYTES);
   if (!bytes.byteLength) throw new BadRequest('The image is empty.');
   const type = TYPES.find((t) => t.magic(bytes));
-  if (!type) throw new BadRequest('Paste a PNG, JPEG, GIF or WebP image.');
+  if (!type) throw new BadRequest('Add a PNG, JPEG, GIF or WebP image.');
   const id = `answer_image:i${crypto.randomUUID().replaceAll('-', '')}`;
   // The file first, so a row never points at a missing file.
   await db.query(

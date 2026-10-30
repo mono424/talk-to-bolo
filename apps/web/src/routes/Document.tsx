@@ -3,7 +3,7 @@ import { createEffect, createMemo, createSignal, For, lazy, onCleanup, onMount, 
 import { Portal } from 'solid-js/web';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
 import type { EditorView } from '@codemirror/view';
-import { Download, FileCode2, FileDown, FileText, Library, PanelRight, Plus, Trash2, X } from 'lucide-solid';
+import { Download, FileCode2, FileDown, FileText, ImagePlus, Library, PanelRight, Plus, Trash2, X } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { uploadDocumentImage } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -124,8 +124,8 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     save: (row, content) => db.update('document', row, { content }),
   });
 
+  // The editor shows an image where it goes while it uploads; only a failure is said here.
   const uploadImage = async (_part: string, file: File) => {
-    setNotice('Adding the image…');
     try {
       const { id: image } = await uploadDocumentImage(db, id, file);
       setNotice(null);
@@ -135,6 +135,8 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
       return null;
     }
   };
+  let addImages: ((files: File[]) => void) | undefined;
+  let picker!: HTMLInputElement;
 
   const isTex = () => props.doc.format === 'tex';
   // The text as Markdown with [@…] citations: LaTeX through its converter.
@@ -447,6 +449,11 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
             <FileCode2 size={16} stroke-width={1.75} /> <span class="hidden sm:inline">Switch to LaTeX</span>
           </Button>
         </Show>
+        <Show when={!isTex()}>
+          <IconButton label="Add an image (or drop one in)" size="sm" onClick={() => picker.click()}>
+            <ImagePlus size={16} stroke-width={1.75} />
+          </IconButton>
+        </Show>
         <DownloadMenu
           items={[
             { label: 'PDF', detail: 'Print or save, citations formatted', icon: FileDown, run: () => void exportPdf(props.doc.title) },
@@ -466,6 +473,18 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
       <Show when={notice()}>
         <p class="mx-auto mt-3 max-w-3xl rounded-xl bg-soft px-3.5 py-2 text-[13px] text-muted">{notice()}</p>
       </Show>
+      <input
+        ref={picker}
+        type="file"
+        class="sr-only"
+        tabindex="-1"
+        multiple
+        accept="image/*,.heic,.heif"
+        onChange={(e) => {
+          if (e.currentTarget.files?.length) addImages?.([...e.currentTarget.files]);
+          e.currentTarget.value = '';
+        }}
+      />
 
       <div class="relative mt-4 flex items-start gap-0">
         {/* The room after the text is the text's own: a short one never scrolls the page, and the panel stays put. */}
@@ -489,6 +508,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
                 onActive={() => {}}
                 onBlur={saveAll}
                 uploadImage={uploadImage}
+                onAddImages={(add) => (addImages = add)}
                 placeholder="Start writing. Cite a paper from the right, or type [@"
                 label={props.doc.title}
                 class="document-editor"

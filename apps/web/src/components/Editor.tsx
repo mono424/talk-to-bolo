@@ -8,14 +8,16 @@ import {
   Facet,
   type Range,
   type StateCommand,
+  StateEffect,
   StateField,
   Transaction,
 } from '@codemirror/state';
-import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from '@codemirror/view';
+import { Decoration, type DecorationSet, dropCursor, EditorView, keymap, WidgetType } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import type { MarkdownConfig } from '@lezer/markdown';
 import { defaultKeymap, history, historyKeymap, indentLess, indentMore } from '@codemirror/commands';
+import { isImage } from '../lib/images';
 import { focusField, liveMarkdown } from '../lib/live-markdown';
 
 /**
@@ -27,8 +29,10 @@ import { focusField, liveMarkdown } from '../lib/live-markdown';
  * selection across parts clears each of them, Backspace at a part's start
  * steps back into the one before). A document gives it a single text with
  * no label. Markdown and $math$ render in place (lib/live-markdown.ts);
- * `extensions` add to that (a document's citations). Loaded on demand, with
- * CodeMirror.
+ * `extensions` add to that (a document's citations). Images come in pasted,
+ * dropped where they go (the part under the pointer lights up), or picked
+ * with the page's button, and show where they will be while they upload.
+ * Loaded on demand, with CodeMirror.
  */
 
 export interface EditorPart {
@@ -48,6 +52,8 @@ interface Props {
   onBlur: () => void;
   /** Uploads a pasted or dropped image for a part, resolving to its markdown. */
   uploadImage: (id: string, file: File) => Promise<string | null>;
+  /** Once made: adds images at the cursor, as if pasted (the page's Add image button). */
+  onAddImages?: (add: (files: File[]) => void) => void;
   /** Room taken at the top of the window (the exercise pinned on phones). */
   topInset?: () => number;
   /** Shown in an empty part, default "Write your answer". */
@@ -132,6 +138,42 @@ const keepBoundaries = EditorState.transactionFilter.of((tr) => {
   };
 });
 
+// ── Images on their way ───────────────────────────────────────────────────
+//
+// Where each image being added goes once uploaded, kept in place while you
+// type on; and the part an image dragged over the editor would drop into.
+
+interface Upload {
+  key: number;
+  pos: number;
+}
+
+/** Places an upload, moves it on, or (`pos: null`) ends it. */
+const setUpload = StateEffect.define<{ key: number; pos: number | null }>();
+
+const uploadsField = StateField.define<readonly Upload[]>({
+  create: () => [],
+  update(list, tr) {
+    let next = tr.docChanged ? list.map((u) => ({ key: u.key, pos: tr.changes.mapPos(u.pos, -1) })) : list;
+    for (const e of tr.effects) {
+      if (!e.is(setUpload)) continue;
+      const { key, pos } = e.value;
+      next = next.filter((u) => u.key !== key);
+      if (pos !== null) next = [...next, { key, pos }];
+    }
+    return next;
+  },
+});
+
+const setDropPart = StateEffect.define<number | null>();
+
+const dropPartField = StateField.define<number | null>({
+  create: () => null,
+  update: (part, tr) => tr.effects.reduce((p, e) => (e.is(setDropPart) ? e.value : p), part),
+});
+
+const isFileDrag = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
+
 // ── How the parts look ────────────────────────────────────────────────────
 
 class QuestionWidget extends WidgetType {
@@ -158,6 +200,19 @@ class QuestionWidget extends WidgetType {
   }
 }
 
+class UploadingWidget extends WidgetType {
+  eq() {
+    return true;
+  }
+  toDOM() {
+    const el = document.createElement('span');
+    el.className = 'cm-hw-uploading';
+    el.setAttribute('role', 'status');
+    el.textContent = 'Adding the image…';
+    return el;
+  }
+}
+
 class PlaceholderWidget extends WidgetType {
   constructor(readonly text: string) {
     super();
@@ -176,13 +231,29 @@ class PlaceholderWidget extends WidgetType {
 
 const placeholderText = Facet.define<string, string>({ combine: (values) => values[0] ?? 'Write your answer' });
 const activeLine = Decoration.line({ class: 'cm-hw-active' });
+const dropLine = Decoration.line({ class: 'cm-hw-drop' });
+const uploading = Decoration.widget({ widget: new UploadingWidget(), side: -1 });
+
+/** The start of every line from `from` to `to`. */
+function lineStarts(state: EditorState, from: number, to: number) {
+  const out: number[] = [];
+  for (let pos = from; ; ) {
+    const line = state.doc.lineAt(pos);
+    out.push(line.from);
+    if (line.to >= to) return out;
+    pos = line.to + 1;
+  }
+}
 
 function structure(state: EditorState): DecorationSet {
   const layout = state.field(layoutField);
   const focused = state.field(focusField);
   const active = focused ? partAt(layout, state.selection.main.head) : -1;
+  // A single text has nothing to tell apart: the drop cursor says where.
+  const dropping = layout.parts.length > 1 ? state.field(dropPartField) : null;
+  const uploads = state.field(uploadsField);
   const placeholder = Decoration.widget({ widget: new PlaceholderWidget(state.facet(placeholderText)), side: 1 });
-  const out: Range<Decoration>[] = [];
+  const out: Range<Decoration>[] = uploads.map((u) => uploading.range(u.pos));
   layout.parts.forEach((part, i) => {
     const { from, to } = bounds(layout, state.doc.length, i);
     const newQuestion = i === 0 || layout.parts[i - 1].question !== part.question;
@@ -193,16 +264,14 @@ function structure(state: EditorState): DecorationSet {
     out.push(
       Decoration.line({ class: newQuestion ? 'cm-hw-part' : 'cm-hw-part cm-hw-gap', attributes: { 'data-label': part.label } }).range(from),
     );
+    if (i === dropping) for (const at of lineStarts(state, from, to)) out.push(dropLine.range(at));
+    // An empty part with an image on its way shows that, not the placeholder.
+    const empty = from === to && !uploads.some((u) => u.pos === from);
     // A single text asks to be written in even before it is focused.
-    if (from === to && i !== active && layout.parts.length === 1) out.push(placeholder.range(from));
+    if (empty && i !== active && layout.parts.length === 1) out.push(placeholder.range(from));
     if (i !== active) return;
-    for (let pos = from; ; ) {
-      const line = state.doc.lineAt(pos);
-      out.push(activeLine.range(line.from));
-      if (line.to >= to) break;
-      pos = line.to + 1;
-    }
-    if (from === to) out.push(placeholder.range(from));
+    for (const at of lineStarts(state, from, to)) out.push(activeLine.range(at));
+    if (empty) out.push(placeholder.range(from));
   });
   return Decoration.set(out, true);
 }
@@ -210,7 +279,14 @@ function structure(state: EditorState): DecorationSet {
 const structureField = StateField.define<DecorationSet>({
   create: structure,
   update(deco, tr) {
-    if (tr.docChanged || tr.selection || tr.startState.field(focusField) !== tr.state.field(focusField)) return structure(tr.state);
+    if (
+      tr.docChanged ||
+      tr.selection ||
+      tr.startState.field(focusField) !== tr.state.field(focusField) ||
+      tr.effects.some((e) => e.is(setUpload) || e.is(setDropPart))
+    ) {
+      return structure(tr.state);
+    }
     return deco;
   },
   provide: (f) => EditorView.decorations.from(f),
@@ -267,7 +343,7 @@ const toggleWrap =
     return true;
   };
 
-const imagesOf = (data: DataTransfer | null) => [...(data?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+const imagesOf = (data: DataTransfer | null) => [...(data?.files ?? [])].filter(isImage);
 
 export default function Editor(props: Props) {
   let host!: HTMLDivElement;
@@ -285,31 +361,34 @@ export default function Editor(props: Props) {
     });
 
     let alive = true;
-    // Where pasted images go once uploaded, kept in place while you type on.
-    const anchors = new Set<{ pos: number }>();
+    let uploads = 0;
 
     const upload = (view: EditorView, pos: number, files: File[]) => {
-      const anchor = { pos };
-      anchors.add(anchor);
+      const key = ++uploads;
+      view.dispatch({ effects: setUpload.of({ key, pos }) });
       const layout = view.state.field(layoutField);
       const id = layout.parts[partAt(layout, pos)].id;
       void (async () => {
         for (const file of files) {
           const md = await props.uploadImage(id, file);
-          if (!md || !alive) continue;
-          const at = anchor.pos;
+          const at = alive ? view.state.field(uploadsField).find((u) => u.key === key)?.pos : undefined;
+          if (!md || at === undefined) continue;
           const line = view.state.doc.lineAt(at);
           const insert = `${at === line.from ? '' : '\n'}${md}\n`;
           const follow = view.state.selection.main.empty && view.state.selection.main.head === at;
           view.dispatch({
             changes: { from: at, insert },
             selection: follow ? EditorSelection.cursor(at + insert.length) : undefined,
+            effects: setUpload.of({ key, pos: at + insert.length }),
             userEvent: 'input.paste',
           });
-          anchor.pos = at + insert.length;
         }
-        anchors.delete(anchor);
+        if (alive) view.dispatch({ effects: setUpload.of({ key, pos: null }) });
       })();
+    };
+
+    const dropAt = (view: EditorView, part: number | null) => {
+      if (view.state.field(dropPartField) !== part) view.dispatch({ effects: setDropPart.of(part) });
     };
 
     const reconcile = () => {
@@ -334,9 +413,12 @@ export default function Editor(props: Props) {
         doc,
         extensions: [
           layoutField.init(() => ({ parts, seps })),
+          uploadsField,
+          dropPartField,
           keepBoundaries,
           history(),
           EditorView.lineWrapping,
+          dropCursor(),
           EditorState.allowMultipleSelections.of(false),
           liveMarkdown(props.syntax),
           placeholderText.of(props.placeholder ?? 'Write your answer'),
@@ -368,11 +450,28 @@ export default function Editor(props: Props) {
               upload(v, v.state.selection.main.head, files);
               return true;
             },
+            dragover(e, v) {
+              if (!isFileDrag(e)) return false;
+              e.preventDefault();
+              if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+              const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
+              dropAt(v, pos === null ? null : partAt(v.state.field(layoutField), pos));
+              return false;
+            },
+            dragleave(e, v) {
+              if (!v.contentDOM.contains(e.relatedTarget as Node | null)) dropAt(v, null);
+              return false;
+            },
             drop(e, v) {
+              dropAt(v, null);
               const files = imagesOf(e.dataTransfer);
               if (!files.length) return false;
               e.preventDefault();
-              upload(v, v.posAtCoords({ x: e.clientX, y: e.clientY }) ?? v.state.selection.main.head, files);
+              const pos = v.posAtCoords({ x: e.clientX, y: e.clientY }) ?? v.state.selection.main.head;
+              // The image goes where it was dropped, and the writer with it.
+              v.focus();
+              v.dispatch({ selection: EditorSelection.cursor(pos), userEvent: 'select' });
+              upload(v, pos, files);
               return true;
             },
           }),
@@ -386,7 +485,6 @@ export default function Editor(props: Props) {
           EditorView.updateListener.of((u) => {
             const layout = u.state.field(layoutField);
             if (u.docChanged) {
-              for (const a of anchors) a.pos = u.changes.mapPos(a.pos, -1);
               if (!u.transactions.every((t) => t.annotation(synced))) {
                 const touched = new Set<number>();
                 u.changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
@@ -411,6 +509,23 @@ export default function Editor(props: Props) {
     });
 
     props.onView?.(view);
+    props.onAddImages?.((files) => {
+      const images = files.filter(isImage);
+      if (!images.length || !alive) return;
+      const pos = view.state.selection.main.head;
+      view.focus();
+      view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'center' }) });
+      upload(view, pos, images);
+    });
+
+    // A file dropped beside the editor would open in place of the app.
+    const guard = (e: DragEvent) => {
+      if (e.defaultPrevented || !isFileDrag(e) || view.contentDOM.contains(e.target as Node)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
+    };
+    window.addEventListener('dragover', guard);
+    window.addEventListener('drop', guard);
 
     // Text that changed elsewhere (another device, a save coming back) flows in.
     createEffect(
@@ -423,6 +538,8 @@ export default function Editor(props: Props) {
 
     onCleanup(() => {
       alive = false;
+      window.removeEventListener('dragover', guard);
+      window.removeEventListener('drop', guard);
       view.destroy();
     });
   });

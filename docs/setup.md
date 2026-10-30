@@ -246,8 +246,11 @@ shows beside it (on phones, pinned above the keyboard): for a PDF sheet a crop
 of the page itself, located once from the text layer
 (`apps/web/src/lib/sheet-regions.ts`) and saved as `answer.region`; otherwise
 the part's text. Answers are Markdown with KaTeX math, saved as you type;
-pasted images go to the `materials` bucket through `/api/answers/:id/images`
-and are served at `/answer-images/:id`. Export PDF prints the answers in sheet
+images (pasted, dropped onto a part, or picked with the Image button, which
+offers the camera on phones) go to the `materials` bucket through
+`/api/answers/:id/images` and are served at `/answer-images/:id`. The browser
+re-encodes a type the API does not keep (HEIC in Safari) or a photo over
+10 MB as a JPEG first (`apps/web/src/lib/images.ts`). Export PDF prints the answers in sheet
 order. ChatGPT reads homework through the `get_homework` MCP tool.
 
 ## LaTeX material

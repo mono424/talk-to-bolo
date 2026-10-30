@@ -1,3 +1,4 @@
+import { prepareImage } from './images';
 import type { Db } from './query';
 
 /**
@@ -259,18 +260,17 @@ export const sourceMapping = (db: Db, fetcherId: string) =>
 
 // ── Homework ──────────────────────────────────────────────────────────────
 
-/** Stores an image pasted into an answer; the answer refers to it as `answer-image:<key>`. */
-export const uploadAnswerImage = (db: Db, answerId: string, file: Blob) =>
-  api<{ id: string }>(db, `/api/answers/${encodeURIComponent(answerId)}/images`, {
+async function uploadImage(db: Db, path: string, file: Blob) {
+  const image = await prepareImage(file);
+  return api<{ id: string }>(db, path, {
     method: 'POST',
-    headers: { 'content-type': file.type || 'application/octet-stream' },
-    body: file,
+    headers: { 'content-type': image.type || 'application/octet-stream' },
+    body: image,
   });
+}
 
-/** Stores an image pasted into a document; the text refers to it as `answer-image:<key>`. */
-export const uploadDocumentImage = (db: Db, documentId: string, file: Blob) =>
-  api<{ id: string }>(db, `/api/documents/${encodeURIComponent(documentId)}/images`, {
-    method: 'POST',
-    headers: { 'content-type': file.type || 'application/octet-stream' },
-    body: file,
-  });
+/** Stores an image added to an answer; the answer refers to it as `answer-image:<key>`. */
+export const uploadAnswerImage = (db: Db, answerId: string, file: Blob) => uploadImage(db, `/api/answers/${encodeURIComponent(answerId)}/images`, file);
+
+/** Stores an image added to a document; the text refers to it as `answer-image:<key>`. */
+export const uploadDocumentImage = (db: Db, documentId: string, file: Blob) => uploadImage(db, `/api/documents/${encodeURIComponent(documentId)}/images`, file);

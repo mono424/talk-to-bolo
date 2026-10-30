@@ -454,6 +454,35 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
 }
 .answer-editor .cm-hw-placeholder { color: var(--faint); pointer-events: none; user-select: none; }
 
+/* Images: where a dragged one drops (the part tinted, the drop cursor), and one on its way. */
+.answer-editor .cm-editor .cm-line.cm-hw-drop {
+  background: linear-gradient(color-mix(in srgb, var(--blue) 8%, transparent), color-mix(in srgb, var(--blue) 8%, transparent)) 0 var(--gap, 0px) / 100% calc(100% - var(--gap, 0px)) no-repeat;
+}
+.answer-editor .cm-editor .cm-dropCursor { border-left: 2px solid var(--blue); margin-left: -1px; }
+.answer-editor .cm-hw-uploading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  margin: 0.2em 0.4em 0.2em 0;
+  padding: 0.1em 0.7em;
+  border-radius: 999px;
+  font-size: 0.85em;
+  color: var(--muted);
+  background: var(--soft);
+  pointer-events: none;
+  user-select: none;
+}
+.answer-editor .cm-hw-uploading::before {
+  content: '';
+  width: 0.75em;
+  height: 0.75em;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: cm-hw-spin 0.8s linear infinite;
+}
+@keyframes cm-hw-spin { to { transform: rotate(360deg); } }
+
 /* Live Markdown (lib/live-markdown.ts), as the lecture renders it. */
 .answer-editor .cm-md-h1,
 .answer-editor .cm-md-h2,
