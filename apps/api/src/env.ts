@@ -1,3 +1,4 @@
+import type { Workflow } from '@spooky-sync/backend';
 import type { FetchParams } from './fetch/workflow';
 import type { IngestParams } from './ingest';
 

@@ -23,8 +23,9 @@ import { pdfPartCount, pdfParts } from './pdf';
 import { courseGraph } from './understanding';
 import { BadRequest, Conflict, NotFound, Surreal, UserError, fromBase64, recordId } from './surreal';
 
-export { IngestMaterial } from './ingest';
-export { FetchSource } from './fetch/workflow';
+import { withWorkflows } from '@spooky-sync/backend';
+import { IngestMaterial } from './ingest';
+import { FetchSource } from './fetch/workflow';
 
 const app = new Hono<AppEnv>();
 
@@ -218,4 +219,6 @@ app.all('/mcp', (c) => handleMcp(c.req.raw, c.env, c.executionCtx));
 // Indexing and lecture progress run as sp00ky jobs (jobs.ts).
 app.route('/jobs', jobs);
 
-export default app;
+// Material ingestion and source runs are durable workflows on sp00ky's job
+// engine (the `job` outbox): the same code on Cloudflare, a VM and `spky dev`.
+export default withWorkflows(app, { INGEST: IngestMaterial, FETCH: FetchSource });

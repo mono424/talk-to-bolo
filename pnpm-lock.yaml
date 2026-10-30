@@ -20,6 +20,9 @@ importers:
       '@modelcontextprotocol/server':
         specifier: ^2.3.1
         version: 2.3.1
+      '@spooky-sync/backend':
+        specifier: file:../../vendor/spooky-sync-backend-0.0.1-canary.365.tgz
+        version: file:vendor/spooky-sync-backend-0.0.1-canary.365.tgz
       fast-png:
         specifier: ^8.0.0
         version: 8.0.0
@@ -1315,6 +1318,10 @@ packages:
 
   '@speed-highlight/core@1.2.24':
     resolution: {integrity: sha512-qeW2e1l78afw8VhRPfPQ1Gjj+KU5XFQ/OFV5ti6eTa9bruO7mJyZtA4vw0ofqmA3tKCkROE9xLk3VZoeRc98nw==}
+
+  '@spooky-sync/backend@file:vendor/spooky-sync-backend-0.0.1-canary.365.tgz':
+    resolution: {integrity: sha512-RrQ2/oyVpOgyinOiH6uR6bqtrzoFPcFNa0Q4LIAl7xPjoPLGfFeFEMqmyXXMyEblUJd0OSA6T/bbqWvI96ReCA==, tarball: file:vendor/spooky-sync-backend-0.0.1-canary.365.tgz}
+    version: 0.0.1-canary.365
 
   '@spooky-sync/cli-darwin-arm64@0.0.1-canary.353':
     resolution: {integrity: sha512-4WSlwh6P/LM1CdvjWthkSvazmBiTD8G2fAJL4YP8hNF1NRhqZY7dImMzNfuSMSJuLQk5m6/ob2eY/jCwS3Bb7Q==}
@@ -4213,6 +4220,8 @@ snapshots:
       solid-js: 1.9.17
 
   '@speed-highlight/core@1.2.24': {}
+
+  '@spooky-sync/backend@file:vendor/spooky-sync-backend-0.0.1-canary.365.tgz': {}
 
   '@spooky-sync/cli-darwin-arm64@0.0.1-canary.353':
     optional: true

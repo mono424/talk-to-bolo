@@ -11,20 +11,9 @@
   // Embeddings for the lecture search index.
   "ai": { "binding": "AI" },
 
-  // PDF/markdown processing: one durable workflow run per material.
-  "workflows": [
-    {
-      "name": "studycall-ingest",
-      "binding": "INGEST",
-      "class_name": "IngestMaterial"
-    },
-    // Sources (bCourses, web pages): one durable run per check.
-    {
-      "name": "studycall-fetch",
-      "binding": "FETCH",
-      "class_name": "FetchSource"
-    }
-  ],
+  // INGEST (one run per material) and FETCH (one run per source check) are
+  // durable workflows on sp00ky's job engine (`withWorkflows` in src/index.ts),
+  // not Cloudflare Workflows: they need SPKY_DB_* and the `job` outbox.
 
   // PDF parsing and image extraction need more than the default 30 s of CPU
   // per step. Requires the Workers Paid plan.
