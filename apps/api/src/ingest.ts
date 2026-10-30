@@ -1,4 +1,4 @@
-import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
+import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from '@spooky-sync/backend';
 import type { Env } from './env';
 import { chunkMarkdown, chunkPages, embedText, lectureMarkdown } from './chunk';
 import { extractPageImages, loadPdf, pageCount, pagesToMarkdown, type PageImageRef } from './pdf';

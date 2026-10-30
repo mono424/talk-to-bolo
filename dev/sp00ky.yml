@@ -54,10 +54,12 @@ apps:
       type: token
       # apps/api/wrangler.jsonc `JOB_TOKEN`.
       token: local-dev-jobs
+    workflows:
+      - { binding: INGEST, class: IngestMaterial }
+      - { binding: FETCH, class: FetchSource }
     deploy:
-      # Job requests time out after 10 s by default; leave room for a cold
-      # Worker applying its server schema first.
-      timeout: 60
+      # A workflow step runs inside one job request (see ../sp00ky.yml).
+      timeout: 900
     dev:
       type: npm
       script: dev

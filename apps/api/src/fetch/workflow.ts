@@ -1,4 +1,4 @@
-import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
+import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from '@spooky-sync/backend';
 import type { Env } from '../env';
 import { UserError } from '../surreal';
 import { CanvasAuthError } from './canvas';

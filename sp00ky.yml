@@ -68,10 +68,17 @@ apps:
       schema: ./schema/src/outbox/api.surql
       # Indexing and progress jobs of different materials run side by side.
       concurrency: 4
+    # Durable workflows on sp00ky's job engine (every host): one INGEST run per
+    # material (PDF/markdown processing), one FETCH run per source check. Their
+    # jobs go to the outbox above.
+    workflows:
+      - { binding: INGEST, class: IngestMaterial }
+      - { binding: FETCH, class: FetchSource }
     deploy:
-      # Job requests time out after 10 s by default; leave room for a cold
-      # Worker applying its server schema first.
-      timeout: 60
+      # Job requests time out after 10 s by default. A workflow step runs inside
+      # one job request, so this also bounds a step: an ingestion step converts
+      # 20-50 PDF pages or embeds 48 chunks.
+      timeout: 900
     auth:
       type: token
       # The job runner sends it on every job and the API checks it (JOB_TOKEN
@@ -88,12 +95,6 @@ apps:
       cpuMs: 300000
       # Embeddings for the lecture search index.
       ai: AI
-      # PDF/markdown processing: one durable Workflow run per material.
-      workflows:
-        - binding: INGEST
-          class: IngestMaterial
-        - binding: FETCH
-          class: FetchSource
       # Routes served publicly on talktobolo.stg.spky.cloud. Everything else,
       # the job paths included, is reachable only through jobs.
       expose:
