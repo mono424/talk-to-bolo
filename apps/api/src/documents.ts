@@ -10,7 +10,7 @@ import {
   matchMaterials,
   texCitesToMarkdown,
 } from '../../../shared/references';
-import { appendText, applyEdits, type AnswerEdit, type AnswerText } from './homework';
+import { appendText, applyEdits, assertStored, type AnswerEdit, type AnswerText } from './homework';
 import { BadRequest, NotFound, recordId, type Surreal } from './surreal';
 
 /**
@@ -216,15 +216,19 @@ export async function documentFromMaterial(user: Surreal, materialId: string): P
 
 const CONFLICT = 'conflict: the student changed the document while you wrote. Read it again with get_document and retry.';
 
-/** Saves new text, only if the document still holds `before`. */
+/**
+ * Saves new text, only if the document still holds `before`. Checks what the
+ * database kept: a field guard can leave the old value and still return the row.
+ */
 async function save(user: Surreal, id: string, before: string, content: string) {
   if (content === before) return 'unchanged' as const;
-  const rows = await user.query<unknown[]>('UPDATE type::record($id) SET content = $content WHERE content = $before RETURN VALUE id;', {
+  const rows = await user.query<string[]>('UPDATE type::record($id) SET content = $content WHERE content = $before RETURN VALUE content;', {
     id,
     content,
     before,
   });
   if (!rows?.length) throw new BadRequest(CONFLICT);
+  assertStored(rows[0], content);
   return 'saved' as const;
 }
 
@@ -348,11 +352,12 @@ export async function updateDocument(
   if (content !== undefined) set.content = content;
   if (!Object.keys(set).length) throw new BadRequest('Nothing to change.');
   // Compare-and-set when the text changes, like write_document.
-  const rows = await user.query<unknown[]>(
-    `UPDATE type::record($id) MERGE $set ${set.content !== undefined ? 'WHERE content = $before' : ''} RETURN VALUE id;`,
+  const rows = await user.query<string[]>(
+    `UPDATE type::record($id) MERGE $set ${set.content !== undefined ? 'WHERE content = $before' : ''} RETURN VALUE content;`,
     { id: doc.id, set, before },
   );
   if (!rows?.length) throw new BadRequest(set.content !== undefined ? CONFLICT : 'Document not found.');
+  if (set.content !== undefined) assertStored(rows[0], set.content);
   return { document: doc.id, updated: Object.keys(set) };
 }
 

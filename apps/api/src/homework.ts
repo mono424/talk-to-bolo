@@ -395,6 +395,14 @@ export interface WriteResult {
   characters: number;
 }
 
+/**
+ * Throws when an update returned its row but the database kept another value,
+ * as a field guard does. Saying "saved" then would lose the student's text.
+ */
+export function assertStored(stored: unknown, wanted: string): void {
+  if (stored !== wanted) throw new Error('The text was not stored: the database kept a different value. Nothing was saved.');
+}
+
 /** Saves new texts for parts, each only if it is still the text that was read. */
 async function save(user: Surreal, changes: { row: PartRow; content: string }[]): Promise<WriteResult[]> {
   const todo = changes.filter((c) => c.content !== (c.row.content ?? ''));
@@ -403,9 +411,13 @@ async function save(user: Surreal, changes: { row: PartRow; content: string }[])
     vars[`id${i}`] = c.row.id;
     vars[`c${i}`] = c.content;
     vars[`b${i}`] = c.row.content ?? '';
-    return `UPDATE type::record($id${i}) SET content = $c${i} WHERE content = $b${i} RETURN VALUE id;`;
+    return `UPDATE type::record($id${i}) SET content = $c${i} WHERE content = $b${i} RETURN VALUE content;`;
   });
   const results = sql.length ? await user.queryAll(sql.join('\n'), vars) : [];
+  todo.forEach((c, i) => {
+    const rows = results[i] as unknown[] | undefined;
+    if (rows?.length) assertStored(rows[0], c.content);
+  });
   return changes.map((c) => {
     const i = todo.indexOf(c);
     const status = i < 0 ? 'unchanged' : (results[i] as unknown[] | undefined)?.length ? 'saved' : 'conflict';

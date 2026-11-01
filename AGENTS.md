@@ -20,6 +20,9 @@ Use a comma, period, colon or a plain hyphen.
 - Up to canary.345, `pnpm generate` also writes the job outbox's `errors[*]`
   field as an unquoted column key in `apps/web/src/schema.gen.ts`, which
   TypeScript rejects. Delete that line; newer CLIs leave it out.
+- `-- @crdt` makes a field unwritable by record users after `CREATE`: its generated
+  `VALUE` guard keeps the old value, and `UPDATE` still returns the row. Annotate a
+  field only together with the web editor and API writing through its edit log.
 - Record ids minted by the app start with a letter and have no dashes
   (`newId` in `apps/web/src/lib/ids.ts`, `k<uuid hex>` in the Worker), so they
   never need ⟨⟩ quoting.
