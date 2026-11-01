@@ -170,10 +170,15 @@ export function makeCiteKey(paper: { authors?: string | null; year?: string | nu
 
 /** A BibTeX entry for a paper, for the .bib next to a LaTeX document. */
 export function bibtexEntry(paper: { key: string; title: string; authors?: string | null; year?: string | null; venue?: string | null; url?: string | null }): string {
-  const esc = (s: string) => s.replace(/([{}])/g, '\\$1');
+  // Characters LaTeX reads as commands; one already escaped stays as it is.
+  const esc = (s: string) => s.replace(/(?<!\\)([{}&%#_$])/g, '\\$1');
+  // "Stark et al." and a separate "et al." entry both end in BibTeX's "others".
   const authors = (paper.authors ?? '')
-    .replace(/\s+et\s+al\.?$/i, ' and others')
     .split(/\s*;\s*/)
+    .flatMap((name) => {
+      const etAl = name.match(/^(.*?)[\s,]*\bet\s+al\.?$/i);
+      return etAl ? [etAl[1], 'others'] : [name];
+    })
     .filter(Boolean)
     .join(' and ');
   const fields: [string, string | null | undefined][] = [
