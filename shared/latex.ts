@@ -10,6 +10,8 @@
  * the text. Deterministic, so server and client get the same sections.
  */
 
+import { inlineMarkdownMath } from './math';
+
 interface Macro {
   args: number;
   /** Default of the first argument, when it is optional. */
@@ -424,7 +426,7 @@ class Converter {
         const close = s.indexOf(display ? '\\]' : '\\)', i + 2);
         if (close > 0) {
           const math = s.slice(i + 2, close).trim();
-          out += this.hold(display ? `\n\n$$\n${math}\n$$\n\n` : `$${math}$`);
+          out += this.hold(display ? `\n\n$$\n${math}\n$$\n\n` : inlineMarkdownMath(math, s[i - 1], s[close + 2]));
           i = close + 2;
           continue;
         }
@@ -451,7 +453,7 @@ class Converter {
         }
         if (close > 0) {
           const math = s.slice(start, close).trim();
-          out += this.hold(display ? `\n\n$$\n${math}\n$$\n\n` : `$${math}$`);
+          out += this.hold(display ? `\n\n$$\n${math}\n$$\n\n` : inlineMarkdownMath(math, s[i - 1], s[close + 1]));
           i = close + (display ? 2 : 1);
           continue;
         }
@@ -574,6 +576,8 @@ class Converter {
         i++;
         continue;
       }
+      // Plain text, or Markdown would read `[x](y)` as a link (\href makes its own).
+      if (c === ']' && s[i + 1] === '(') out += '\\';
       out += c;
       i++;
     }

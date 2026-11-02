@@ -1,6 +1,7 @@
 import { Marked } from 'marked';
 import DOMPurify from 'dompurify';
 import katex from 'katex';
+import { MARKDOWN_MATH as MATH } from '../../../../shared/math';
 import 'katex/dist/katex.min.css';
 import { markdownMacros } from '../../../../shared/latex';
 import { answerImageUrl, assetUrl } from './api';
@@ -37,7 +38,6 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 // sanitized HTML. KaTeX escapes what it renders and runs without `trust`, so
 // its output needs no sanitizing. Code spans and blocks keep their dollars.
 
-const MATH = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|(?<![\\$\w])\$(?![\s$])((?:\\.|[^$\\\n])+?)(?<![\s\\])\$(?![\w$])/g;
 const CODE = /(^|\n)(```|~~~)[\s\S]*?(\n\2[^\n]*(?=\n|$)|$)|`+[^`\n]+?`+/g;
 const PLACEHOLDER = /(<p>)?KATEXMATH(\d+)Z(<\/p>)?/g;
 

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { latexToMarkdown, markdownMacros } from '../../../shared/latex.ts';
 import { chunkMarkdown, lectureMarkdown } from '../../../shared/lecture.ts';
+import { MARKDOWN_MATH } from '../../../shared/math.ts';
 
 const doc = (body: string, preamble = '') => `\\documentclass{article}\n${preamble}\n\\begin{document}\n${body}\n\\end{document}\n`;
 
@@ -172,4 +173,21 @@ test('colors and styles set up in the text reach the pictures after them', () =>
     '\\begin{tikzpicture}\\fill[gold] (0,0) circle (1);\\end{tikzpicture}',
     '```',
   ].join('\n'));
+});
+
+test('every inline formula LaTeX allows reaches KaTeX, whatever it touches', () => {
+  const md = latexToMarkdown(doc(String.raw`Gives 0.0004$^\circ$ at 5$\,\mu$m, $\mu$s and $a$$b$, $x +
+y$ wrapped, \(q\)r. Prices \$5 and \$6 stay.`));
+  assert.equal(md.replace(MARKDOWN_MATH, 'M'), 'Gives 0.0004M at 5Mm, Ms and MM, M wrapped, Mr. Prices $5 and $6 stay.');
+  assert.match(md, /\\\(\\mu\\\)s/);
+  assert.match(md, /\$x \+ y\$ wrapped/);
+});
+
+test('formulas that are not next to a letter stay in dollars', () => {
+  assert.equal(latexToMarkdown(doc(String.raw`Keys $k_1$, and ($x$).`)), 'Keys $k_1$, and ($x$).');
+});
+
+test('brackets followed by parentheses are text, while a real link stays a link', () => {
+  assert.equal(latexToMarkdown(doc(String.raw`Rotation [$\alpha$]($\lambda$) of [a](b).`)), String.raw`Rotation [$\alpha$\]($\lambda$) of [a\](b).`);
+  assert.equal(latexToMarkdown(doc(String.raw`See \href{https://x.org}{the site}.`)), 'See [the site](https://x.org).');
 });
