@@ -1,12 +1,66 @@
-import { For, Show } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import { useDb, useQuery } from '@spooky-sync/client-solid';
 import { AudioLines, MessageCircle } from 'lucide-solid';
 import type { schema } from '../schema.gen';
-import { MCP_URL } from '../lib/api';
+import { api, MCP_URL } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { qApiKeys } from '../lib/query';
 import { CopyField, useChatGPTGuide, VOICE_PROMPTS } from '../components/ChatGPTGuide';
-import { Button, Card, Dot, formatDate } from '../components/ui';
+import { Button, Card, Dot, formatDate, inputClass } from '../components/ui';
+
+/** Makes a key for the user's own scripts. The API only hands it out this once. */
+function NewApiKey() {
+  const db = useDb<typeof schema>();
+  const [name, setName] = createSignal('');
+  const [key, setKey] = createSignal<string | null>(null);
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const create = async (e: Event) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const made = await api<{ key: string }>(db, '/api/keys', { method: 'POST', body: JSON.stringify({ name: name().trim() }) });
+      setKey(made.key);
+      setName('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the key.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card class="mt-4 p-4 sm:p-6">
+      <h2 class="text-[18px] font-semibold tracking-tight">API keys</h2>
+      <p class="mt-2 max-w-xl text-[14px] leading-relaxed text-muted">
+        For your own scripts and tools. A key reads and writes your courses and documents through the server URL above, until you revoke it under Connections.
+      </p>
+      <form class="mt-4 flex flex-col gap-3 sm:flex-row" onSubmit={create}>
+        <input
+          class={`${inputClass} min-w-0 flex-1`}
+          placeholder="What is it for?"
+          aria-label="Key name"
+          maxLength={80}
+          value={name()}
+          onInput={(e) => setName(e.currentTarget.value)}
+        />
+        <Button type="submit" disabled={busy() || !name().trim()}>Create key</Button>
+      </form>
+      <Show when={error()}>
+        <p role="alert" class="mt-3 text-[14px] text-muted">{error()}</p>
+      </Show>
+      <Show when={key()}>
+        {(k) => (
+          <div class="mt-4">
+            <CopyField label="Copy it now, it is shown only once" text={k()} mono />
+          </div>
+        )}
+      </Show>
+    </Card>
+  );
+}
 
 /** Connecting ChatGPT to the MCP server, and the connections made so far. */
 export default function SettingsPage() {
@@ -62,6 +116,8 @@ export default function SettingsPage() {
           progress asks you on screen first; saved sessions appear under Sessions with their recap.
         </p>
       </Card>
+
+      <NewApiKey />
 
       <Card class="mt-6 p-2 sm:mt-8">
         <h2 class="px-3 pb-1 pt-3 text-[16px] font-semibold">Connections</h2>
