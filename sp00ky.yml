@@ -104,6 +104,9 @@ apps:
         - /api/materials/*
         - /api/fetchers/*
         - /api/answers/*
+        - /api/documents/*
+        # A key for the student's own scripts, made in Settings.
+        - /api/keys
         # The consent page of an AI client connection, and its redirect.
         - /api/oauth/*
         # OAuth for AI clients: discovery, registration, authorize, token.
