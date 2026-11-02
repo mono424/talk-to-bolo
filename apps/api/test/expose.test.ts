@@ -24,9 +24,11 @@ const matches = (pattern: string, path: string) =>
 test('every route the web app and AI clients call is exposed by the deploy', () => {
   const index = read('apps/api/src/index.ts');
   const routes = new Set<string>(['/mcp', '/oauth/register', '/.well-known/oauth-authorization-server']);
-  for (const m of index.matchAll(/app\.(?:get|post|put|patch|delete|all|route)\(\s*'(\/[^']*)'/g)) {
+  for (const m of index.matchAll(/app\.(get|post|put|patch|delete|all|route)\(\s*'(\/[^']*)'/g)) {
     // Job paths and the health check are private on purpose.
-    if (m[1].startsWith('/api/') || m[1] === '/mcp') routes.add(m[1].replace(/:[^/]+/g, 'x'));
+    if (!m[2].startsWith('/api/') && m[2] !== '/mcp') continue;
+    // app.route mounts a whole router under its path.
+    routes.add(m[2].replace(/:[^/]+/g, 'x') + (m[1] === 'route' ? '/x' : ''));
   }
   assert.ok(routes.has('/api/keys'));
   assert.ok(routes.has('/api/documents/x/images'));
