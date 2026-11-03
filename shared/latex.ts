@@ -41,11 +41,11 @@ const HEADINGS: Record<string, number> = { part: 1, chapter: 1, section: 2, subs
 // Switches and spacing that carry no text.
 const DROP = new Set([
   'noindent', 'indent', 'medskip', 'bigskip', 'smallskip', 'newpage', 'clearpage', 'cleardoublepage', 'centering',
-  'raggedright', 'raggedleft', 'vfill', 'hfill', 'null', 'tiny', 'scriptsize', 'footnotesize', 'small', 'normalsize',
+  'raggedright', 'raggedleft', 'vfill', 'null', 'tiny', 'scriptsize', 'footnotesize', 'small', 'normalsize',
   'large', 'Large', 'LARGE', 'huge', 'Huge', 'bfseries', 'itshape', 'ttfamily', 'rmfamily', 'sffamily', 'upshape',
   'mdseries', 'normalfont', 'em', 'bf', 'it', 'tt', 'rm', 'sf', 'sc', 'hline', 'toprule', 'midrule', 'bottomrule',
   'tableofcontents', 'protect', 'relax', 'linebreak', 'pagebreak', 'nopagebreak', 'allowbreak', 'frenchspacing',
-  'maketitle', 'appendix', 'printbibliography', 'onecolumn', 'twocolumn', 'today', 'label', 'vspace', 'hspace',
+  'maketitle', 'appendix', 'printbibliography', 'onecolumn', 'today', 'label', 'vspace', 'hspace',
   'setlength', 'addtolength', 'pagestyle', 'thispagestyle', 'fancyhead', 'fancyfoot', 'lhead', 'rhead', 'chead',
   'lfoot', 'rfoot', 'cfoot', 'setcounter', 'addtocounter', 'usepackage', 'documentclass', 'bibliographystyle',
   'bibliography', 'input', 'include', 'graphicspath', 'newtheorem', 'theoremstyle', 'hypersetup', 'geometry',
@@ -53,7 +53,7 @@ const DROP = new Set([
 ]);
 const WORDS: Record<string, string> = {
   LaTeX: 'LaTeX', TeX: 'TeX', ldots: '...', dots: '...', textellipsis: '...', quad: ' ', qquad: ' ', enspace: ' ',
-  thinspace: ' ', textbackslash: '\\', textasciitilde: '~', textasciicircum: '^', textbar: '|', textless: '<',
+  thinspace: ' ', hfill: ' ', textbackslash: '\\', textasciitilde: '~', textasciicircum: '^', textbar: '|', textless: '<',
   textgreater: '>', textendash: '-', textemdash: '-', textquoteleft: "'", textquoteright: "'", textquotedblleft: '"',
   textquotedblright: '"', S: '§', P: '¶', copyright: '©', ss: 'ß', ae: 'æ', AE: 'Æ', o: 'ø', O: 'Ø', aa: 'å',
   AA: 'Å', l: 'ł', L: 'Ł', i: 'ı', checkmark: '✓', qed: '∎', newline: '\n', par: '\n\n', item: '', and: ', ',
@@ -700,6 +700,13 @@ class Converter {
         const colored = text.split(/(\n{2,})/).map((p, n) => (n % 2 || !p.trim() ? p : `<span style="${style}">${p}</span>`)).join('');
         return { text: colored, end: g.end };
       }
+      case 'twocolumn': {
+        // Its optional argument runs across both columns: usually the article's head.
+        const o = optional(s, j);
+        if (!o) return { text: '', end: skip(j) };
+        const head = this.convert(o.text).trim();
+        return { text: this.colors ? `\n\n<div class="article-head">\n\n${head}\n\n</div>\n\n` : `\n\n${head}\n\n`, end: o.end };
+      }
       case 'url': {
         const g = argument(s, j);
         return { text: `<${g.text.trim()}>`, end: g.end };
@@ -967,6 +974,15 @@ export function latexToMarkdown(tex: string, options: { colors?: boolean } = {})
     .trim();
   const defs = katexMacros(macros);
   return defs ? `<!-- latex-macros\n${defs}\n-->\n\n${markdown}` : markdown;
+}
+
+/** How a LaTeX document is laid out: its columns, and whether it prints its own head with `\\twocolumn[...]`. */
+export function latexLayout(tex: string): { columns: 1 | 2; ownHead: boolean } {
+  const source = stripComments(tex ?? '');
+  return {
+    columns: /\\documentclass\s*\[[^\]]*\btwocolumn\b|\\twocolumn(?![A-Za-z])/.test(source) ? 2 : 1,
+    ownHead: /\\twocolumn\s*\[/.test(source),
+  };
 }
 
 /** The KaTeX macro definitions a converted document carries, if any. */

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { latexToMarkdown, markdownMacros } from '../../../shared/latex.ts';
+import { latexLayout, latexToMarkdown, markdownMacros } from '../../../shared/latex.ts';
 import { chunkMarkdown, lectureMarkdown } from '../../../shared/lecture.ts';
 import { MARKDOWN_MATH } from '../../../shared/math.ts';
 
@@ -190,4 +190,35 @@ test('formulas that are not next to a letter stay in dollars', () => {
 test('brackets followed by parentheses are text, while a real link stays a link', () => {
   assert.equal(latexToMarkdown(doc(String.raw`Rotation [$\alpha$]($\lambda$) of [a](b).`)), String.raw`Rotation [$\alpha$\]($\lambda$) of [a\](b).`);
   assert.equal(latexToMarkdown(doc(String.raw`See \href{https://x.org}{the site}.`)), 'See [the site](https://x.org).');
+});
+
+test('a two-column document keeps the head it prints across both columns', () => {
+  const tex = `\\documentclass[10pt,twocolumn]{article}
+\\begin{document}
+% head
+\\twocolumn[{%
+\\noindent\\textcolor{red!70!black}{\\textbf{NEWS \\& VIEWS}}\\hfill BioE 163\\par\\vspace{2pt}
+\\hrule\\vspace{10pt}
+\\section*{Listening to glucose}
+\\noindent\\textbf{Rotation $[\\alpha]cL$ is small.}\\par
+}]
+% end head
+\\section{Introduction}
+Text.
+\\end{document}`;
+  assert.deepEqual(latexLayout(tex), { columns: 2, ownHead: true });
+  const plain = latexToMarkdown(tex);
+  assert.ok(plain.startsWith('**NEWS & VIEWS** BioE 163'), plain);
+  assert.ok(plain.includes('## Listening to glucose'));
+  assert.ok(plain.includes('**Rotation $[\\alpha]cL$ is small.**'));
+  assert.ok(!plain.includes('article-head'), 'the text for search has no markup');
+  const shown = latexToMarkdown(tex, { colors: true });
+  assert.ok(shown.startsWith('<div class="article-head">\n\n<span style="color:'), shown);
+  assert.ok(shown.indexOf('</div>') < shown.indexOf('## Introduction'));
+});
+
+test('a one-column document has no layout of its own', () => {
+  assert.deepEqual(latexLayout(doc('Text.')), { columns: 1, ownHead: false });
+  assert.deepEqual(latexLayout('\\documentclass{article}\n% \\twocolumn[x]\n\\begin{document}Text.\\end{document}'), { columns: 1, ownHead: false });
+  assert.deepEqual(latexLayout('\\documentclass[twocolumn]{article}\n\\begin{document}Text.\\end{document}'), { columns: 2, ownHead: false });
 });

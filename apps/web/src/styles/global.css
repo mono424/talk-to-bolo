@@ -555,6 +555,9 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
 
 .sheet-excerpt canvas { border-radius: 6px; }
 
+/* A LaTeX document's own head, from \\twocolumn[...]: the first line has a left and a right part. */
+.article-head > p:first-child { display: flex; justify-content: space-between; gap: 1em; }
+
 /* Export PDF prints only the homework's answers. */
 .homework-print { display: none; }
 /* Export PDF, set like a LaTeX article: Computer Modern (KaTeX's own fonts),
@@ -565,6 +568,7 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
     margin: 25mm 27mm 28mm;
     @bottom-center { content: counter(page); font-family: KaTeX_Main, serif; font-size: 10pt; }
   }
+  html, body { background: #fff !important; }
   body > :not(.homework-print) { display: none !important; }
   .homework-print { display: block; color: #000; background: #fff; }
   .homework-print-body {
@@ -611,6 +615,26 @@ html:has(.glass-sheet[open]) { overflow: hidden; }
   .homework-print-body .answer td { padding: 2pt 7pt; text-align: left; font-weight: 400; }
   .homework-print-body .answer .katex { font-size: 1em; }
   .homework-print-body .answer .math-display { margin: 6pt 0 8pt; text-align: center; overflow: visible; break-inside: avoid; }
+
+  /* A LaTeX document in two columns, set like a magazine page. */
+  @page two-column {
+    margin: 19mm;
+    @bottom-center { content: counter(page); font-family: KaTeX_Main, serif; font-size: 9pt; }
+  }
+  .homework-print-body.two-column { page: two-column; column-count: 2; column-gap: 6.35mm; font-size: 10pt; line-height: 1.26; }
+  .two-column .title-block,
+  .two-column .answer .article-head { column-span: all; }
+  .two-column .answer .article-head { margin: 0 0 13pt; text-align: left; }
+  .two-column .answer .article-head p { margin: 0 0 5pt; }
+  .two-column .answer .article-head > p:first-child { margin-bottom: 11pt; padding-bottom: 3pt; border-bottom: 0.5pt solid #000; }
+  .two-column .answer .article-head h2 { margin: 3pt 0 7pt; font-size: 21pt; line-height: 1.12; font-weight: 700; }
+  .two-column .answer .article-head > p:last-child { font-size: 11pt; line-height: 1.28; margin: 0; }
+  .two-column .answer h2 { margin: 11pt 0 3pt; font-size: 11pt; }
+  .two-column .answer .tikz { margin: 6pt 0; overflow: visible; break-inside: avoid; }
+  .two-column .answer p { margin-bottom: 6pt; }
+  .homework-print-body.two-column .references-title { margin: 11pt 0 3pt; font-size: 11pt; }
+  .homework-print-body.two-column .references { font-size: 8.5pt; line-height: 1.2; }
+  .homework-print-body.two-column .references li { margin-bottom: 3pt; }
 
   /* A document's reference list: hanging indent, or numbered labels. */
   .homework-print-body .references-title { margin-top: 22pt; }

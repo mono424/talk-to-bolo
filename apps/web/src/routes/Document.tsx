@@ -19,7 +19,7 @@ import {
   printCitations,
   updatePapers,
 } from '../lib/citations';
-import { latexToMarkdown } from '../../../../shared/latex';
+import { latexLayout, latexToMarkdown } from '../../../../shared/latex';
 import { lectureMarkdown } from '../../../../shared/lecture';
 import { bibtexEntry, countCitations, draftMarkdown, makeCiteKey, texCitesToMarkdown } from '../../../../shared/references';
 import { createDrafts } from '../lib/drafts';
@@ -547,7 +547,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
       </Show>
 
       <Portal ref={(el) => el.classList.add('homework-print')}>
-        <PrintView title={props.doc.title} text={markdown()} papers={papers()} style={style()} />
+        <PrintView title={props.doc.title} text={markdown()} papers={papers()} style={style()} layout={isTex() ? latexLayout(text(props.doc)) : { columns: 1, ownHead: false }} />
       </Portal>
     </div>
   );
@@ -643,17 +643,19 @@ const joinAuthors = (authors: string | null | undefined) => {
  * What Export PDF prints: the text with its citations formatted, then the
  * papers it cites, set like the homework (a LaTeX article).
  */
-function PrintView(props: { title: string; text: string; papers: Paper[]; style: CiteStyle }) {
+function PrintView(props: { title: string; text: string; papers: Paper[]; style: CiteStyle; layout: { columns: 1 | 2; ownHead: boolean } }) {
   const auth = useAuth();
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const printed = createMemo(() => printCitations(props.text, props.papers, props.style));
   return (
-    <article class="homework-print-body">
-      <header class="title-block">
-        <h1>{props.title}</h1>
-        <Show when={auth.user()?.name}>{(name) => <p class="author">{name()}</p>}</Show>
-        <p class="date">{today}</p>
-      </header>
+    <article class={`homework-print-body${props.layout.columns === 2 ? ' two-column' : ''}`}>
+      <Show when={!props.layout.ownHead}>
+        <header class="title-block">
+          <h1>{props.title}</h1>
+          <Show when={auth.user()?.name}>{(name) => <p class="author">{name()}</p>}</Show>
+          <p class="date">{today}</p>
+        </header>
+      </Show>
       <div class="answer" innerHTML={renderMarkdown(printed().markdown)} />
       <Show when={printed().cited.length}>
         <h2 class="references-title">References</h2>
