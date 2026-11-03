@@ -11,7 +11,7 @@ import {
   texCitesToMarkdown,
 } from '../../../shared/references';
 import { appendText, applyEdits, assertStored, type AnswerEdit, type AnswerText } from './homework';
-import { BadRequest, NotFound, recordId, type Surreal } from './surreal';
+import { BadRequest, NotFound, recordId, retryConflicts, type Surreal } from './surreal';
 
 /**
  * Documents for AI clients (mcp.ts): free writing in a course, such as a
@@ -378,7 +378,7 @@ export async function removePaper(user: Surreal, paperId: string) {
 /** Deletes a document with its list of papers. The course material stays. */
 export async function deleteDocument(user: Surreal, documentId: string) {
   const id = recordId('document', documentId);
-  const rows = await user.query<unknown[]>('DELETE type::record($id) RETURN BEFORE;', { id });
+  const rows = await retryConflicts(() => user.query<unknown[]>('DELETE type::record($id) RETURN BEFORE;', { id }));
   if (!rows?.length) throw new NotFound('Document not found.');
   return { deleted: id };
 }
@@ -466,7 +466,7 @@ export async function restoreVersion(user: Surreal, system: Surreal, ownerId: st
   const { content, format } = await rebuildVersion(user, id, n);
   const { doc, version } = await loadDocument(user, id);
   if ((doc.content ?? '') === content && (doc.format ?? 'markdown') === format) return { document: id, status: 'unchanged' as const, version };
-  const stored = await system.query<{ content: string; version: number } | null>(
+  const stored = await retryConflicts(() => system.query<{ content: string; version: number } | null>(
     `BEGIN;
      LET $doc = type::record($id);
      UPDATE $doc SET content = $content, format = $format WHERE owner = type::record($owner);
@@ -475,7 +475,7 @@ export async function restoreVersion(user: Surreal, system: Surreal, ownerId: st
      COMMIT;
      RETURN { content: (SELECT VALUE content FROM ONLY $doc), version: $head };`,
     { id, content, format, owner: ownerId, author, n },
-  );
+  ));
   assertStored(stored?.content, content);
   return { document: id, status: 'restored' as const, restored_from: n, version: stored!.version };
 }

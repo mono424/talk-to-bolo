@@ -156,6 +156,22 @@ export async function signinRecord(env: Env, access: string, params: Record<stri
   return body.token ?? null;
 }
 
+/**
+ * Runs a write again when it lost a race for a row, as a delete does against the
+ * sync node while the app has the document open. Only for one statement or one
+ * transaction: those fail whole, so nothing is done twice.
+ */
+export async function retryConflicts<T>(write: () => Promise<T>, attempts = 4): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await write();
+    } catch (error) {
+      if (attempt >= attempts || !(error instanceof Error) || !/Transaction conflict:.*can be retried/i.test(error.message)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+    }
+  }
+}
+
 /** Record ids pass through JSON as strings; this rejects anything else. */
 export function recordId(table: string, raw: unknown): string {
   const s = String(raw ?? '');

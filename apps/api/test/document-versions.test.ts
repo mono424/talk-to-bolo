@@ -39,6 +39,25 @@ function random(seed: number) {
   return { r, para, change };
 }
 
+test('a delete that loses a race for a row runs again, other errors do not', async () => {
+  const conflict = new Error('SurrealDB: There was a problem with the key-value store: Transaction conflict: Transaction write conflict. This transaction can be retried');
+  let calls = 0;
+  const failing = (error: Error, times: number) => ({
+    query: async () => {
+      if (++calls <= times) throw error;
+      return [{ id: 'document:d1' }];
+    },
+  }) as unknown as Surreal;
+  assert.deepEqual(await deleteDocument(failing(conflict, 2), 'document:d1'), { deleted: 'document:d1' });
+  assert.equal(calls, 3);
+  calls = 0;
+  await assert.rejects(deleteDocument(failing(conflict, 9), 'document:d1'), /can be retried/);
+  assert.equal(calls, 4);
+  calls = 0;
+  await assert.rejects(deleteDocument(failing(new Error('SurrealDB: Not enough permissions'), 1), 'document:d1'), /permissions/);
+  assert.equal(calls, 1);
+});
+
 test('document versions', { skip: !process.env.BOLO_TEST_SURREAL }, async (t) => {
   const namespace = `bolo_versions_${crypto.randomUUID().replaceAll('-', '')}`;
   const env = {
