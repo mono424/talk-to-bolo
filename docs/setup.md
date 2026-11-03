@@ -266,6 +266,37 @@ sections and the lecture place all use that conversion (`lectureMarkdown` in
 `shared/lecture.ts`), on the server and in the browser alike. Math in every
 material and recap renders with KaTeX (`apps/web/src/lib/markdown.ts`).
 
+## Document versions
+
+Every change to a document's text is kept, however it was written: the
+`document_versions` event in [`schema.surql`](../schema/src/schema.surql) runs
+inside the write, so the web app, the MCP tools and anything else get versions
+without doing anything. It tells the writer by `$access`: the student's session,
+an AI client's, or the API's own database user.
+
+`document_version` holds one synced row per version, for the list in the app.
+`document_delta` (`@nosync`) holds what rebuilds it: hunks `{ at, len, old }`
+running backwards from the current text, a full copy every 50 versions, and the
+SHA-256 of the version's text, checked after rebuilding. The API rebuilds a
+version in the database, whose offsets count code points (`rebuildVersion` in
+`apps/api/src/documents.ts`). One write is one hunk, the stretch between what
+stayed the same at both ends, so a write that changes two far-apart places in one
+go stores the text between them too; the student's saves in one sitting are
+separate writes, so they stay separate hunks.
+
+The student's saves extend the latest version until they pause for 5 minutes, or
+for 30 minutes in all. A change of 500 characters or more at once starts a new one,
+so that what was there before stays one click away. Each write of an AI client is
+a version of its own. A document from before versions gets what it held as version
+1 with its next change. Going back (`restoreVersion`) writes the old text and format
+as a new version; the paper list is not versioned.
+
+The event must not fail, because that fails the write. Don't use `value::patch`
+for this: text holding `@@` makes it fail or silently return the wrong text. Don't
+use `RETURN` in the event either: where it ends in a nested block differs between
+SurrealDB 3 (`spky dev`) and 4 (the deployment). `document-versions.test.ts` covers
+both when run against each.
+
 ## Sources (bCourses and course websites)
 
 A course can have sources (the `fetcher` table) that bring material in by

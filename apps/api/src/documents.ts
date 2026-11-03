@@ -24,6 +24,10 @@ import { BadRequest, NotFound, recordId, type Surreal } from './surreal';
  *
  * Writes are compare-and-set against the text that was read, so text the
  * student typed meanwhile fails the write instead of being overwritten.
+ *
+ * Every change of the text is kept as a version, however it was written: the
+ * `document_versions` event in schema/src/schema.surql records it inside the
+ * write, as a changeset backwards from the current text.
  */
 
 interface DocumentRow {
@@ -82,19 +86,20 @@ function inFormat(format: string | null | undefined, content: string): string {
 
 async function loadDocument(user: Surreal, documentId: string) {
   const id = recordId('document', documentId);
-  const [doc, papers] = await user.queryAll(
+  const [doc, papers, version] = await user.queryAll(
     `SELECT id, title, course, source, format, content, cite_style, updated_at FROM ONLY type::record($id);
      SELECT id, cite_key, created_at, material, material.course AS material_course, material.kind AS material_kind, title, authors, year, venue, url
-       FROM paper WHERE document = type::record($id) ORDER BY created_at;`,
+       FROM paper WHERE document = type::record($id) ORDER BY created_at;
+     RETURN (SELECT VALUE n FROM document_version WHERE document = type::record($id) ORDER BY n DESC LIMIT 1)[0];`,
     { id },
-  ) as [DocumentRow | null, PaperRow[]];
+  ) as [DocumentRow | null, PaperRow[], number | null | undefined];
   if (!doc) throw new NotFound('Document not found.');
-  return { doc, papers: papers ?? [] };
+  return { doc, papers: papers ?? [], version: version ?? undefined };
 }
 
 /** A document with its text and its papers, each with the citation to write for it. */
 export async function readDocument(user: Surreal, links: DocumentLinks, text: AnswerText, documentId: string) {
-  const { doc, papers } = await loadDocument(user, documentId);
+  const { doc, papers, version } = await loadDocument(user, documentId);
   const counts = countCitations(doc.content ?? '', isTex(doc) ? 'tex' : 'markdown');
   return {
     id: doc.id,
@@ -106,6 +111,7 @@ export async function readDocument(user: Surreal, links: DocumentLinks, text: An
     writing: isTex(doc) ? WRITING.tex : WRITING.markdown,
     cite_style: doc.cite_style ?? 'author-year',
     updated_at: doc.updated_at,
+    version,
     content: text.external(doc.content ?? ''),
     papers: papers.map((p) => ({
       id: p.id,
@@ -375,4 +381,101 @@ export async function deleteDocument(user: Surreal, documentId: string) {
   const rows = await user.query<unknown[]>('DELETE type::record($id) RETURN BEFORE;', { id });
   if (!rows?.length) throw new NotFound('Document not found.');
   return { deleted: id };
+}
+
+// ── Versions ──────────────────────────────────────────────────────────────
+
+const VERSION_FIELDS = 'n, author, format, added, removed, restored_from, created_at, updated_at';
+
+/** A document's versions, newest first, without their text. */
+export async function listVersions(user: Surreal, documentId: string) {
+  const id = recordId('document', documentId);
+  const [doc, versions] = await user.queryAll(
+    `RETURN (SELECT VALUE id FROM ONLY type::record($id));
+     SELECT ${VERSION_FIELDS} FROM document_version WHERE document = type::record($id) ORDER BY n DESC;`,
+    { id },
+  ) as [string | null, VersionRow[]];
+  if (!doc) throw new NotFound('Document not found.');
+  return { document: id, versions: versions ?? [] };
+}
+
+export interface VersionRow {
+  n: number;
+  author: 'student' | 'assistant' | 'system';
+  format: string;
+  added: number;
+  removed: number;
+  restored_from?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * A version's text and the text of the version before it, rebuilt in the
+ * database, whose offsets count code points. It starts from the nearest full
+ * copy above the version, or the current text, and undoes the changesets down
+ * to it. The SHA-256 taken when it was written says whether it came out right.
+ */
+async function rebuildVersion(user: Surreal, documentId: string, n: number) {
+  if (!Number.isInteger(n) || n < 1) throw new BadRequest('A version is a whole number from 1.');
+  const id = recordId('document', documentId);
+  const rebuilt = await user.query<(VersionRow & { content: string; previous: string; intact: boolean }) | null>(
+    `LET $doc = type::record($id);
+     LET $version = (SELECT ${VERSION_FIELDS} FROM document_version WHERE document = $doc AND n = $n)[0];
+     RETURN IF $version != NONE {
+       LET $head = (SELECT VALUE n FROM document_version WHERE document = $doc ORDER BY n DESC LIMIT 1)[0];
+       LET $copy = ($n + 49) / 50 * 50;
+       LET $start = IF $copy < $head {
+         (SELECT VALUE snapshot FROM ONLY type::record('document_delta', record::id($doc) + 'n' + <string> $copy))
+       } ELSE {
+         (SELECT VALUE content FROM ONLY $doc)
+       };
+       LET $undo = |$text: string, $hunks: array| array::fold(array::reverse($hunks), $text, |$t, $h|
+         string::slice($t, 0, $h.at) + $h.old + string::slice($t, $h.at + $h.len)
+       );
+       LET $newer = SELECT VALUE hunks FROM document_delta WHERE document = $doc AND n > $n AND n <= math::min([$copy, $head]) ORDER BY n DESC;
+       LET $content = array::fold($newer, $start, |$t, $hunks| $undo($t, $hunks));
+       LET $own = (SELECT hunks, sha FROM ONLY type::record('document_delta', record::id($doc) + 'n' + <string> $n));
+       object::from_entries(array::concat(object::entries($version), [
+         ['content', $content],
+         ['previous', IF $n = 1 { '' } ELSE { $undo($content, $own.hunks) }],
+         ['intact', crypto::sha256($content) = $own.sha],
+       ]))
+     };`,
+    { id, n },
+  );
+  if (!rebuilt) throw new NotFound(`This document has no version ${n}.`);
+  if (!rebuilt.intact) throw new Error(`Version ${n} of ${id} did not rebuild to the text it was saved with.`);
+  return rebuilt;
+}
+
+/** A version's text and, to compare, the text before it, both as they are stored. */
+export async function readVersion(user: Surreal, documentId: string, n: number) {
+  const { intact: _intact, ...version } = await rebuildVersion(user, documentId, n);
+  return version;
+}
+
+/**
+ * Goes back to a version: its text and format become the document's again, as
+ * a new version, so nothing is lost and it can be undone in turn. The papers
+ * stay as they are. Written as the database user, which starts a version of its
+ * own whoever wrote last; a read through the student's session checks the owner.
+ */
+export async function restoreVersion(user: Surreal, system: Surreal, ownerId: string, author: 'student' | 'assistant', documentId: string, n: number) {
+  const id = recordId('document', documentId);
+  const { content, format } = await rebuildVersion(user, id, n);
+  const { doc, version } = await loadDocument(user, id);
+  if ((doc.content ?? '') === content && (doc.format ?? 'markdown') === format) return { document: id, status: 'unchanged' as const, version };
+  const stored = await system.query<{ content: string; version: number } | null>(
+    `BEGIN;
+     LET $doc = type::record($id);
+     UPDATE $doc SET content = $content, format = $format WHERE owner = type::record($owner);
+     LET $head = (SELECT VALUE n FROM document_version WHERE document = $doc ORDER BY n DESC LIMIT 1)[0];
+     UPDATE document_version SET author = $author, restored_from = $n WHERE document = $doc AND n = $head;
+     COMMIT;
+     RETURN { content: (SELECT VALUE content FROM ONLY $doc), version: $head };`,
+    { id, content, format, owner: ownerId, author, n },
+  );
+  assertStored(stored?.content, content);
+  return { document: id, status: 'restored' as const, restored_from: n, version: stored!.version };
 }

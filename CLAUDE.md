@@ -20,6 +20,11 @@ Use a comma, period, colon or a plain hyphen.
 - `-- @crdt` makes a field unwritable by record users after `CREATE`: its generated
   `VALUE` guard keeps the old value, and `UPDATE` still returns the row. Annotate a
   field only together with the web editor and API writing through its edit log.
+- Document versions are written by the `document_versions` event, inside every
+  write of `document.content`, so writers do nothing for them. An error in that
+  event fails the save, so no `value::patch` and no `RETURN` in it; run
+  `apps/api/test/document-versions.test.ts` against SurrealDB 3 and 4 after changing
+  it (docs/setup.md, Document versions).
 - Record ids minted by the app start with a letter and have no dashes
   (`newId` in `apps/web/src/lib/ids.ts`, `k<uuid hex>` in the Worker), so they
   never need ⟨⟩ quoting.

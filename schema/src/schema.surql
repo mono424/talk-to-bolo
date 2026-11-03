@@ -364,6 +364,8 @@ DEFINE INDEX OVERWRITE document_source ON TABLE document FIELDS source;
 
 DEFINE EVENT OVERWRITE document_deleted ON TABLE document WHEN $event = "DELETE" THEN {
   DELETE paper WHERE document = $before.id;
+  DELETE document_version WHERE document = $before.id;
+  DELETE document_delta WHERE document = $before.id;
 };
 
 -- A paper a document draws on, in the order it was added.
@@ -388,6 +390,179 @@ DEFINE FIELD OVERWRITE url ON TABLE paper TYPE option<string>;
 DEFINE FIELD OVERWRITE created_at ON TABLE paper TYPE datetime DEFAULT time::now() READONLY;
 
 DEFINE INDEX OVERWRITE paper_document ON TABLE paper FIELDS document;
+
+-- ##################################################################
+-- DOCUMENT VERSIONS
+--
+-- Every change to a document's text is kept, whoever writes it: the event
+-- below runs inside the write, so the web app, the MCP tools and anything
+-- else get versions without doing anything. What is stored is changesets
+-- running backwards from the current text (`document.content`), with a full
+-- copy every 50 versions so that rebuilding one stays cheap. Reading a version
+-- and going back to one live in apps/api/src/documents.ts. Going back writes
+-- the old text as a new version, so nothing is ever lost by it.
+--
+-- A hunk is `{ at, len, old }`: the `len` characters at `at` were `old` before
+-- it. Offsets count code points, like string::len. Not value::diff and
+-- value::patch: text holding "@@" (LaTeX internals do) makes value::patch fail
+-- or silently return the wrong text, and an event cannot catch an error, so
+-- that would also block saving.
+-- ##################################################################
+
+-- One row per version, for the list in the app. The text is not here: the sync
+-- node keeps every row of a synced table in memory.
+DEFINE TABLE OVERWRITE document_version SCHEMAFULL
+  PERMISSIONS
+    FOR select WHERE owner = $auth.id
+    FOR create, update, delete WHERE false;
+
+DEFINE FIELD OVERWRITE owner ON TABLE document_version TYPE record<user> READONLY;
+DEFINE FIELD OVERWRITE document ON TABLE document_version TYPE record<document> READONLY; -- @parent
+-- Counts up from 1 per document.
+DEFINE FIELD OVERWRITE n ON TABLE document_version TYPE int READONLY;
+-- Who wrote it: the student in the app, an AI client through the MCP server, or
+-- `system`, the text a document already had when versions began.
+DEFINE FIELD OVERWRITE author ON TABLE document_version TYPE string
+  ASSERT $value IN ['student', 'assistant', 'system'];
+DEFINE FIELD OVERWRITE format ON TABLE document_version TYPE string;
+-- Characters changed against the version before it.
+DEFINE FIELD OVERWRITE added ON TABLE document_version TYPE int;
+DEFINE FIELD OVERWRITE removed ON TABLE document_version TYPE int;
+-- The version this one went back to.
+DEFINE FIELD OVERWRITE restored_from ON TABLE document_version TYPE option<int>;
+DEFINE FIELD OVERWRITE created_at ON TABLE document_version TYPE datetime;
+DEFINE FIELD OVERWRITE updated_at ON TABLE document_version TYPE datetime;
+
+DEFINE INDEX OVERWRITE document_version_document ON TABLE document_version FIELDS document, n;
+
+-- What it takes to rebuild a version: same record key as its document_version.
+-- `hunks` turn its text into the text of the version before it, last hunk first.
+-- `snapshot` is its whole text, on every 50th once a newer version exists.
+-- `sha` is the SHA-256 of its text, checked after rebuilding.
+-- @nosync
+DEFINE TABLE OVERWRITE document_delta SCHEMAFULL
+  PERMISSIONS
+    FOR select WHERE owner = $auth.id
+    FOR create, update, delete WHERE false;
+
+DEFINE FIELD OVERWRITE owner ON TABLE document_delta TYPE record<user> READONLY;
+DEFINE FIELD OVERWRITE document ON TABLE document_delta TYPE record<document> READONLY;
+DEFINE FIELD OVERWRITE n ON TABLE document_delta TYPE int READONLY;
+DEFINE FIELD OVERWRITE hunks ON TABLE document_delta TYPE array<object>;
+DEFINE FIELD OVERWRITE hunks.*.at ON TABLE document_delta TYPE int;
+DEFINE FIELD OVERWRITE hunks.*.len ON TABLE document_delta TYPE int;
+DEFINE FIELD OVERWRITE hunks.*.old ON TABLE document_delta TYPE string;
+DEFINE FIELD OVERWRITE sha ON TABLE document_delta TYPE string;
+DEFINE FIELD OVERWRITE snapshot ON TABLE document_delta TYPE option<string>;
+
+DEFINE INDEX OVERWRITE document_delta_document ON TABLE document_delta FIELDS document, n;
+
+-- How many characters two texts share at the start and, up to $max, at the end:
+-- a binary search, 21 steps are enough for 2M characters. What it finds is always
+-- shared, so a longer text only gets a larger hunk.
+DEFINE FUNCTION OVERWRITE fn::common_prefix($a: string, $b: string) -> int {
+  array::fold(array::range(0, 21), { lo: 0, hi: math::min([string::len($a), string::len($b)]) }, |$s, $step| {
+    LET $mid = ($s.lo + $s.hi + 1) / 2;
+    IF $s.lo >= $s.hi { $s }
+    ELSE IF string::slice($a, $s.lo, $mid) = string::slice($b, $s.lo, $mid) { { lo: $mid, hi: $s.hi } }
+    ELSE { { lo: $s.lo, hi: $mid - 1 } }
+  }).lo
+};
+DEFINE FUNCTION OVERWRITE fn::common_suffix($a: string, $b: string, $max: int) -> int {
+  LET $la = string::len($a);
+  LET $lb = string::len($b);
+  array::fold(array::range(0, 21), { lo: 0, hi: $max }, |$s, $step| {
+    LET $mid = ($s.lo + $s.hi + 1) / 2;
+    IF $s.lo >= $s.hi { $s }
+    ELSE IF string::slice($a, $la - $mid, $la - $s.lo) = string::slice($b, $lb - $mid, $lb - $s.lo) { { lo: $mid, hi: $s.hi } }
+    ELSE { { lo: $s.lo, hi: $mid - 1 } }
+  }).lo
+};
+
+-- Saves a moment after each keystroke would make far too many versions, so the
+-- student's saves extend the latest version while they keep writing. A new one
+-- starts after 5 idle minutes or 30 minutes in all, when someone else wrote the
+-- latest one or it went back to an older one, and for a change of 500 characters
+-- or more at once (a paste, a selection typed over), so that what was there
+-- before stays one click away. An AI client's writes are versions of their own,
+-- so that each can be undone alone. A version that ends up as the text it started
+-- from goes away again.
+--
+-- An error in here fails the write, so nothing may depend on what a row holds
+-- (rows from before `format` have none). And no RETURN in here: where it ends in
+-- a nested block differs between SurrealDB 3 (`spky dev`) and 4 (the deployment).
+DEFINE EVENT OVERWRITE document_versions ON TABLE document
+  WHEN $event = 'CREATE' OR ($event = 'UPDATE' AND (($before.content ?? '') != $after.content OR ($before.format ?? 'markdown') != ($after.format ?? 'markdown')))
+  THEN {
+    LET $doc = $after.id;
+    LET $key = record::id($doc);
+    LET $text = $after.content;
+    LET $format = $after.format ?? 'markdown';
+    LET $now = time::now();
+    LET $version_id = |$n: int| type::record('document_version', $key + 'n' + <string> $n);
+    LET $delta_id = |$n: int| type::record('document_delta', $key + 'n' + <string> $n);
+    LET $make = |$n: int, $who: string, $as: string, $added: int, $removed: int, $hunks: array, $sha: string, $at: datetime| {
+      CREATE $version_id($n) CONTENT {
+        owner: $after.owner, document: $doc, n: $n, author: $who, format: $as, added: $added, removed: $removed, created_at: $at, updated_at: $at
+      };
+      CREATE $delta_id($n) CONTENT { owner: $after.owner, document: $doc, n: $n, hunks: $hunks, sha: $sha };
+    };
+    LET $author = IF $access = 'account' { 'student' } ELSE IF $access IN ['agent', 'oauth_agent'] { 'assistant' } ELSE { 'system' };
+    IF $event = 'CREATE' {
+      $make(1, $author, $format, string::len($text), 0, [], crypto::sha256($text), $now);
+    } ELSE {
+      LET $prior = $before.content ?? '';
+      -- A document from before versions: what it held so far is version 1.
+      LET $found = (SELECT n, author, format, created_at, updated_at, restored_from FROM document_version WHERE document = $doc ORDER BY n DESC LIMIT 1)[0];
+      IF $found = NONE {
+        $make(1, 'system', $before.format ?? 'markdown', string::len($prior), 0, [], crypto::sha256($prior), $before.updated_at ?? $now);
+      };
+      LET $last = $found ?? { n: 1, author: 'system' };
+
+      -- What this write changed: the one stretch between what stayed at both ends.
+      LET $la = string::len($prior);
+      LET $lb = string::len($text);
+      LET $p = fn::common_prefix($prior, $text);
+      LET $s = fn::common_suffix($prior, $text, math::min([$la, $lb]) - $p);
+      LET $d = $la - $p - $s;
+      LET $i = $lb - $p - $s;
+      LET $change = { at: $p, len: $i, old: string::slice($prior, $p, $p + $d) };
+
+      LET $extend = $author = 'student' AND $last.author = 'student' AND $last.restored_from = NONE AND $last.format = $format
+        AND $last.updated_at > $now - 5m AND $last.created_at > $now - 30m AND $d < 500 AND $i < 500;
+      IF !$extend {
+        IF $last.n % 50 = 0 {
+          UPDATE $delta_id($last.n) SET snapshot = $prior;
+        };
+        $make($last.n + 1, $author, $format, $i, $d, IF $d = 0 AND $i = 0 { [] } ELSE { [$change] }, crypto::sha256($text), $now);
+      } ELSE {
+        -- Fold the change into the hunk it touches, so that typing along stays
+        -- one hunk, or add it as the next one.
+        LET $hunks = (SELECT VALUE hunks FROM ONLY $delta_id($last.n));
+        LET $h = array::last($hunks);
+        LET $next = IF $h != NONE AND $p <= $h.at + $h.len AND $p + $d >= $h.at {
+          LET $start = math::min([$h.at, $p]);
+          LET $end = math::max([$h.at + $h.len, $p + $d]);
+          LET $old = string::slice($prior, $start, $h.at) + $h.old + string::slice($prior, $h.at + $h.len, $end);
+          LET $len = $end - $start - $d + $i;
+          array::concat(array::slice($hunks, 0, -1), IF $old = string::slice($text, $start, $start + $len) { [] } ELSE { [{ at: $start, len: $len, old: $old }] })
+        } ELSE {
+          array::push($hunks, $change)
+        };
+        IF $last.n > 1 AND array::len($next) = 0 {
+          DELETE $version_id($last.n);
+          DELETE $delta_id($last.n);
+        } ELSE {
+          -- It may have had its full copy before a newer version went away again.
+          UPDATE $delta_id($last.n) SET hunks = $next, sha = crypto::sha256($text), snapshot = NONE;
+          UPDATE $version_id($last.n) SET
+            added = IF $last.n = 1 { $lb } ELSE { math::sum($next.len) },
+            removed = IF $last.n = 1 { 0 } ELSE { math::sum($next.map(|$x| string::len($x.old))) },
+            updated_at = $now;
+        };
+      };
+    };
+  };
 
 -- ##################################################################
 -- SOURCES

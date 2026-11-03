@@ -3,9 +3,9 @@ import { createEffect, createMemo, createSignal, For, lazy, onCleanup, onMount, 
 import { Portal } from 'solid-js/web';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
 import type { EditorView } from '@codemirror/view';
-import { Download, FileCode2, FileDown, FileText, ImagePlus, Library, PanelRight, Plus, Trash2, X } from 'lucide-solid';
+import { Download, FileCode2, FileDown, FileText, History, ImagePlus, Library, PanelRight, Plus, Trash2, X } from 'lucide-solid';
 import type { schema } from '../schema.gen';
-import { uploadDocumentImage } from '../lib/api';
+import { type DocumentVersion, restoreDocumentVersion, uploadDocumentImage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import {
   authorList,
@@ -23,16 +23,17 @@ import { latexLayout, latexToMarkdown } from '../../../../shared/latex';
 import { lectureMarkdown } from '../../../../shared/lecture';
 import { bibtexEntry, countCitations, draftMarkdown, makeCiteKey, texCitesToMarkdown } from '../../../../shared/references';
 import { createDrafts } from '../lib/drafts';
-import { idKey, idString, newId } from '../lib/ids';
+import { idKey, idString, newId, whenSynced } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { exportPdf } from '../lib/print';
-import { firstRow, qDocument, qDocumentList, qMaterials, qPapers } from '../lib/query';
+import { firstRow, qDocument, qDocumentList, qDocumentVersions, qMaterials, qPapers } from '../lib/query';
 import { Button, IconButton, PageLoader } from '../components/ui';
 import { Focus, HeaderEndActions, HeaderTitle } from '../components/HeaderSlot';
 import { CourseCrumb } from '../components/CourseCrumb';
 import { SidePanel } from '../components/SidePanel';
 import { type PaperRow, PapersPanel, type Reading } from '../components/Papers';
 import { DocumentTab, MaterialTab, OpenPicker } from '../components/SideTabs';
+import { VersionList, VersionView } from '../components/Versions';
 
 const Editor = lazy(() => import('../components/Editor'));
 const TexDocumentEditor = lazy(() => import('../components/TexDocumentEditor'));
@@ -42,8 +43,10 @@ const TexDocumentEditor = lazy(() => import('../components/TexDocumentEditor'));
  * draws on beside it. The whole window: one editor for the text on the
  * left, and on the right, in a panel as wide as you drag it, tabs: the
  * papers to cite from, each one open to read with its page
- * (components/Papers.tsx), a LaTeX document's rendering, and whatever of
- * the course is opened beside the text (components/SideTabs.tsx).
+ * (components/Papers.tsx), a LaTeX document's rendering, its history
+ * (components/Versions.tsx), and whatever of the course is opened beside the
+ * text (components/SideTabs.tsx). A version picked in the history shows in
+ * place of the editor.
  * A Markdown document renders as you write (components/Editor.tsx); a LaTeX
  * one is source (components/TexDocumentEditor.tsx), and downloads as .tex
  * with a .bib of its papers. Cite with a paper's Cite button, or by typing [@ or \cite{
@@ -226,12 +229,12 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     }
   })();
   const [opened, setOpened] = createSignal<string[]>(saved.open);
-  // 'preview', 'papers', 'open' (the list to open from) or an opened tab.
+  // 'preview', 'papers', 'history', 'open' (the list to open from) or an opened tab.
   const [active, setActive] = createSignal(saved.active ?? (isTex() ? 'preview' : 'papers'));
   const current = createMemo(() => {
     const a = active();
     if (a === 'preview') return isTex() ? a : 'papers';
-    return a === 'papers' || a === 'open' || opened().includes(a) ? a : 'papers';
+    return a === 'papers' || a === 'history' || a === 'open' || opened().includes(a) ? a : 'papers';
   });
   createEffect(() => localStorage.setItem(tabsKey(id), JSON.stringify({ open: opened(), active: current() === 'open' ? null : current() })));
   // A tab mounts when first shown and stays, so a PDF keeps its place.
@@ -263,7 +266,8 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     const untouched = text(props.doc).trim() === draftMarkdown(lectureMarkdown('tex', m.content)).trim();
     if (!untouched && !confirm(`Switch to LaTeX? The text becomes the LaTeX source of “${m.title}” again, so what you changed here since is replaced. The papers stay.`)) return;
     edit(id, m.content);
-    await db.update('document', id, { format: 'tex' });
+    // Format and text at once: one version.
+    await db.update('document', id, { format: 'tex', content: m.content });
     saveAll();
   };
   const paperOf = (material: string) => props.papers.find((p) => p.material && idString(p.material) === material);
@@ -287,16 +291,47 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     previewTimer = setTimeout(() => setPreviewSource(md), 250);
   });
   onCleanup(() => clearTimeout(previewTimer));
-  const preview = createMemo(() => {
-    const printed = printCitations(previewSource(), papers(), style());
+  const render = (md: string) => {
+    const printed = printCitations(md, papers(), style());
     const refs = printed.cited.map((p, i) => `${style() === 'numeric' ? `[${i + 1}] ` : ''}${referenceMarkdown(p, style())}`);
     return renderMarkdown(`${printed.markdown}${refs.length ? `\n\n## References\n\n${refs.join('\n\n')}` : ''}`);
-  });
+  };
+  const preview = createMemo(() => render(previewSource()));
   const downloadMd = () => download(`${fileName(props.doc.title)}.md`, text(props.doc), 'text/markdown');
   const downloadTex = () => download(`${fileName(props.doc.title)}.tex`, text(props.doc), 'text/x-tex');
   // As \bibliography{references} reads it.
   const downloadBib = () => download('references.bib', `${papers().map(bibtexEntry).join('\n\n')}\n`, 'text/x-bibtex');
   const extensions = [citations(openCited)];
+
+  // ── Versions ───────────────────────────────────────────────────────────
+
+  // The version showing in place of the editor.
+  const [selected, setSelected] = createSignal<number | null>(null);
+  const versions = useQuery(() => qDocumentVersions(db, id));
+  const selectedRow = () => (versions.data() ?? []).find((v) => v.n === selected());
+  const latestVersion = () => versions.data()?.[0]?.n;
+  const openHistory = () => {
+    setActive('history');
+    setShowPapers(true);
+  };
+  const selectVersion = (n: number) => {
+    setSelected(n);
+    // On a phone the list covers the text: get it out of the way.
+    if (!wide()) setShowPapers(false);
+  };
+  const restore = async ({ n, content, format }: DocumentVersion) => {
+    saveAll();
+    await whenSynced(db);
+    const { version, status } = await restoreDocumentVersion(db, id, n);
+    // At once, not when the row syncs: what is typed until then would save over it.
+    // The database already holds this text, so it makes no version of its own.
+    edit(id, content);
+    await db.update('document', id, { format, content });
+    saveAll();
+    setSelected(null);
+    setNotice(status === 'restored' ? `Version ${n} is back, as version ${version}. Version ${version - 1} still has the text from before.` : `The document already holds the text of version ${n}.`);
+    setTimeout(() => setNotice(null), 8000);
+  };
 
   onMount(() => {
     const key = (e: KeyboardEvent) => {
@@ -335,6 +370,9 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
           </Show>
           <button type="button" role="tab" aria-selected={current() === 'papers'} class={`${tabClass(current() === 'papers')} gap-1 px-2.5`} onClick={() => setActive('papers')}>
             Papers <span class="font-normal text-faint">{props.papers.length || ''}</span>
+          </button>
+          <button type="button" role="tab" aria-selected={current() === 'history'} class={`${tabClass(current() === 'history')} px-2.5`} onClick={() => setActive('history')}>
+            History
           </button>
           <For each={opened()}>
             {(tab) => (
@@ -392,6 +430,11 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
             citeStart={isTex() ? '\\cite{' : '[@'}
           />
         </div>
+        <Show when={visited().has('history')}>
+          <div class={layer(current() === 'history')}>
+            <VersionList documentId={id} selected={selected()} onSelect={selectVersion} />
+          </div>
+        </Show>
         <Show when={current() === 'open'}>
           <div class={layer(true)}>
             <OpenPicker materials={openable().materials} documents={openable().documents} open={new Set(opened())} onOpen={openTab} />
@@ -454,6 +497,9 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
             <ImagePlus size={16} stroke-width={1.75} />
           </IconButton>
         </Show>
+        <IconButton label="History: earlier versions of the text" size="sm" onClick={openHistory}>
+          <History size={16} stroke-width={1.75} />
+        </IconButton>
         <DownloadMenu
           items={[
             { label: 'PDF', detail: 'Print or save, citations formatted', icon: FileDown, run: () => void exportPdf(props.doc.title) },
@@ -488,7 +534,22 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
 
       <div class="relative mt-4 flex items-start gap-0">
         {/* The room after the text is the text's own: a short one never scrolls the page, and the panel stays put. */}
-        <div class={`relative min-w-0 flex-1 ${isTex() ? '' : 'pb-24'}`}>
+        <div class={`relative min-w-0 flex-1 ${isTex() || selected() ? '' : 'pb-24'}`}>
+          <Show when={selected()} keyed>
+            {(n) => (
+              <VersionView
+                documentId={id}
+                n={n}
+                updatedAt={selectedRow()?.updated_at}
+                isCurrent={n === latestVersion()}
+                render={(content, format) => render(format === 'tex' ? latexToMarkdown(texCitesToMarkdown(content), { colors: true }) : content)}
+                onRestore={restore}
+                onClose={() => setSelected(null)}
+              />
+            )}
+          </Show>
+          {/* Hidden, not unmounted, so the editor keeps its place and its undo history. */}
+          <div class={selected() ? 'hidden' : ''}>
           <Show
             when={!isTex()}
             fallback={
@@ -519,6 +580,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
             </Suspense>
           </div>
           </Show>
+          </div>
         </div>
 
         {/* Wide screens: the papers beside the text, as wide as they are dragged. */}

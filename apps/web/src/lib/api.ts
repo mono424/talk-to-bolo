@@ -274,3 +274,22 @@ export const uploadAnswerImage = (db: Db, answerId: string, file: Blob) => uploa
 
 /** Stores an image added to a document; the text refers to it as `answer-image:<key>`. */
 export const uploadDocumentImage = (db: Db, documentId: string, file: Blob) => uploadImage(db, `/api/documents/${encodeURIComponent(documentId)}/images`, file);
+
+export interface DocumentVersion {
+  n: number;
+  author: 'student' | 'assistant' | 'system';
+  format: string;
+  restored_from?: number | null;
+  updated_at: string;
+  content: string;
+  /** The text of the version before it, to compare. */
+  previous: string;
+}
+
+/** A version of a document, with its text as it was. */
+export const documentVersion = (db: Db, documentId: string, n: number) =>
+  api<DocumentVersion>(db, `/api/documents/${encodeURIComponent(documentId)}/versions/${n}`);
+
+/** Goes back to a version, as a new version. Save the editor's text first: see whenSynced. */
+export const restoreDocumentVersion = (db: Db, documentId: string, n: number) =>
+  api<{ status: 'restored' | 'unchanged'; version: number }>(db, `/api/documents/${encodeURIComponent(documentId)}/versions/${n}/restore`, { method: 'POST' });

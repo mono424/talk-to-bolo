@@ -28,6 +28,7 @@
     "@spooky-sync/query-builder": "0.0.1-canary.366",
     "@tanstack/solid-virtual": "3.13.40",
     "codemirror": "^6.0.2",
+    "diff": "^9.0.0",
     "dompurify": "^3.4.17",
     "katex": "^0.19.1",
     "lucide-solid": "^1.60.0",

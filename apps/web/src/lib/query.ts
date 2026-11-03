@@ -77,6 +77,13 @@ export const qSourceDocument = (db: Db, materialId: string) => db.query('documen
 export const qPapers = (db: Db, documentId: string) =>
   db.query('paper').where({ document: documentId }).orderBy('created_at', 'asc').orderBy('id', 'asc').build();
 
+/**
+ * A document's versions, newest first: who wrote what and when. Their text is
+ * not synced, the API rebuilds it from its changesets (lib/api.ts documentVersion).
+ */
+export const qDocumentVersions = (db: Db, documentId: string) =>
+  db.query('document_version').where({ document: documentId }).orderBy('n', 'desc').limit(500).build();
+
 /** A course's sources (bCourses courses, web pages that import material by themselves). */
 export const qFetchers = (db: Db, courseId: string) =>
   db.query('fetcher').where({ course: courseId }).orderBy('created_at', 'asc').build();

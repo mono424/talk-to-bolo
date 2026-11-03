@@ -7,6 +7,7 @@ import { approveOAuthConsent, getOAuthConsent, handleOAuth, oauthOrigin } from '
 import { jobs } from './jobs';
 import { fetcherRoutes } from './fetch/routes';
 import { loadAnswerImage, storeAnswerImage } from './answers';
+import { readVersion, restoreVersion } from './documents';
 import {
   buildMissingGraphs,
   createApiKey,
@@ -159,6 +160,17 @@ app.post('/api/answers/:id/images', async (c) => {
 app.post('/api/documents/:id/images', async (c) => {
   const id = await storeAnswerImage(c.env, c.var.caller.userId, 'document', c.req.param('id'), c.req.raw.body);
   return c.json({ id });
+});
+
+// A version of one of the user's documents, with the text before it, to preview and compare.
+app.get('/api/documents/:id/versions/:n', async (c) => {
+  return c.json(await readVersion(Surreal.as(c.env, c.var.caller.token), c.req.param('id'), Number(c.req.param('n'))));
+});
+
+// Goes back to a version, as a new version.
+app.post('/api/documents/:id/versions/:n/restore', async (c) => {
+  const { userId, token } = c.var.caller;
+  return c.json(await restoreVersion(Surreal.as(c.env, token), Surreal.system(c.env), userId, 'student', c.req.param('id'), Number(c.req.param('n'))));
 });
 
 // Public by unguessable id, like lecture images: <img> cannot send the token.
