@@ -22,8 +22,8 @@ import { Sheet } from './Sheet';
 /**
  * Sources of a course: a bCourses course or a course website that TalkToBolo
  * checks on a schedule, importing new and changed lecture PDFs (and pages)
- * as material by itself (apps/api/src/fetch). The list sits above the
- * course's material; the sheet adds and edits one.
+ * as material by itself (apps/api/src/fetch). The list is the course page's
+ * Sources tab; the sheet adds and edits one.
  */
 
 type FetcherRow = TableModel<GetTable<typeof schema, 'fetcher'>>;
@@ -68,8 +68,8 @@ function sourceLine(f: FetcherRow): string {
 const KindIcon = (props: { kind: string; size?: number }) =>
   props.kind === 'canvas' ? <GraduationCap size={props.size ?? 18} stroke-width={1.6} /> : <Globe size={props.size ?? 18} stroke-width={1.6} />;
 
-/** The course's sources, above its material. Nothing when it has none. */
-export function SourcesSection(props: { courseId: string; onOpen: (f: FetcherRow) => void }) {
+/** The course's sources, in the course page's Sources tab. */
+export function SourcesSection(props: { courseId: string; onOpen: (f: FetcherRow) => void; onAdd: () => void }) {
   const db = useDb<typeof schema>();
   const fetchers = useQuery(() => qFetchers(db, props.courseId));
   const [notice, setNotice] = createSignal<string | null>(null);
@@ -80,9 +80,21 @@ export function SourcesSection(props: { courseId: string; onOpen: (f: FetcherRow
   };
 
   return (
-    <Show when={(fetchers.data() ?? []).length > 0}>
-      <section class="-mx-3 mb-5">
-        <h2 class="px-3 pb-1 text-[13px] text-muted">Sources</h2>
+    <Show
+      when={(fetchers.data() ?? []).length > 0}
+      fallback={
+        <Show when={fetchers.isSettled()}>
+          <div class="mt-1 rounded-2xl border border-dashed border-line px-4 py-8 text-center sm:px-6 sm:py-10">
+            <p class="text-[15px] font-medium">No sources yet</p>
+            <p class="mx-auto mt-1 max-w-md text-[14px] text-muted">Add a bCourses course or a course website, and new lecture files come in by themselves.</p>
+            <Button variant="soft" size="sm" class="mt-4" onClick={props.onAdd}>
+              Add a source
+            </Button>
+          </div>
+        </Show>
+      }
+    >
+      <section class="-mx-3">
         <Show when={notice()}>
           <p class="mx-3 mb-2 break-words rounded-xl bg-red-soft px-3.5 py-2.5 text-[14px] text-red">{notice()}</p>
         </Show>

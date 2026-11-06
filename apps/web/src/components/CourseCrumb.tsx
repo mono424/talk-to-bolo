@@ -8,15 +8,16 @@ import { useCourse } from '../lib/query';
 
 /**
  * The course an editor belongs to, at the start of its title bar: its
- * folder and name as the course page shows them, cut short, back to it.
+ * folder and name as the course page shows them, cut short, back to it
+ * (to the course page's `tab`, the editor's own list).
  */
-export function CourseCrumb(props: { courseKey: string }) {
+export function CourseCrumb(props: { courseKey: string; tab?: 'homework' | 'documents' }) {
   const db = useDb<typeof schema>();
   const auth = useAuth();
   const course = useCourse(db, auth.userId, () => `course:${props.courseKey}`);
   return (
     <A
-      href={`/courses/${props.courseKey}`}
+      href={`/courses/${props.courseKey}${props.tab ? `?tab=${props.tab}` : ''}`}
       class="flex min-w-0 max-w-[9rem] shrink items-center gap-2 transition-opacity hover:opacity-70 sm:max-w-[16rem]"
       title={course.data()?.title ?? 'Course'}
     >

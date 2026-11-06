@@ -163,7 +163,7 @@ function Workspace(props: { id: string; title: string; answers: AnswerRow[]; she
   const remove = async () => {
     if (!confirm(`Delete your answers to “${props.title}”? The exercise sheet stays in the course.`)) return;
     await db.delete('homework', props.id);
-    navigate(`/courses/${props.courseKey}`);
+    navigate(`/courses/${props.courseKey}?tab=homework`);
   };
 
   // The editor shows an image where it goes while it uploads; only a failure is said here.
@@ -267,7 +267,7 @@ function Workspace(props: { id: string; title: string; answers: AnswerRow[]; she
       <Focus />
       <HeaderTitle>
         <div class="flex min-w-0 items-center gap-2.5">
-          <CourseCrumb courseKey={props.courseKey} />
+          <CourseCrumb courseKey={props.courseKey} tab="homework" />
           <span class="text-faint">/</span>
           <h1 class="min-w-0 truncate text-[16px] font-semibold tracking-tight sm:text-[17px]">{props.title}</h1>
           <span class="hidden shrink-0 text-[12px] text-muted sm:inline">

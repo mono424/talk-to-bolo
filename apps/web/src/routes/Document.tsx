@@ -353,7 +353,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
   const remove = async () => {
     if (!confirm(`Delete “${props.doc.title}”? Its text and its list of papers go with it. The papers stay in the course.`)) return;
     await db.delete('document', props.doc.id);
-    navigate(`/courses/${props.courseKey}`);
+    navigate(`/courses/${props.courseKey}?tab=documents`);
   };
 
   const tabClass = (on: boolean) =>
@@ -474,7 +474,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
       <Focus />
       <HeaderTitle>
         <div class="flex min-w-0 items-center gap-2.5">
-          <CourseCrumb courseKey={props.courseKey} />
+          <CourseCrumb courseKey={props.courseKey} tab="documents" />
           <span class="text-faint">/</span>
           <EditableTitle value={props.doc.title} onSave={(title) => void db.update('document', id, { title })} />
           <span class="hidden shrink-0 text-[12px] text-muted sm:inline">

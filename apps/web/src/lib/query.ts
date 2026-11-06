@@ -45,9 +45,13 @@ export function useCourse(db: Db, userId: () => string | null | undefined, cours
 export const qMaterials = (db: Db, courseId: string) =>
   db.query('material').where({ course: courseId }).orderBy('created_at', 'asc').build();
 
-/** One window of a course's material for the course page's list. The id breaks ties so windows never overlap. */
-export const qMaterialsPage = (db: Db, courseId: string, page: number, size: number) =>
-  db.query('material').where({ course: courseId }).orderBy('created_at', 'asc').orderBy('id', 'asc').limit(size).offset(page * size).build();
+/**
+ * One window of a course's material for the course page's list, by date
+ * added: oldest first (`asc`) or newest first. The id breaks ties so windows
+ * never overlap.
+ */
+export const qMaterialsPage = (db: Db, courseId: string, page: number, size: number, dir: 'asc' | 'desc' = 'asc') =>
+  db.query('material').where({ course: courseId }).orderBy('created_at', dir).orderBy('id', dir).limit(size).offset(page * size).build();
 
 export const qMaterial = (db: Db, materialId: string) => db.query('material').where({ id: materialId }).build();
 
