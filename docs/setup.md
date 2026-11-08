@@ -230,6 +230,25 @@ To build the same project-path layout locally:
 SITE_URL=https://mono424.github.io BASE_PATH=/talk-to-bolo PUBLIC_APP_URL= pnpm build:landing
 ```
 
+### Hosted static sites
+
+A built static site, audio included, goes in its own folder under
+`apps/landing/public/sites/<name>/` and is published with the landing page at
+`https://mono424.github.io/talk-to-bolo/sites/<name>/`. Files are served as they
+are, so a site must use relative links. Pushing to `main` deploys it, and
+anything in the folder is public.
+
+| Site | Built from | URL |
+| --- | --- | --- |
+| Monte Carlo explorer and narrated article | the `dist/` of the montecarlo site, without `paper-with-audio.html` | <https://mono424.github.io/talk-to-bolo/sites/montecarlo/> |
+
+Sites live here and not in `apps/web` for two reasons. GitHub Pages answers
+`Range` requests with 206, which Safari needs to play audio, while the app's
+Workers Static Assets answer 200 and fall back to `index.html` for a missing
+file. And a page on the app's origin could read the signed-in student's session.
+
+GitHub refuses files over 100 MB and a Pages site should stay under 1 GB.
+
 Landing page photo: [Sanket Mishra on Unsplash](https://unsplash.com/photos/a-girl-sitting-on-a-bench-using-a-laptop-vvE2GOnGudg).
 
 ## Homework
