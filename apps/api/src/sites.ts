@@ -74,12 +74,26 @@ export function sitePath(raw: string): string | null {
 const fileId = async (site: string, path: string) => `site_file:f${(await sha256Hex(`${site}\n${path}`)).slice(0, 32)}`;
 const partPath = (id: string, n: number) => `/sites/${id.slice(id.indexOf(':') + 1)}_${n}`;
 
+let siteFilesDefined = false;
+
+/**
+ * Applying the server schema takes about 30 s on the deployed database, too
+ * long to wait for on every cold isolate a site's files land on. Once
+ * `site_file` exists it has been applied, and every other route keeps it current.
+ */
+async function ensureSiteFiles(env: Env): Promise<void> {
+  if (siteFilesDefined) return;
+  const tables = await Surreal.system(env).query<Record<string, unknown>>('RETURN (INFO FOR DB).tables;');
+  if (!tables.site_file) await ensureServerSchema(env);
+  siteFilesDefined = true;
+}
+
 /** Stores one file of a site that is still uploading. Sending a path again replaces it. */
 export async function storeSiteFile(env: Env, userId: string, rawId: string, rawPath: string, body: ReadableStream<Uint8Array> | null): Promise<void> {
   const site = recordId('site', rawId);
   const path = sitePath(rawPath);
   if (!path) throw new BadRequest(`Not a usable file path: ${rawPath.slice(0, 200)}`);
-  await ensureServerSchema(env);
+  await ensureSiteFiles(env);
   const db = Surreal.system(env);
   const held = await db.query<{ status: string; files: number; bytes: number } | null>(
     `LET $row = (SELECT status FROM type::record($site) WHERE owner = type::record($owner))[0];
@@ -118,7 +132,6 @@ export async function storeSiteFile(env: Env, userId: string, rawId: string, raw
 /** Every file is up: lists the site's pages, picks the one it opens on and opens it. */
 export async function finishSite(env: Env, userId: string, rawId: string): Promise<{ entry: string }> {
   const site = recordId('site', rawId);
-  await ensureServerSchema(env);
   const db = Surreal.system(env);
   const owned = await db.query<string | null>(
     'RETURN (SELECT VALUE id FROM type::record($site) WHERE owner = type::record($owner))[0]',
@@ -228,7 +241,6 @@ export async function serveSiteFile(env: Env, rawSite: string, pathname: string,
   } catch {
     return notFound();
   }
-  await ensureServerSchema(env);
   const db = Surreal.system(env);
   if (!path) {
     path = (await db.query<string | null>('RETURN (SELECT VALUE entry FROM type::record($site))[0]', { site })) ?? '';
