@@ -100,6 +100,7 @@ DEFINE EVENT OVERWRITE course_deleted ON TABLE course WHEN $event = "DELETE" THE
   DELETE fetcher WHERE course = $before.id;
   DELETE homework WHERE course = $before.id;
   DELETE document WHERE course = $before.id;
+  DELETE site WHERE course = $before.id;
 };
 
 -- ##################################################################
@@ -325,6 +326,36 @@ DEFINE FIELD OVERWRITE created_at ON TABLE answer TYPE datetime DEFAULT time::no
 DEFINE FIELD OVERWRITE updated_at ON TABLE answer TYPE datetime VALUE time::now();
 
 DEFINE INDEX OVERWRITE answer_homework ON TABLE answer FIELDS homework, position;
+
+-- ##################################################################
+-- SITES
+--
+-- A static website the student uploaded to a course, audio and all. The files
+-- are server-only (`site_file`, apps/api/src/server-schema.surql) and served
+-- publicly by the site's unguessable id at /site-files/<key>/ (apps/api/src/sites.ts).
+-- The app creates the row, uploads the files through the API, and the API
+-- marks it ready.
+-- ##################################################################
+
+DEFINE TABLE OVERWRITE site SCHEMAFULL
+  PERMISSIONS
+    FOR select, update, delete WHERE owner = $auth.id
+    FOR create WHERE owner = $auth.id AND course.owner = $auth.id;
+
+DEFINE FIELD OVERWRITE owner ON TABLE site TYPE record<user> READONLY;
+DEFINE FIELD OVERWRITE course ON TABLE site TYPE record<course> READONLY; -- @parent
+DEFINE FIELD OVERWRITE title ON TABLE site TYPE string ASSERT string::len($value) > 0;
+DEFINE FIELD OVERWRITE status ON TABLE site TYPE string DEFAULT 'uploading'
+  ASSERT $value IN ['uploading', 'ready'];
+-- The page it opens on, and every HTML page of the site as a JSON array of paths.
+DEFINE FIELD OVERWRITE entry ON TABLE site TYPE option<string>;
+DEFINE FIELD OVERWRITE pages ON TABLE site TYPE string DEFAULT '[]';
+DEFINE FIELD OVERWRITE file_count ON TABLE site TYPE int DEFAULT 0;
+DEFINE FIELD OVERWRITE size ON TABLE site TYPE int DEFAULT 0;
+DEFINE FIELD OVERWRITE created_at ON TABLE site TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE updated_at ON TABLE site TYPE datetime VALUE time::now();
+
+DEFINE INDEX OVERWRITE site_course ON TABLE site FIELDS course;
 
 -- ##################################################################
 -- DOCUMENTS

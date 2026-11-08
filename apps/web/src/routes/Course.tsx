@@ -1,14 +1,15 @@
 import { A, useNavigate, useParams, useSearchParams } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from 'solid-js';
 import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/client-solid';
-import { ArrowDownUp, FileCode2, FileText, FileType2, Folder, NotebookPen, PenLine, Plus, Radar, ScrollText, Settings2, Trash2, Upload, Waypoints } from 'lucide-solid';
+import { ArrowDownUp, FileCode2, FileText, FileType2, Folder, FolderUp, Globe, NotebookPen, PenLine, Plus, Radar, ScrollText, Settings2, Trash2, Upload, Waypoints } from 'lucide-solid';
 import type { schema } from '../schema.gen';
 import { useAuth } from '../lib/auth';
 import { addPdfMaterial, createDocument } from '../lib/documents';
 import { reindexMaterial } from '../lib/jobs';
 import { idKey, newId, whenSynced } from '../lib/ids';
 import { COURSE_COLORS, courseColor, LANGUAGES, type CourseColor } from '../lib/palette';
-import { qDocumentList, qHomeworkList, qMaterials, qMaterialsPage, useCourse } from '../lib/query';
+import { qDocumentList, qHomeworkList, qMaterials, qMaterialsPage, qSiteList, useCourse } from '../lib/query';
+import { type SiteBundle, siteFromDrop, siteFromFiles, uploadSite } from '../lib/sites';
 import { Button, buttonClass, Field, formatDate, IconButton, inputClass, PageLoader, StatusText } from '../components/ui';
 import { type ListWindow, scrollParent, VirtualList } from '../components/VirtualList';
 import { CourseSearch } from '../components/CourseSearch';
@@ -21,6 +22,7 @@ const TABS = [
   { value: 'material', label: 'Material' },
   { value: 'homework', label: 'Homework' },
   { value: 'documents', label: 'Documents' },
+  { value: 'sites', label: 'Sites' },
   { value: 'sources', label: 'Sources' },
 ] as const;
 type Tab = (typeof TABS)[number]['value'];
@@ -34,7 +36,7 @@ const SORTS: { value: Sort; label: string }[] = [
   { value: 'name', label: 'Name' },
 ];
 const SORT_KEY = 'course-list-sort';
-const DEFAULT_SORTS: Record<SortedTab, Sort> = { material: 'oldest', homework: 'newest', documents: 'newest' };
+const DEFAULT_SORTS: Record<SortedTab, Sort> = { material: 'oldest', homework: 'newest', documents: 'newest', sites: 'newest' };
 
 /** Each tab's order, as the student last picked it on this device. */
 function loadSorts(): Record<SortedTab, Sort> {
@@ -91,6 +93,8 @@ export default function CoursePage() {
   const [openSource, setOpenSource] = createSignal<FetcherRow | null>(null);
   const [dragging, setDragging] = createSignal(false);
   const [notice, setNotice] = createSignal<string | null>(null);
+  const [siteProgress, setSiteProgress] = createSignal<string | null>(null);
+  const [siteNotice, setSiteNotice] = createSignal<string | null>(null);
 
   // ── Header: the course's icon and name sit in the top bar where the logo
   // was, its actions next to the account menu. The search sticks under it.
@@ -147,6 +151,22 @@ export default function CoursePage() {
     await reindexMaterial(db, id).catch((err) => setNotice(`${title}: ${err instanceof Error ? err.message : 'indexing failed'}`));
   }
 
+  /** Uploads a site read from a pick or a drop; one at a time. */
+  async function addSite(reading: Promise<SiteBundle>) {
+    const uid = auth.userId();
+    if (!uid || siteProgress()) return;
+    setSiteNotice(null);
+    setSiteProgress('Reading the site');
+    try {
+      const bundle = await reading;
+      await uploadSite(db, { owner: uid, course: courseId(), bundle, onProgress: (done, total) => setSiteProgress(`Uploading ${done} of ${total} files`) });
+    } catch (err) {
+      setSiteNotice(err instanceof Error ? err.message : 'The upload failed.');
+    } finally {
+      setSiteProgress(null);
+    }
+  }
+
   const newDocument = async (format: 'markdown' | 'tex') => {
     const uid = auth.userId();
     if (!uid) return;
@@ -172,7 +192,9 @@ export default function CoursePage() {
           onDrop={(e) => {
             e.preventDefault();
             setDragging(false);
-            if (e.dataTransfer?.files.length) void addFiles(e.dataTransfer.files);
+            if (!e.dataTransfer?.files.length) return;
+            if (tab() === 'sites') void addSite(siteFromDrop(e.dataTransfer));
+            else void addFiles(e.dataTransfer.files);
           }}
         >
           <HeaderTitle>
@@ -261,6 +283,17 @@ export default function CoursePage() {
               </Match>
               <Match when={tab() === 'documents'}>
                 <DocumentsSection courseId={c().id} courseKey={params.courseKey ?? ''} sort={sorts().documents} onNew={(format) => void newDocument(format)} />
+              </Match>
+              <Match when={tab() === 'sites'}>
+                <SitesSection
+                  courseId={c().id}
+                  courseKey={params.courseKey ?? ''}
+                  sort={sorts().sites}
+                  dragging={dragging()}
+                  progress={siteProgress()}
+                  notice={siteNotice()}
+                  onFiles={(files) => void addSite(siteFromFiles(files))}
+                />
               </Match>
               <Match when={tab() === 'sources'}>
                 <SourcesSection courseId={c().id} onOpen={setOpenSource} onAdd={() => setAddingSource(true)} />
@@ -724,6 +757,97 @@ function DocumentsSection(props: { courseId: string; courseKey: string; sort: So
         </For>
       </section>
     </Show>
+  );
+}
+
+const sizeLabel = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+
+/** The course's uploaded static sites, audio and all. */
+function SitesSection(props: {
+  courseId: string;
+  courseKey: string;
+  sort: Sort;
+  dragging: boolean;
+  progress: string | null;
+  notice: string | null;
+  onFiles: (files: File[]) => void;
+}) {
+  const db = useDb<typeof schema>();
+  const sites = useQuery(() => qSiteList(db, props.courseId));
+  const rows = createMemo(() => sortRows(sites.data() ?? [], props.sort));
+  const remove = async (id: string, title: string) => {
+    if (confirm(`Delete “${title}” and all its files? Its link stops working.`)) await db.delete('site', id);
+  };
+  let folder!: HTMLInputElement;
+  let file!: HTMLInputElement;
+  const picked = (e: { currentTarget: HTMLInputElement }) => {
+    const files = Array.from(e.currentTarget.files ?? []);
+    e.currentTarget.value = '';
+    if (files.length) props.onFiles(files);
+  };
+  const actions = () => (
+    <>
+      <Button variant="soft" size="sm" class="max-sm:hidden" disabled={!!props.progress} onClick={() => folder.click()}>
+        <FolderUp size={16} stroke-width={1.75} /> Upload a folder
+      </Button>
+      <Button variant="ghost" size="sm" disabled={!!props.progress} onClick={() => file.click()}>
+        <Upload size={16} stroke-width={1.75} /> Upload .zip or .html
+      </Button>
+    </>
+  );
+  return (
+    <section class={`-mx-3 rounded-2xl ${props.dragging ? 'ring-2 ring-blue/40' : ''}`}>
+      <input ref={(el) => { folder = el; el.webkitdirectory = true; }} type="file" class="sr-only" tabindex="-1" onChange={picked} />
+      <input ref={file} type="file" class="sr-only" tabindex="-1" accept=".zip,.html,.htm,application/zip,text/html" onChange={picked} />
+      <Show when={props.progress}>
+        <p class="mx-3 mb-2 rounded-xl bg-soft px-3.5 py-2.5 text-[14px] text-muted" role="status">{props.progress}</p>
+      </Show>
+      <Show when={props.notice}>
+        <p class="mx-3 mb-2 break-words rounded-xl bg-red-soft px-3.5 py-2.5 text-[14px] text-red">{props.notice}</p>
+      </Show>
+      <Show
+        when={rows().length > 0}
+        fallback={
+          <Show when={sites.isSettled()}>
+            <div class="mx-3">
+              <EmptyTab title="No sites yet" actions={actions()}>
+                Drop a built website here, its HTML, scripts and audio together. It opens inside the course and has a link you can share.
+              </EmptyTab>
+            </div>
+          </Show>
+        }
+      >
+        <div class="mx-3 mb-2 flex flex-wrap justify-end gap-2">{actions()}</div>
+        <For each={rows()}>
+          {(site) => (
+            <div class="group flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-soft">
+              <A href={`/courses/${props.courseKey}/sites/${idKey(site.id)}`} class="flex min-w-0 flex-1 items-center gap-3">
+                <span class="shrink-0 text-faint">
+                  <Globe size={18} stroke-width={1.6} />
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-[15px]">{site.title}</span>
+                  <span class="mt-0.5 block text-[13px] text-faint">
+                    {site.status === 'ready' ? `${site.file_count} ${site.file_count === 1 ? 'file' : 'files'} · ${sizeLabel(site.size)}` : 'Uploading'}
+                  </span>
+                </span>
+                <span class="shrink-0 text-[13px] text-faint" title={`Added ${formatDate(site.created_at, true)}`}>
+                  {formatDate(site.created_at)}
+                </span>
+              </A>
+              <IconButton
+                label={`Delete ${site.title}`}
+                size="sm"
+                class="shrink-0 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
+                onClick={() => void remove(site.id, site.title)}
+              >
+                <Trash2 size={16} stroke-width={1.75} />
+              </IconButton>
+            </div>
+          )}
+        </For>
+      </Show>
+    </section>
   );
 }
 

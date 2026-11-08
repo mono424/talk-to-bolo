@@ -30,6 +30,7 @@
     "codemirror": "^6.0.2",
     "diff": "^9.0.0",
     "dompurify": "^3.4.17",
+    "fflate": "0.8.3",
     "katex": "^0.19.1",
     "lucide-solid": "^1.60.0",
     "marked": "^18.1.1",

@@ -130,6 +130,9 @@ importers:
       dompurify:
         specifier: ^3.4.17
         version: 3.4.17
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
       katex:
         specifier: ^0.19.1
         version: 0.19.1

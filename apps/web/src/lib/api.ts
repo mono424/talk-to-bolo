@@ -14,6 +14,8 @@ export const MCP_URL = `${API_URL}/mcp`;
 
 export const assetUrl = (id: string) => `${API_URL}/material-assets/${encodeURIComponent(id)}`;
 export const answerImageUrl = (id: string) => `${API_URL}/answer-images/${encodeURIComponent(id)}`;
+/** A file of an uploaded site. Public: the id is unguessable and pages cannot send the token. */
+export const siteUrl = (siteKey: string, path = '') => `${API_URL}/site-files/${encodeURIComponent(siteKey)}/${path.split('/').map(encodeURIComponent).join('/')}`;
 
 export class ApiError extends Error {
   constructor(
@@ -293,3 +295,17 @@ export const documentVersion = (db: Db, documentId: string, n: number) =>
 /** Goes back to a version, as a new version. Save the editor's text first: see whenSynced. */
 export const restoreDocumentVersion = (db: Db, documentId: string, n: number) =>
   api<{ status: 'restored' | 'unchanged'; version: number }>(db, `/api/documents/${encodeURIComponent(documentId)}/versions/${n}/restore`, { method: 'POST' });
+
+// ── Sites (apps/api/src/sites.ts) ─────────────────────────────────────────
+
+/** Stores one file of a site that is still uploading. */
+export const uploadSiteFile = (db: Db, siteId: string, path: string, data: Blob) =>
+  api<{ ok: true }>(db, `/api/sites/${encodeURIComponent(siteId)}/files?path=${encodeURIComponent(path)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: data,
+  });
+
+/** Every file is up: the API lists the site's pages and opens it. */
+export const finishSiteUpload = (db: Db, siteId: string) =>
+  api<{ entry: string }>(db, `/api/sites/${encodeURIComponent(siteId)}/finish`, { method: 'POST' });

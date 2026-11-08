@@ -105,6 +105,7 @@ apps:
         - /api/fetchers/*
         - /api/answers/*
         - /api/documents/*
+        - /api/sites/*
         # A key for the student's own scripts, made in Settings.
         - /api/keys
         # The consent page of an AI client connection, and its redirect.
@@ -117,6 +118,8 @@ apps:
         # Images inside lectures and answers: <img> cannot send the session token.
         - /material-assets/*
         - /answer-images/*
+        # Uploaded sites, by unguessable id: a page cannot send the session token.
+        - /site-files/*
     env:
       # Agent Memory (the course knowledge graph). AGENT_MEMORY_URL must be
       # the full Context URL, ending /api/v1/<context id>: without the context

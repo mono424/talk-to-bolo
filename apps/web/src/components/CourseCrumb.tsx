@@ -11,7 +11,7 @@ import { useCourse } from '../lib/query';
  * folder and name as the course page shows them, cut short, back to it
  * (to the course page's `tab`, the editor's own list).
  */
-export function CourseCrumb(props: { courseKey: string; tab?: 'homework' | 'documents' }) {
+export function CourseCrumb(props: { courseKey: string; tab?: 'homework' | 'documents' | 'sites' }) {
   const db = useDb<typeof schema>();
   const auth = useAuth();
   const course = useCourse(db, auth.userId, () => `course:${props.courseKey}`);

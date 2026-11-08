@@ -232,6 +232,31 @@ SITE_URL=https://mono424.github.io BASE_PATH=/talk-to-bolo PUBLIC_APP_URL= pnpm 
 
 Landing page photo: [Sanket Mishra on Unsplash](https://unsplash.com/photos/a-girl-sitting-on-a-bench-using-a-laptop-vvE2GOnGudg).
 
+## Sites
+
+The Sites tab of a course holds static websites the student uploaded: a built
+folder, a `.zip`, or one `.html` file, with its scripts, images and audio. A site
+opens inside the course and has a link anyone can open.
+
+The app creates the `site` row and posts the files one by one to
+`/api/sites/:id/files`; `/api/sites/:id/finish` lists the pages, picks the one it
+opens on (`index.html` if there is one) and marks it ready. Files are `site_file` rows
+(server-only) with their bytes in the `materials` bucket in parts of at most 1 MiB,
+at most 30 MB a file, 100 MB and 2000 files a site. Deleting a site or its course
+takes the rows and bytes.
+
+[`apps/api/src/sites.ts`](../apps/api/src/sites.ts) serves them at
+`/site-files/<site key>/<path>`, public by the key's 128 random bits. Audio and
+other non-HTML files answer `Range` requests with 206, which Safari needs to play them.
+
+Sites come from students and share the app's origin, so **every response must carry
+the CSP `sandbox` without `allow-same-origin`**. The browser then runs the page in an
+opaque origin, away from the session in the app's storage and from the API. The
+address of a file has to stay on this route for that reason: don't publish uploads
+through the static assets. Opaque origins throw on `localStorage`, so HTML pages get
+a small in-memory replacement as they are served, and what a site stores lasts only
+until the page is closed or reloaded.
+
 ## Homework
 
 **Answer** on any material opens a homework document for it (`homework`
@@ -381,8 +406,8 @@ Background work runs as jobs: the web app writes a row to the `job` outbox and
 the sync node POSTs its payload to the path in
 [`apps/api/openapi.yml`](../apps/api/openapi.yml) (re-indexing, lecture
 progress), retrying failures. Only the paths under `worker.expose` are public:
-search, PDF upload and download, the OAuth consent calls, OAuth, MCP and
-lecture images. Frontend assets continue to use `/assets/`. Verify unauthenticated
+search, PDF upload and download, the OAuth consent calls, OAuth, MCP,
+lecture images and uploaded sites. Frontend assets continue to use `/assets/`. Verify unauthenticated
 `/mcp` returns an OAuth `401` challenge after deployment.
 
 ### 1. Database

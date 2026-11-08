@@ -224,6 +224,7 @@ export const schema = {
      * - `fetchers` → `fetcher` (many)
      * - `homeworks` → `homework` (many)
      * - `materials` → `material` (many)
+     * - `sites` → `site` (many)
      *
      * @example
      * const rows = useQuery(() => db.query('course').orderBy('id', 'asc').limit(20).build());
@@ -267,6 +268,7 @@ export const schema = {
         fetchers: { type: 'string' as const, array: true, optional: true },
         homeworks: { type: 'string' as const, array: true, optional: true },
         materials: { type: 'string' as const, array: true, optional: true },
+        sites: { type: 'string' as const, array: true, optional: true },
       },
       primaryKey: ['id'] as const
     },
@@ -786,6 +788,60 @@ export const schema = {
       primaryKey: ['id'] as const
     },
     /**
+     * `site` table.
+     *
+     * Relationships:
+     * - `course` → `course` (one)
+     * - `owner` → `user` (one)
+     *
+     * @example
+     * const rows = useQuery(() => db.query('site').orderBy('id', 'asc').limit(20).build());
+     */
+    {
+      name: 'site' as const,
+      columns: {
+        /**
+         * `id` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        id: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `course` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         *
+         * `@parent` — auto-populated server-side from the auth context. Do not write from client code.
+         */
+        course: { type: 'string' as const, recordId: true, optional: false },
+        /**
+         * `created_at` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        created_at: { type: 'string' as const, dateTime: true, optional: false },
+        entry: { type: 'string' as const, optional: true },
+        file_count: { type: 'number' as const, optional: false },
+        /**
+         * `owner` — string
+         *
+         * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
+         */
+        owner: { type: 'string' as const, recordId: true, optional: false },
+        pages: { type: 'string' as const, optional: false },
+        size: { type: 'number' as const, optional: false },
+        status: { type: 'string' as const, optional: false },
+        title: { type: 'string' as const, optional: false },
+        /**
+         * `updated_at?` — string
+         *
+         * ISO-8601 datetime string.
+         */
+        updated_at: { type: 'string' as const, dateTime: true, optional: true },
+      },
+      primaryKey: ['id'] as const
+    },
+    /**
      * `turn_source` table.
      *
      * Relationships:
@@ -857,6 +913,7 @@ export const schema = {
      * - `homeworks` → `homework` (many)
      * - `materials` → `material` (many)
      * - `papers` → `paper` (many)
+     * - `sites` → `site` (many)
      * - `turn_sources` → `turn_source` (many)
      *
      * @example
@@ -892,6 +949,7 @@ export const schema = {
         homeworks: { type: 'string' as const, array: true, optional: true },
         materials: { type: 'string' as const, array: true, optional: true },
         papers: { type: 'string' as const, array: true, optional: true },
+        sites: { type: 'string' as const, array: true, optional: true },
         turn_sources: { type: 'string' as const, array: true, optional: true },
       },
       primaryKey: ['id'] as const
@@ -992,6 +1050,12 @@ export const schema = {
       from: 'course' as const,
       field: 'materials' as const,
       to: 'material' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'course' as const,
+      field: 'sites' as const,
+      to: 'site' as const,
       cardinality: 'many' as const
     },
     {
@@ -1175,6 +1239,18 @@ export const schema = {
       cardinality: 'one' as const
     },
     {
+      from: 'site' as const,
+      field: 'course' as const,
+      to: 'course' as const,
+      cardinality: 'one' as const
+    },
+    {
+      from: 'site' as const,
+      field: 'owner' as const,
+      to: 'user' as const,
+      cardinality: 'one' as const
+    },
+    {
       from: 'turn_source' as const,
       field: 'call' as const,
       to: 'call' as const,
@@ -1262,6 +1338,12 @@ export const schema = {
       from: 'user' as const,
       field: 'papers' as const,
       to: 'paper' as const,
+      cardinality: 'many' as const
+    },
+    {
+      from: 'user' as const,
+      field: 'sites' as const,
+      to: 'site' as const,
       cardinality: 'many' as const
     },
     {
@@ -1425,6 +1507,7 @@ DEFINE EVENT OVERWRITE course_deleted ON TABLE course WHEN $event = "DELETE" THE
   DELETE fetcher WHERE course = $before.id;
   DELETE homework WHERE course = $before.id;
   DELETE document WHERE course = $before.id;
+  DELETE site WHERE course = $before.id;
 };
 
 -- ##################################################################
@@ -1622,6 +1705,34 @@ DEFINE FIELD OVERWRITE created_at ON TABLE answer TYPE option<datetime> DEFAULT 
 DEFINE FIELD OVERWRITE updated_at ON TABLE answer TYPE option<datetime>;
 
 DEFINE INDEX OVERWRITE answer_homework ON TABLE answer FIELDS homework, position;
+
+-- ##################################################################
+-- SITES
+--
+-- A static website the student uploaded to a course, audio and all. The files
+-- are server-only (\`site_file\`, apps/api/src/server-schema.surql) and served
+-- publicly by the site's unguessable id at /site-files/<key>/ (apps/api/src/sites.ts).
+-- The app creates the row, uploads the files through the API, and the API
+-- marks it ready.
+-- ##################################################################
+
+DEFINE TABLE OVERWRITE site SCHEMAFULL
+PERMISSIONS FOR select, create, update, delete WHERE true;
+
+DEFINE FIELD OVERWRITE owner ON TABLE site TYPE option<record<user> READONLY>;
+DEFINE FIELD OVERWRITE course ON TABLE site TYPE option<record<course> READONLY>;
+ -- @parent
+DEFINE FIELD OVERWRITE title ON TABLE site TYPE option<string> ASSERT string::len($value) > 0;
+DEFINE FIELD OVERWRITE status ON TABLE site TYPE option<string> DEFAULT 'uploading' ASSERT $value IN ['uploading', 'ready'];
+-- The page it opens on, and every HTML page of the site as a JSON array of paths.
+DEFINE FIELD OVERWRITE entry ON TABLE site TYPE option<string>;
+DEFINE FIELD OVERWRITE pages ON TABLE site TYPE option<string> DEFAULT '[]';
+DEFINE FIELD OVERWRITE file_count ON TABLE site TYPE option<int> DEFAULT 0;
+DEFINE FIELD OVERWRITE size ON TABLE site TYPE option<int> DEFAULT 0;
+DEFINE FIELD OVERWRITE created_at ON TABLE site TYPE option<datetime> DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE updated_at ON TABLE site TYPE option<datetime>;
+
+DEFINE INDEX OVERWRITE site_course ON TABLE site FIELDS course;
 
 -- ##################################################################
 -- DOCUMENTS
@@ -2177,6 +2288,7 @@ DEFINE FIELD _00_rv ON TABLE homework TYPE int DEFAULT 0 PERMISSIONS FOR select,
 DEFINE FIELD _00_rv ON TABLE job TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE material TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE paper TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
+DEFINE FIELD _00_rv ON TABLE site TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE turn_source TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 DEFINE FIELD _00_rv ON TABLE user TYPE int DEFAULT 0 PERMISSIONS FOR select, create, update WHERE true;
 
@@ -2362,6 +2474,20 @@ THEN {
 
 -- Table: paper Client Deletion
 DEFINE EVENT OVERWRITE _00_paper_client_delete ON TABLE paper
+WHEN $event = "DELETE"
+THEN {
+    -- No-op for now.
+};
+
+-- Table: site Client Mutation
+DEFINE EVENT OVERWRITE _00_site_client_mutation ON TABLE site
+WHEN $before != $after AND $event != "DELETE"
+THEN {
+    -- No-op for now. Client mutation sync logic moved to DBSP.
+};
+
+-- Table: site Client Deletion
+DEFINE EVENT OVERWRITE _00_site_client_delete ON TABLE site
 WHEN $event = "DELETE"
 THEN {
     -- No-op for now.

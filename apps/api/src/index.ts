@@ -8,6 +8,7 @@ import { jobs } from './jobs';
 import { fetcherRoutes } from './fetch/routes';
 import { loadAnswerImage, storeAnswerImage } from './answers';
 import { readVersion, restoreVersion } from './documents';
+import { finishSite, serveSiteFile, storeSiteFile } from './sites';
 import {
   buildMissingGraphs,
   createApiKey,
@@ -181,6 +182,22 @@ app.get('/answer-images/:id', async (c) => {
     headers: { 'content-type': row.mime, 'cache-control': 'private, max-age=86400', 'access-control-allow-origin': '*' },
   });
 });
+
+// ── Sites (sites.ts) ──────────────────────────────────────────────────────
+
+// One file of a site being uploaded; the body is the file.
+app.post('/api/sites/:id/files', async (c) => {
+  await storeSiteFile(c.env, c.var.caller.userId, c.req.param('id'), c.req.query('path') ?? '', c.req.raw.body);
+  return c.json({ ok: true });
+});
+
+// Every file is up: the site opens.
+app.post('/api/sites/:id/finish', async (c) => {
+  return c.json(await finishSite(c.env, c.var.caller.userId, c.req.param('id')));
+});
+
+// Public by unguessable id, like lecture images: a page cannot send the token.
+app.get('/site-files/:site/*', (c) => serveSiteFile(c.env, c.req.param('site'), new URL(c.req.url).pathname, c.req.header('range')));
 
 // ── Sources (fetch/routes.ts) ─────────────────────────────────────────────
 

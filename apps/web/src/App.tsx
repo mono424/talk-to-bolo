@@ -22,6 +22,7 @@ import HomeworkPage from './routes/Homework';
 const GraphPage = lazy(() => import('./routes/Graph'));
 // So is CodeMirror, which a document's citations need from the start.
 const DocumentPage = lazy(() => import('./routes/Document'));
+const SitePage = lazy(() => import('./routes/Site'));
 
 /** The app window: top bar, sidebar, content, on the gray canvas. */
 function Layout(props: RouteSectionProps) {
@@ -113,6 +114,7 @@ export default function App() {
           <Route path="/courses/:courseKey/materials/:materialKey" component={perParam('materialKey', MaterialPage)} />
           <Route path="/courses/:courseKey/homework/:homeworkKey" component={perParam('homeworkKey', HomeworkPage)} />
           <Route path="/courses/:courseKey/documents/:documentKey" component={perParam('documentKey', DocumentPage)} />
+          <Route path="/courses/:courseKey/sites/:siteKey" component={perParam('siteKey', SitePage)} />
           {/* Study sessions live in the `call` table; links from ChatGPT use these paths. */}
           <Route path="/calls" component={SessionsPage} />
           <Route path="/calls/:callKey" component={perParam('callKey', SessionPage)} />

@@ -320,7 +320,7 @@ export async function startIngest(env: Env, materialId: string, detail = 'Queued
 }
 
 export const MAX_PDF_BYTES = 30 * 1024 * 1024;
-const PART_BYTES = 1024 * 1024;
+export const PART_BYTES = 1024 * 1024;
 
 const isPdf = (b: Uint8Array) => b.length > 4 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46; // %PDF
 

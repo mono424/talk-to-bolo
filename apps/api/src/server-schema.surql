@@ -387,3 +387,33 @@ DEFINE EVENT OVERWRITE answer_images_deleted ON TABLE answer WHEN $event = 'DELE
 DEFINE EVENT OVERWRITE document_images_deleted ON TABLE document WHEN $event = 'DELETE' THEN {
   DELETE answer_image WHERE answer = $before.id;
 };
+
+-- ##################################################################
+-- SITES (src/sites.ts)
+--
+-- The files of a static website uploaded to a course (main schema `site`).
+-- The id is derived from the site and the path (sites.ts fileId). The bytes
+-- are the files /sites/<id>_<n> of the `materials` bucket, parts of at most
+-- 1 MiB, so a range of a long recording reads only the parts it needs.
+-- ##################################################################
+
+DEFINE TABLE OVERWRITE site_file SCHEMAFULL
+  COMMENT 'sp00ky:nosync'
+  PERMISSIONS NONE;
+DEFINE FIELD OVERWRITE owner ON TABLE site_file TYPE record<user>;
+DEFINE FIELD OVERWRITE site ON TABLE site_file TYPE record<site>;
+DEFINE FIELD OVERWRITE path ON TABLE site_file TYPE string;
+DEFINE FIELD OVERWRITE size ON TABLE site_file TYPE int;
+DEFINE FIELD OVERWRITE parts ON TABLE site_file TYPE int;
+DEFINE FIELD OVERWRITE created_at ON TABLE site_file TYPE datetime DEFAULT time::now();
+
+DEFINE INDEX IF NOT EXISTS site_file_site ON TABLE site_file FIELDS site;
+
+DEFINE EVENT OVERWRITE site_file_parts ON TABLE site_file WHEN $event = 'DELETE' THEN {
+  FOR $n IN array::range(0, $before.parts) {
+    type::file('materials', '/sites/' + <string>record::id($before.id) + '_' + <string>$n).delete();
+  };
+};
+DEFINE EVENT OVERWRITE site_files_deleted ON TABLE site WHEN $event = 'DELETE' THEN {
+  DELETE site_file WHERE site = $before.id;
+};

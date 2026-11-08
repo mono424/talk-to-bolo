@@ -88,6 +88,12 @@ export const qPapers = (db: Db, documentId: string) =>
 export const qDocumentVersions = (db: Db, documentId: string) =>
   db.query('document_version').where({ document: documentId }).orderBy('n', 'desc').limit(500).build();
 
+/** A course's uploaded static sites, newest first. */
+export const qSiteList = (db: Db, courseId: string) =>
+  db.query('site').where({ course: courseId }).orderBy('created_at', 'desc').build();
+
+export const qSite = (db: Db, siteId: string) => db.query('site').where({ id: siteId }).build();
+
 /** A course's sources (bCourses courses, web pages that import material by themselves). */
 export const qFetchers = (db: Db, courseId: string) =>
   db.query('fetcher').where({ course: courseId }).orderBy('created_at', 'asc').build();
