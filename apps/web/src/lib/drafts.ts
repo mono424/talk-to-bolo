@@ -9,18 +9,18 @@ import type { Db } from './query';
  * when the page closes. Used for homework answers (a row per part) and for
  * documents (one row).
  *
- * A write can take many seconds to reach the database, and the row meanwhile
- * receives the server's copy of earlier saves. So a draft stays until the
- * database has its text, and hides those older copies from the editor. And
- * only one save is on its way at a time: the next one sends the latest text,
- * so that saves cannot pile up behind a slow one and land long after.
+ * A write can take many seconds to reach the database, and the row receives
+ * the server's copies of earlier saves for a long time after, in no reliable
+ * order or time. So a draft stays after it is saved, and hides those copies
+ * from the editor: only text this page did not write takes its place, which
+ * is a change from elsewhere. And only one save is on its way at a time: the
+ * next one sends the latest text, so that saves cannot pile up behind a slow
+ * one and land long after.
  */
 
 const SAVE_DELAY_MS = 500;
-/** How long a saved draft stays once the row holds it: the server's copies of earlier saves may still come in. */
-const ECHO_MS = 2000;
-/** With every save through and the row still holding something else, someone else wrote after them. */
-const FOREIGN_MS = 20_000;
+/** Texts remembered per row to recognize the server's copies of them. */
+const REMEMBERED = 30;
 
 /**
  * Clears out what a browser queued before only one save went out at a time:
@@ -64,39 +64,39 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   const waiting = new Set<string>();
   // The text last handed to `save`, per row.
   const sent = new Map<string, string>();
+  // The texts this page has written or built on, per row.
+  const ours = new Map<string, string[]>();
   // Calls of `save` still writing locally: not in the pending count yet.
   let writing = 0;
-  let idleSince = Date.now();
+  const [progress, bump] = createSignal(0);
 
+  const rowOf = (id: string) => opts.rows().find((r) => idString(r.id) === id);
   const text = (row: R) => drafts()[idString(row.id)] ?? row.content ?? '';
   const textOf = (id: string) => {
-    const row = opts.rows().find((r) => idString(r.id) === id);
+    const row = rowOf(id);
     return row ? text(row) : '';
   };
 
-  const settle = (id: string, value: string) => {
-    sent.delete(id);
-    setDrafts((d) => {
-      if (d[id] !== value) return d;
-      const { [id]: _saved, ...rest } = d;
-      return rest;
-    });
+  const remember = (id: string, value: string) => {
+    const list = ours.get(id) ?? [];
+    if (list.includes(value)) return;
+    list.push(value);
+    if (list.length > REMEMBERED) list.shift();
+    ours.set(id, list);
   };
 
-  let checkTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Lets go of a saved draft once the row holds text from elsewhere. */
   const check = () => {
-    clearTimeout(checkTimer);
     if (rejected() || writing > 0 || db.pendingMutationCount > 0) return;
-    const idle = Date.now() - idleSince;
-    let wait = Infinity;
     for (const [id, value] of Object.entries(drafts())) {
       if (timers.has(id) || waiting.has(id) || sent.get(id) !== value) continue;
-      const row = opts.rows().find((r) => idString(r.id) === id);
-      const due = !row ? 0 : row.content === value ? ECHO_MS : FOREIGN_MS;
-      if (idle >= due) settle(id, value);
-      else wait = Math.min(wait, due - idle);
+      const row = rowOf(id);
+      const held = row?.content ?? '';
+      if (row && (held === value || ours.get(id)?.includes(held))) continue;
+      sent.delete(id);
+      ours.delete(id);
+      setDrafts(({ [id]: _released, ...rest }) => rest);
     }
-    if (wait < Infinity) checkTimer = setTimeout(check, wait);
   };
   createEffect(() => {
     opts.rows();
@@ -112,6 +112,8 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
       const value = drafts()[id];
       if (value === undefined || value === sent.get(id)) continue;
       sent.set(id, value);
+      remember(id, value);
+      bump((n) => n + 1);
       writing++;
       void opts
         .save(id, value)
@@ -121,17 +123,15 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
         })
         .finally(() => {
           writing--;
+          bump((n) => n + 1);
           send();
           check();
         });
     }
   };
 
-  let busy = db.pendingMutationCount > 0;
   onCleanup(
-    db.subscribeToPendingMutations((n) => {
-      if (busy && n === 0) idleSince = Date.now();
-      busy = n > 0;
+    db.subscribeToPendingMutations(() => {
       send();
       check();
     }),
@@ -176,12 +176,13 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   onCleanup(() => {
     document.removeEventListener('visibilitychange', onHidden);
     window.removeEventListener('pagehide', saveNow);
-    clearTimeout(checkTimer);
     saveNow();
   });
 
   const edit = (id: string, value: string) => {
     setRejected(false);
+    // What the row holds now is what this edit builds on.
+    remember(id, rowOf(id)?.content ?? '');
     setDrafts((d) => ({ ...d, [id]: value }));
     clearTimeout(timers.get(id));
     timers.set(
@@ -199,8 +200,9 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
     clearTimeout(timers.get(id));
     timers.delete(id);
     waiting.delete(id);
+    remember(id, rowOf(id)?.content ?? '');
+    remember(id, value);
     sent.set(id, value);
-    idleSince = Date.now();
     setRejected(false);
     setDrafts((d) => ({ ...d, [id]: value }));
   };
@@ -215,8 +217,11 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
     }
   };
 
-  /** Some text is not saved yet. */
-  const unsaved = () => Object.keys(drafts()).length > 0;
+  /** Some text has not gone out yet. */
+  const unsaved = () => {
+    progress();
+    return Object.entries(drafts()).some(([id, value]) => timers.has(id) || waiting.has(id) || sent.get(id) !== value);
+  };
 
   return { text, textOf, edit, hold, saveAll, whenSaved, unsaved, rejected };
 }

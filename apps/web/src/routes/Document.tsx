@@ -322,12 +322,21 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
   const restore = async ({ n, content, format }: DocumentVersion) => {
     // A save still on its way would land after this and bring the old text back.
     await whenSaved();
-    const { version, status } = await restoreDocumentVersion(db, id, n);
-    // In the editor at once, not when the row syncs: what is typed until then would save over it.
-    hold(id, content);
+    let done: string;
+    try {
+      const { version, status } = await restoreDocumentVersion(db, id, n);
+      // In the editor at once, not when the row syncs: what is typed until then would save over it.
+      hold(id, content);
+      done = status === 'restored' ? `Version ${n} is back, as version ${version}. Version ${version - 1} still has the text from before.` : `The document already holds the text of version ${n}.`;
+    } catch {
+      // A slow database can outlast the API's request. The text goes out as an ordinary save instead.
+      edit(id, content);
+      await whenSaved();
+      done = `Version ${n} is back. The text from before stays in the history.`;
+    }
     if (format !== props.doc.format) await db.update('document', id, { format });
     setSelected(null);
-    setNotice(status === 'restored' ? `Version ${n} is back, as version ${version}. Version ${version - 1} still has the text from before.` : `The document already holds the text of version ${n}.`);
+    setNotice(done);
     setTimeout(() => setNotice(null), 8000);
   };
 
