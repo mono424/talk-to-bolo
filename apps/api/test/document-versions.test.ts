@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { deleteDocument, listVersions, readDocument, readVersion, restoreVersion, writeDocument } from '../src/documents.ts';
@@ -190,6 +191,29 @@ test('document versions', { skip: !process.env.BOLO_TEST_SURREAL }, async (t) =>
       const back = await readDocument(student, links, plain, doc.id);
       assert.equal(back.format, 'markdown');
       assert.equal(back.content, 'Markdown.');
+    });
+
+    await t.test('a save built on text that changed meanwhile is refused', async () => {
+      const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+      const { id, type } = await start('first');
+      const save = (text: string, base: string) => student.query(`UPDATE type::record($id) SET content = $text, base = $base`, { id, text, base });
+      const text = async () => (await readDocument(student, links, plain, id)).content;
+      await save('second', sha('first'));
+      await save('third', sha('second'));
+      // Saved twice, as a retry does: the text is already there.
+      await save('third', sha('second'));
+      await system.query(`UPDATE type::record($id) SET content = 'from elsewhere'`, { id });
+      await assert.rejects(save('fourth', sha('third')), /document_changed_elsewhere/);
+      assert.equal(await text(), 'from elsewhere');
+      await save('fourth', sha('from elsewhere'));
+      assert.equal(await text(), 'fourth');
+      // Writers that name no base are not checked, a rename neither.
+      await type('plain');
+      assert.equal(await text(), 'plain');
+      await student.query(`UPDATE type::record($id) SET title = 'Renamed'`, { id });
+      await save('with umlauts äß 😀', sha('plain'));
+      await save('again', sha('with umlauts äß 😀'));
+      assert.equal(await text(), 'again');
     });
 
     await t.test('a rename does not make a version', async () => {

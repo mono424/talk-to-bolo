@@ -384,6 +384,17 @@ DEFINE EVENT OVERWRITE answer_image_file ON TABLE answer_image WHEN $event = 'DE
 DEFINE EVENT OVERWRITE answer_images_deleted ON TABLE answer WHEN $event = 'DELETE' THEN {
   DELETE answer_image WHERE answer = $before.id;
 };
+-- What a save from the editor was built on: the SHA-256 of the text it started
+-- from. The editor saves the whole text, so without this a change made meanwhile
+-- by someone else (the assistant, another device) that it had not received yet
+-- would be overwritten. The client merges and saves again when this refuses it.
+-- Only saves that set a new `base` are checked: anything else writes as before.
+DEFINE FIELD OVERWRITE base ON TABLE document TYPE option<string>;
+DEFINE EVENT OVERWRITE document_stale_save ON TABLE document
+  WHEN $event = 'UPDATE' AND $access = 'account' AND $after.base != NONE AND $after.base != $before.base
+    AND $after.content != $before.content AND crypto::sha256($before.content ?? '') != $after.base
+  THEN { THROW 'document_changed_elsewhere'; };
+
 DEFINE EVENT OVERWRITE document_images_deleted ON TABLE document WHEN $event = 'DELETE' THEN {
   DELETE answer_image WHERE answer = $before.id;
 };
