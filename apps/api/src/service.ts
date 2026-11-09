@@ -33,6 +33,19 @@ export interface MaterialRow {
 }
 
 let schemaApplied = false;
+const tablesSeen = new Set<string>();
+
+/**
+ * Applying the server schema takes about 45 s on the deployed database, too
+ * long for a request someone waits on, on every cold isolate it lands on.
+ * Once `table` exists it has been applied, and other routes keep it current.
+ */
+export async function ensureServerTable(env: Env, table: string): Promise<void> {
+  if (schemaApplied || tablesSeen.has(table)) return;
+  const tables = await Surreal.system(env).query<Record<string, unknown>>('RETURN (INFO FOR DB).tables;');
+  if (!tables[table]) await ensureServerSchema(env);
+  tablesSeen.add(table);
+}
 
 /**
  * Applies server-schema.surql once per isolate (it is idempotent). A flag, not

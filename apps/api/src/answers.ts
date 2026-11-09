@@ -1,5 +1,5 @@
 import type { Env } from './env';
-import { ensureServerSchema, readLimited } from './service';
+import { ensureServerTable, readLimited } from './service';
 import { BadRequest, NotFound, Surreal, recordId, toBase64 } from './surreal';
 
 /**
@@ -34,7 +34,7 @@ export async function storeAnswerImage(
   body: ReadableStream<Uint8Array> | null,
 ): Promise<string> {
   const answer = recordId(table, rawId);
-  await ensureServerSchema(env);
+  await ensureServerTable(env, 'answer_image');
   const db = Surreal.system(env);
   const owned = await db.query<string | null>(
     'RETURN (SELECT VALUE id FROM type::record($answer) WHERE owner = type::record($owner))[0]',
@@ -58,7 +58,6 @@ export async function storeAnswerImage(
 /** An answer image by id, for the public route. */
 export async function loadAnswerImage(env: Env, rawId: string): Promise<{ b64: string; mime: string } | null> {
   const id = recordId('answer_image', rawId);
-  await ensureServerSchema(env);
   return Surreal.system(env).query<{ b64: string; mime: string } | null>(
     `LET $row = SELECT mime FROM ONLY type::record($id);
      LET $bytes = IF $row { type::file('materials', '/answers/' + <string>record::id(type::record($id))).get() } ELSE { NONE };

@@ -262,13 +262,22 @@ export const sourceMapping = (db: Db, fetcherId: string) =>
 
 // ── Homework ──────────────────────────────────────────────────────────────
 
+// The editor shows an upload until it ends, so one that hangs must end too.
+const IMAGE_UPLOAD_MS = 120_000;
+
 async function uploadImage(db: Db, path: string, file: Blob) {
   const image = await prepareImage(file);
-  return api<{ id: string }>(db, path, {
-    method: 'POST',
-    headers: { 'content-type': image.type || 'application/octet-stream' },
-    body: image,
-  });
+  try {
+    return await api<{ id: string }>(db, path, {
+      method: 'POST',
+      headers: { 'content-type': image.type || 'application/octet-stream' },
+      body: image,
+      signal: AbortSignal.timeout(IMAGE_UPLOAD_MS),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') throw new ApiError('The image took too long to upload. Try again.', 504);
+    throw err;
+  }
 }
 
 /** Stores an image added to an answer; the answer refers to it as `answer-image:<key>`. */
