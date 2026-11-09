@@ -22,7 +22,7 @@ import {
 import { latexLayout, latexToMarkdown } from '../../../../shared/latex';
 import { lectureMarkdown } from '../../../../shared/lecture';
 import { bibtexEntry, countCitations, draftMarkdown, makeCiteKey, texCitesToMarkdown } from '../../../../shared/references';
-import { createDrafts } from '../lib/drafts';
+import { createDrafts, textHash } from '../lib/drafts';
 import { idKey, idString, newId } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { exportPdf } from '../lib/print';
@@ -125,7 +125,8 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
   const { text, textOf, edit, hold, saveAll, whenSaved, unsaved, rejected } = createDrafts({
     db,
     rows: () => [props.doc],
-    save: (row, content) => db.update('document', row, { content }),
+    // `base` is not in the sp00ky schema (apps/api/src/server-schema.surql): the database refuses a save whose text changed meanwhile.
+    save: async (row, content, parent) => db.update('document', row, (parent === undefined ? { content } : { content, base: await textHash(parent) }) as { content: string }),
     onOverlap: () => setNotice('This text was also changed elsewhere, in the same place you are writing. Your text is kept, the other one is in History.'),
   });
 

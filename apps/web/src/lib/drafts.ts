@@ -22,6 +22,16 @@ import type { Db } from './query';
 const SAVE_DELAY_MS = 500;
 /** Texts remembered per row to recognize the server's copies of them. */
 const REMEMBERED = 30;
+/** The database's refusal of a save built on text that has changed (`document_stale_save`). */
+const STALE_SAVE = 'document_changed_elsewhere';
+/** How long a refused save waits for the text that changed before it goes out regardless. */
+const MERGE_WAIT_MS = 30_000;
+
+/** SHA-256 of a text, as the database computes it. */
+export async function textHash(text: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 /**
  * Clears out what a browser queued before only one save went out at a time:
@@ -60,7 +70,8 @@ function mergeChanges(base: string, mine: string, theirs: string): string | null
 export function createDrafts<R extends { id: unknown; content?: string | null }>(opts: {
   db: Db;
   rows: () => readonly R[];
-  save: (id: string, value: string) => Promise<unknown>;
+  /** `parent` is the text this one was built on, when that is known. */
+  save: (id: string, value: string, parent?: string) => Promise<unknown>;
   /** The text changed elsewhere in the same place as what is being written, which is kept. */
   onOverlap?: () => void;
 }) {
@@ -77,6 +88,11 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   const ours = new Map<string, string[]>();
   // The text a draft started from, until it has been saved.
   const seen = new Map<string, string>();
+  // What the last save was built on, to go back to if it is refused.
+  const sentFrom = new Map<string, string | undefined>();
+  // Refused saves waiting for the text that changed, and those that gave up on it.
+  const theirs = new Set<string>();
+  const unguarded = new Set<string>();
   // Calls of `save` still writing locally: not in the pending count yet.
   let writing = 0;
   const [progress, bump] = createSignal(0);
@@ -106,7 +122,9 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
     for (const [id, value] of Object.entries(drafts())) {
       const row = rowOf(id);
       const held = row?.content ?? '';
+      if (row && held === value && theirs.delete(id)) sent.set(id, value);
       if (row && (held === value || ours.get(id)?.includes(held))) continue;
+      theirs.delete(id);
       const settled = !busy && !timers.has(id) && !waiting.has(id) && sent.get(id) === value;
       if (!row || settled) {
         if (!settled) continue;
@@ -119,9 +137,10 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
       const combined = mergeChanges(sent.get(id) ?? seen.get(id) ?? held, value, held);
       remember(id, held);
       seen.set(id, held);
+      sent.delete(id);
       if (combined === null) opts.onOverlap?.();
-      else if (combined === held) hold(id, held);
-      else edit(id, combined);
+      if (combined === held) hold(id, held);
+      else edit(id, combined ?? value);
     }
   };
   createEffect(() => {
@@ -134,15 +153,18 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   const send = (now = false) => {
     if (!now && (writing > 0 || db.pendingMutationCount > 0)) return;
     for (const id of [...waiting]) {
+      if (theirs.has(id)) continue;
       waiting.delete(id);
       const value = drafts()[id];
       if (value === undefined || value === sent.get(id)) continue;
+      const parent = unguarded.delete(id) ? undefined : (sent.get(id) ?? seen.get(id));
+      sentFrom.set(id, parent);
       sent.set(id, value);
       remember(id, value);
       bump((n) => n + 1);
       writing++;
       void opts
-        .save(id, value)
+        .save(id, value, parent)
         .catch(() => {
           sent.delete(id);
           setRejected(true);
@@ -167,12 +189,37 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   // the editor and goes out again with the next edit.
   const client = db.getSp00ky();
   let failed = client.failedMutationCount;
+  const since = Date.now();
+  const refused = async () => {
+    let other = false;
+    for (const row of await client.listFailedMutations()) {
+      if (row.failedAt < since) continue;
+      if (!row.error.message.includes(STALE_SAVE)) {
+        other = true;
+        continue;
+      }
+      // The text changed elsewhere: wait for it and merge, then save again.
+      void client.discardFailedMutation(row.id);
+      const id = row.recordId;
+      if (sent.has(id)) seen.set(id, sentFrom.get(id) ?? seen.get(id) ?? '');
+      sent.delete(id);
+      theirs.add(id);
+      waiting.add(id);
+      setTimeout(() => {
+        if (!theirs.delete(id)) return;
+        unguarded.add(id);
+        send();
+      }, MERGE_WAIT_MS);
+    }
+    if (other) {
+      sent.clear();
+      setRejected(true);
+    }
+    check();
+  };
   onCleanup(
     client.subscribeToFailedMutations((n) => {
-      if (n > failed) {
-        sent.clear();
-        setRejected(true);
-      }
+      if (n > failed) void refused();
       failed = n;
     }),
   );
