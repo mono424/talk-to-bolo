@@ -14,6 +14,20 @@ export const isImage = (file: File) => file.type.startsWith('image/') || /\.(hei
 
 export async function prepareImage(file: Blob): Promise<Blob> {
   if (KEPT.includes(file.type) && file.size <= MAX_BYTES) return file;
+  return redrawn(file, 'image/jpeg');
+}
+
+/** An added image as a file for pdfLaTeX, which opens PNG and JPEG: anything else becomes a PNG. */
+export async function texImageFile(url: string): Promise<{ bytes: Uint8Array; extension: 'png' | 'jpg' }> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('The image could not be read.');
+  const image = await res.blob();
+  const extension = image.type === 'image/jpeg' ? 'jpg' : 'png';
+  const file = extension === 'jpg' || image.type === 'image/png' ? image : await redrawn(image, 'image/png');
+  return { bytes: new Uint8Array(await file.arrayBuffer()), extension };
+}
+
+async function redrawn(file: Blob, type: 'image/jpeg' | 'image/png'): Promise<Blob> {
   let bitmap: ImageBitmap;
   try {
     bitmap = await createImageBitmap(file);
@@ -26,12 +40,12 @@ export async function prepareImage(file: Blob): Promise<Blob> {
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('The image could not be added.');
-  // A JPEG has no transparency: what was clear prints as the page does, white.
+  // What was clear prints as the page does, white (a JPEG has no transparency).
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
-  const jpeg = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-  if (!jpeg) throw new Error('The image could not be added.');
-  return jpeg;
+  const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.9));
+  if (!out) throw new Error('The image could not be added.');
+  return out;
 }

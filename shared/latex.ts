@@ -728,6 +728,8 @@ class Converter {
       case 'includegraphics': {
         const o = optional(s, j);
         const g = argument(s, o ? o.end : j);
+        const added = /^answer-image:([A-Za-z0-9_-]+)$/.exec(g.text.trim());
+        if (added) return { text: `![](answer-image:${added[1]})`, end: g.end };
         return { text: `[Figure: ${g.text.split('/').pop()}]`, end: g.end };
       }
       case 'ref':
@@ -983,6 +985,20 @@ export function latexLayout(tex: string): { columns: 1 | 2; ownHead: boolean } {
     columns: /\\documentclass\s*\[[^\]]*\btwocolumn\b|\\twocolumn(?![A-Za-z])/.test(source) ? 2 : 1,
     ownHead: /\\twocolumn\s*\[/.test(source),
   };
+}
+
+const ADDED_IMAGE = /(\\includegraphics\s*(?:\[[^\]]*\])?\s*\{)\s*answer-image:([A-Za-z0-9_-]+)\s*\}/g;
+
+/** The images added in the app that a LaTeX source shows, each once. */
+export function texImageKeys(tex: string): string[] {
+  return [...new Set([...tex.matchAll(ADDED_IMAGE)].map((m) => m[2]))];
+}
+
+/** A source as TeX reads it outside the app: its added images at `files` (by key), with graphicx loaded. */
+export function texWithImageFiles(tex: string, files: Record<string, string>): string {
+  const source = tex.replace(ADDED_IMAGE, (whole, head: string, key: string) => (files[key] ? `${head}${files[key]}}` : whole));
+  if (/\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\bgraphicx\b/.test(stripComments(source))) return source;
+  return source.replace(/^[ \t]*\\documentclass\s*(?:\[[^\]]*\])?\s*\{[^}]*\}.*$/m, (line) => `${line}\n\\usepackage{graphicx}`);
 }
 
 /** The KaTeX macro definitions a converted document carries, if any. */

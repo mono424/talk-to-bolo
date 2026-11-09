@@ -291,6 +291,16 @@ sections and the lecture place all use that conversion (`lectureMarkdown` in
 `shared/lecture.ts`), on the server and in the browser alike. Math in every
 material and recap renders with KaTeX (`apps/web/src/lib/markdown.ts`).
 
+## Images in LaTeX documents
+
+An image pasted, dropped or picked in a LaTeX document is stored like one in a
+Markdown document (`/api/documents/:id/images`) and written into the source as
+`\includegraphics[width=\linewidth]{answer-image:<key>}`, which `shared/latex.ts`
+renders. TeX cannot open that path, so the LaTeX source of a document with images
+downloads as a `.zip`: the `.tex` pointing at `images/<key>.png` or `.jpg`, the
+images (GIF and WebP redrawn as PNG for pdfLaTeX), and `graphicx` loaded if the
+source does not load it. LaTeX materials have no image upload.
+
 ## Document versions
 
 Every change to a document's text is kept, however it was written: the

@@ -18,6 +18,7 @@ import type { SyntaxNode } from '@lezer/common';
 import type { MarkdownConfig } from '@lezer/markdown';
 import { defaultKeymap, history, historyKeymap, indentLess, indentMore } from '@codemirror/commands';
 import { replacedStretch } from '../lib/drafts';
+import { addImagesAt, guardFileDrops, imagesOf, isFileDrag, setUpload, uploading, uploadsField } from '../lib/editor-images';
 import { isImage } from '../lib/images';
 import { focusField, liveMarkdown } from '../lib/live-markdown';
 
@@ -141,30 +142,7 @@ const keepBoundaries = EditorState.transactionFilter.of((tr) => {
 
 // ── Images on their way ───────────────────────────────────────────────────
 //
-// Where each image being added goes once uploaded, kept in place while you
-// type on; and the part an image dragged over the editor would drop into.
-
-interface Upload {
-  key: number;
-  pos: number;
-}
-
-/** Places an upload, moves it on, or (`pos: null`) ends it. */
-const setUpload = StateEffect.define<{ key: number; pos: number | null }>();
-
-const uploadsField = StateField.define<readonly Upload[]>({
-  create: () => [],
-  update(list, tr) {
-    let next = tr.docChanged ? list.map((u) => ({ key: u.key, pos: tr.changes.mapPos(u.pos, -1) })) : list;
-    for (const e of tr.effects) {
-      if (!e.is(setUpload)) continue;
-      const { key, pos } = e.value;
-      next = next.filter((u) => u.key !== key);
-      if (pos !== null) next = [...next, { key, pos }];
-    }
-    return next;
-  },
-});
+// The part an image dragged over the editor would drop into.
 
 const setDropPart = StateEffect.define<number | null>();
 
@@ -172,8 +150,6 @@ const dropPartField = StateField.define<number | null>({
   create: () => null,
   update: (part, tr) => tr.effects.reduce((p, e) => (e.is(setDropPart) ? e.value : p), part),
 });
-
-const isFileDrag = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
 
 // ── How the parts look ────────────────────────────────────────────────────
 
@@ -201,19 +177,6 @@ class QuestionWidget extends WidgetType {
   }
 }
 
-class UploadingWidget extends WidgetType {
-  eq() {
-    return true;
-  }
-  toDOM() {
-    const el = document.createElement('span');
-    el.className = 'cm-hw-uploading';
-    el.setAttribute('role', 'status');
-    el.textContent = 'Adding the image…';
-    return el;
-  }
-}
-
 class PlaceholderWidget extends WidgetType {
   constructor(readonly text: string) {
     super();
@@ -233,7 +196,6 @@ class PlaceholderWidget extends WidgetType {
 const placeholderText = Facet.define<string, string>({ combine: (values) => values[0] ?? 'Write your answer' });
 const activeLine = Decoration.line({ class: 'cm-hw-active' });
 const dropLine = Decoration.line({ class: 'cm-hw-drop' });
-const uploading = Decoration.widget({ widget: new UploadingWidget(), side: -1 });
 
 /** The start of every line from `from` to `to`. */
 function lineStarts(state: EditorState, from: number, to: number) {
@@ -344,8 +306,6 @@ const toggleWrap =
     return true;
   };
 
-const imagesOf = (data: DataTransfer | null) => [...(data?.files ?? [])].filter(isImage);
-
 export default function Editor(props: Props) {
   let host!: HTMLDivElement;
 
@@ -362,30 +322,11 @@ export default function Editor(props: Props) {
     });
 
     let alive = true;
-    let uploads = 0;
 
     const upload = (view: EditorView, pos: number, files: File[]) => {
-      const key = ++uploads;
-      view.dispatch({ effects: setUpload.of({ key, pos }) });
       const layout = view.state.field(layoutField);
       const id = layout.parts[partAt(layout, pos)].id;
-      void (async () => {
-        for (const file of files) {
-          const md = await props.uploadImage(id, file);
-          const at = alive ? view.state.field(uploadsField).find((u) => u.key === key)?.pos : undefined;
-          if (!md || at === undefined) continue;
-          const line = view.state.doc.lineAt(at);
-          const insert = `${at === line.from ? '' : '\n'}${md}\n`;
-          const follow = view.state.selection.main.empty && view.state.selection.main.head === at;
-          view.dispatch({
-            changes: { from: at, insert },
-            selection: follow ? EditorSelection.cursor(at + insert.length) : undefined,
-            effects: setUpload.of({ key, pos: at + insert.length }),
-            userEvent: 'input.paste',
-          });
-        }
-        if (alive) view.dispatch({ effects: setUpload.of({ key, pos: null }) });
-      })();
+      addImagesAt(view, pos, files, (file) => props.uploadImage(id, file), () => alive);
     };
 
     const dropAt = (view: EditorView, part: number | null) => {
@@ -519,14 +460,7 @@ export default function Editor(props: Props) {
       upload(view, pos, images);
     });
 
-    // A file dropped beside the editor would open in place of the app.
-    const guard = (e: DragEvent) => {
-      if (e.defaultPrevented || !isFileDrag(e) || view.contentDOM.contains(e.target as Node)) return;
-      e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
-    };
-    window.addEventListener('dragover', guard);
-    window.addEventListener('drop', guard);
+    const unguard = guardFileDrops(view);
 
     // Text that changed elsewhere (another device, a save coming back) flows in.
     createEffect(
@@ -539,8 +473,7 @@ export default function Editor(props: Props) {
 
     onCleanup(() => {
       alive = false;
-      window.removeEventListener('dragover', guard);
-      window.removeEventListener('drop', guard);
+      unguard();
       view.destroy();
     });
   });

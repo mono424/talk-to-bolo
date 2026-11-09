@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { latexLayout, latexToMarkdown, markdownMacros } from '../../../shared/latex.ts';
+import { latexLayout, latexToMarkdown, markdownMacros, texImageKeys, texWithImageFiles } from '../../../shared/latex.ts';
 import { chunkMarkdown, lectureMarkdown } from '../../../shared/lecture.ts';
 import { MARKDOWN_MATH } from '../../../shared/math.ts';
 
@@ -215,6 +215,54 @@ Text.
   const shown = latexToMarkdown(tex, { colors: true });
   assert.ok(shown.startsWith('<div class="article-head">\n\n<span style="color:'), shown);
   assert.ok(shown.indexOf('</div>') < shown.indexOf('## Introduction'));
+});
+
+test('an image added in the app renders, one from a TeX folder stays named', () => {
+  const md = latexToMarkdown(doc(String.raw`Before.
+
+\includegraphics[width=\linewidth]{answer-image:kabc_1}
+
+\begin{figure}
+\centering
+\includegraphics{answer-image:kdef}
+\caption{A plot}
+\end{figure}
+
+\includegraphics{figs/plot.pdf}`));
+  assert.match(md, /!\[\]\(answer-image:kabc_1\)/);
+  assert.match(md, /!\[\]\(answer-image:kdef\)/);
+  assert.match(md, /_A plot_/);
+  assert.match(md, /\[Figure: plot\.pdf\]/);
+});
+
+test('a download points added images at their files and loads graphicx', () => {
+  const tex = String.raw`\documentclass[11pt]{article} % paper
+\begin{document}
+\includegraphics[width=\linewidth]{answer-image:ka}
+\includegraphics{answer-image:ka}
+\includegraphics{answer-image:kb}
+\includegraphics{figs/own.png}
+\end{document}
+`;
+  assert.deepEqual(texImageKeys(tex), ['ka', 'kb']);
+  const out = texWithImageFiles(tex, { ka: 'images/ka.png', kb: 'images/kb.jpg' });
+  assert.equal(out, String.raw`\documentclass[11pt]{article} % paper
+\usepackage{graphicx}
+\begin{document}
+\includegraphics[width=\linewidth]{images/ka.png}
+\includegraphics{images/ka.png}
+\includegraphics{images/kb.jpg}
+\includegraphics{figs/own.png}
+\end{document}
+`);
+  const loaded = String.raw`\documentclass{article}
+\usepackage[final]{graphicx}
+\begin{document}\includegraphics{answer-image:ka}\end{document}`;
+  assert.equal((texWithImageFiles(loaded, { ka: 'a.png' }).match(/graphicx/g) ?? []).length, 1);
+  const commented = String.raw`\documentclass{article}
+% \usepackage{graphicx}
+\begin{document}\includegraphics{answer-image:ka}\end{document}`;
+  assert.match(texWithImageFiles(commented, { ka: 'a.png' }), /article\}\n\\usepackage\{graphicx\}\n%/);
 });
 
 test('a one-column document has no layout of its own', () => {

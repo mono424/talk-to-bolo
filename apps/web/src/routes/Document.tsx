@@ -5,7 +5,8 @@ import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/cl
 import type { EditorView } from '@codemirror/view';
 import { Download, FileCode2, FileDown, FileText, History, ImagePlus, Library, PanelRight, Plus, Trash2, X } from 'lucide-solid';
 import type { schema } from '../schema.gen';
-import { type DocumentVersion, documentText, restoreDocumentVersion, uploadDocumentImage } from '../lib/api';
+import { answerImageUrl, type DocumentVersion, documentText, restoreDocumentVersion, uploadDocumentImage } from '../lib/api';
+import { texImageFile } from '../lib/images';
 import { useAuth } from '../lib/auth';
 import {
   authorList,
@@ -19,7 +20,7 @@ import {
   printCitations,
   updatePapers,
 } from '../lib/citations';
-import { latexLayout, latexToMarkdown } from '../../../../shared/latex';
+import { latexLayout, latexToMarkdown, texImageKeys, texWithImageFiles } from '../../../../shared/latex';
 import { lectureMarkdown } from '../../../../shared/lecture';
 import { bibtexEntry, countCitations, draftMarkdown, makeCiteKey, texCitesToMarkdown } from '../../../../shared/references';
 import { createDrafts, textHash } from '../lib/drafts';
@@ -95,8 +96,8 @@ const toPaper = (p: PaperRow): Paper => ({
 const tabsKey = (documentId: string) => `document-tabs:${documentId}`;
 
 /** Saves a text as a file. */
-function download(name: string, text: string, type: string) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+function download(name: string, body: string | Uint8Array<ArrayBuffer>, type: string) {
+  const url = URL.createObjectURL(new Blob([body], { type }));
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -136,7 +137,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     try {
       const { id: image } = await uploadDocumentImage(db, id, file);
       setNotice(null);
-      return `![](answer-image:${idKey(image)})`;
+      return isTex() ? `\\includegraphics[width=\\linewidth]{answer-image:${idKey(image)}}` : `![](answer-image:${idKey(image)})`;
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'The image could not be added.');
       return null;
@@ -301,7 +302,25 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
   };
   const preview = createMemo(() => render(previewSource()));
   const downloadMd = () => download(`${fileName(props.doc.title)}.md`, text(props.doc), 'text/markdown');
-  const downloadTex = () => download(`${fileName(props.doc.title)}.tex`, text(props.doc), 'text/x-tex');
+  // An added image is `answer-image:<key>` in the source, a path TeX cannot
+  // open: with any, the download is a .zip of the source and the images as files.
+  const downloadTex = async () => {
+    const source = text(props.doc);
+    const keys = texImageKeys(source);
+    if (!keys.length) return download(`${fileName(props.doc.title)}.tex`, source, 'text/x-tex');
+    try {
+      const images = await Promise.all(keys.map((key) => texImageFile(answerImageUrl(key))));
+      const paths = Object.fromEntries(keys.map((key, i) => [key, `images/${key}.${images[i].extension}`]));
+      const { strToU8, zipSync } = await import('fflate');
+      const zip = zipSync({
+        [`${fileName(props.doc.title)}.tex`]: strToU8(texWithImageFiles(source, paths)),
+        ...Object.fromEntries(keys.map((key, i) => [paths[key], images[i].bytes])),
+      });
+      download(`${fileName(props.doc.title)}.zip`, zip as Uint8Array<ArrayBuffer>, 'application/zip');
+    } catch {
+      setNotice('The images could not be read, so nothing was downloaded. Try again.');
+    }
+  };
   // As \bibliography{references} reads it.
   const downloadBib = () => download('references.bib', `${papers().map(bibtexEntry).join('\n\n')}\n`, 'text/x-bibtex');
   const extensions = [citations(openCited)];
@@ -502,11 +521,9 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
             <FileCode2 size={16} stroke-width={1.75} /> <span class="hidden sm:inline">Switch to LaTeX</span>
           </Button>
         </Show>
-        <Show when={!isTex()}>
-          <IconButton label="Add an image (or drop one in)" size="sm" onClick={() => picker.click()}>
-            <ImagePlus size={16} stroke-width={1.75} />
-          </IconButton>
-        </Show>
+        <IconButton label="Add an image (or drop one in)" size="sm" onClick={() => picker.click()}>
+          <ImagePlus size={16} stroke-width={1.75} />
+        </IconButton>
         <IconButton label="History: earlier versions of the text" size="sm" onClick={openHistory}>
           <History size={16} stroke-width={1.75} />
         </IconButton>
@@ -515,7 +532,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
             { label: 'PDF', detail: 'Print or save, citations formatted', icon: FileDown, run: () => void exportPdf(props.doc.title) },
             ...(isTex()
               ? [
-                  { label: 'LaTeX source', detail: `${fileName(props.doc.title)}.tex`, icon: FileCode2, run: downloadTex },
+                  { label: 'LaTeX source', detail: texImageKeys(text(props.doc)).length ? `${fileName(props.doc.title)}.zip, with its images` : `${fileName(props.doc.title)}.tex`, icon: FileCode2, run: () => void downloadTex() },
                   { label: 'Bibliography', detail: 'references.bib', icon: Library, run: downloadBib },
                 ]
               : [{ label: 'Markdown', detail: `${fileName(props.doc.title)}.md`, icon: FileText, run: downloadMd }]),
@@ -565,7 +582,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
             fallback={
               <div class="sticky top-3 mx-auto h-[calc(100dvh-7.5rem)] min-w-0 max-w-[58rem]">
                 <Suspense fallback={<div class="h-40 animate-pulse rounded-xl bg-soft" />}>
-                  <TexDocumentEditor content={() => textOf(id)} onInput={(t) => edit(id, t)} onBlur={saveAll} onView={setView} label={props.doc.title} />
+                  <TexDocumentEditor content={() => textOf(id)} onInput={(t) => edit(id, t)} onBlur={saveAll} onView={setView} uploadImage={(file) => uploadImage(id, file)} onAddImages={(add) => (addImages = add)} label={props.doc.title} />
                 </Suspense>
               </div>
             }

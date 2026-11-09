@@ -67,7 +67,7 @@ const present = (v: string | null | undefined) => (v?.trim() ? v.trim() : undefi
 
 /** How each format is written, said with every read so a client keeps to it. */
 const WRITING = {
-  tex: 'LaTeX source, shown and edited as such in the app. Write and edit it only as LaTeX: \\section{...}, \\textbf{...}, \\emph{...}, itemize and enumerate, \\href{url}{text}, math in $...$ or \\[...\\]. Cite with \\cite{key}, never [@key], and never write Markdown into it.',
+  tex: 'LaTeX source, shown and edited as such in the app. Write and edit it only as LaTeX: \\section{...}, \\textbf{...}, \\emph{...}, itemize and enumerate, \\href{url}{text}, math in $...$ or \\[...\\]. Cite with \\cite{key}, never [@key], and never write Markdown into it. Images the student added are \\includegraphics{answer-image:...}: keep those commands as they are.',
   markdown: 'Markdown: # headings, **bold**, lists, $...$ math. Cite with [@key].',
 };
 
