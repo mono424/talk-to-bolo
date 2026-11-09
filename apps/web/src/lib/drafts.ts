@@ -25,7 +25,7 @@ const REMEMBERED = 30;
 /** The database's refusal of a save built on text that has changed (`document_stale_save`). */
 const STALE_SAVE = 'document_changed_elsewhere';
 /** How long a refused save waits for the text that changed before it goes out regardless. */
-const MERGE_WAIT_MS = 30_000;
+const MERGE_WAIT_MS = 90_000;
 
 /** SHA-256 of a text, as the database computes it. */
 export async function textHash(text: string) {
@@ -110,6 +110,8 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   const unguarded = new Set<string>();
   // Calls of `save` still writing locally: not in the pending count yet.
   let writing = 0;
+  // A save was just refused: which one is not known yet, so nothing goes out.
+  let sorting = false;
   const [progress, bump] = createSignal(0);
 
   const rowOf = (id: string) => opts.rows().find((r) => idString(r.id) === id);
@@ -171,7 +173,7 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
 
   /** Hands what waits to `save`, once nothing is on its way, or at once when the page is going away. */
   const send = (now = false) => {
-    if (!now && (writing > 0 || db.pendingMutationCount > 0)) return;
+    if (!now && (writing > 0 || sorting || db.pendingMutationCount > 0)) return;
     for (const id of [...waiting]) {
       if (theirs.has(id)) continue;
       waiting.delete(id);
@@ -212,6 +214,7 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   const since = Date.now();
   const refused = async () => {
     let other = false;
+    sorting = true;
     for (const row of await client.listFailedMutations()) {
       if (row.failedAt < since) continue;
       if (!row.error.message.includes(STALE_SAVE)) {
@@ -231,15 +234,20 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
         send();
       }, MERGE_WAIT_MS);
     }
+    sorting = false;
     if (other) {
       sent.clear();
       setRejected(true);
     }
+    send();
     check();
   };
   onCleanup(
     client.subscribeToFailedMutations((n) => {
-      if (n > failed) void refused();
+      if (n > failed) {
+        sorting = true;
+        void refused();
+      }
       failed = n;
     }),
   );
