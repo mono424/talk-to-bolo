@@ -5,14 +5,14 @@ import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/
 import { stex } from '@codemirror/legacy-modes/mode/stex';
 import { tags } from '@lezer/highlight';
 import { texCitations } from '../lib/citations';
+import { replacedStretch } from '../lib/drafts';
 
 /**
  * The editor of a LaTeX document (routes/Document.tsx): the source with
  * syntax highlighting and `\cite{` offering the document's papers. Its
  * rendering is a tab of the panel beside it. The text is the
  * page's, saved as you type: it follows changes from elsewhere (another
- * device, ChatGPT) while the editor is not focused. Loaded on demand, with
- * CodeMirror.
+ * device, ChatGPT). Loaded on demand, with CodeMirror.
  */
 
 const highlight = HighlightStyle.define([
@@ -60,12 +60,15 @@ export default function TexDocumentEditor(props: {
       }),
     });
 
-    // The text being written is the writer's until they leave the editor.
+    // While something is being written `content` is that text, so this only
+    // ever brings in a change from elsewhere, also with the cursor in the editor:
+    // left out, the next keystroke would save the old text over that change.
     const reconcile = () => {
-      if (!alive || view.hasFocus) return;
+      if (!alive || view.composing) return;
       const text = props.content();
-      if (view.state.doc.toString() === text) return;
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, annotations: [synced.of(true), Transaction.addToHistory.of(false)] });
+      const doc = view.state.doc.toString();
+      if (doc === text) return;
+      view.dispatch({ changes: replacedStretch(doc, text), annotations: [synced.of(true), Transaction.addToHistory.of(false)] });
     };
     createEffect(on(props.content, () => queueMicrotask(reconcile), { defer: true }));
 

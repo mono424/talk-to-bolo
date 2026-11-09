@@ -147,14 +147,17 @@ export function VersionView(props: {
     onCleanup(() => window.removeEventListener('keydown', key));
   });
 
+  // Apart from `error`: the version is read again with every save, which clears that one.
+  const [restoreError, setRestoreError] = createSignal<string | null>(null);
   const restore = async () => {
     const v = version();
     if (!v) return;
     setRestoring(true);
+    setRestoreError(null);
     try {
       await props.onRestore(v);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'This version could not be restored.');
+      setRestoreError(err instanceof Error ? err.message : 'This version could not be restored.');
       setRestoring(false);
     }
   };
@@ -201,8 +204,8 @@ export function VersionView(props: {
         </IconButton>
       </div>
 
-      <Show when={error()}>
-        <p class="mt-3 rounded-xl bg-soft px-3.5 py-2 text-[13px] text-muted">{error()}</p>
+      <Show when={restoreError() ?? error()}>
+        <p role="alert" class="mt-3 rounded-xl bg-soft px-3.5 py-2 text-[13px] text-muted">{restoreError() ?? error()}</p>
       </Show>
       <Show when={version()} fallback={<Show when={!error()}><div class="mt-6 h-40 animate-pulse rounded-xl bg-soft" /></Show>}>
         <div class="pb-24 pt-6">

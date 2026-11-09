@@ -23,7 +23,7 @@ import { latexLayout, latexToMarkdown } from '../../../../shared/latex';
 import { lectureMarkdown } from '../../../../shared/lecture';
 import { bibtexEntry, countCitations, draftMarkdown, makeCiteKey, texCitesToMarkdown } from '../../../../shared/references';
 import { createDrafts } from '../lib/drafts';
-import { idKey, idString, newId, whenSynced } from '../lib/ids';
+import { idKey, idString, newId } from '../lib/ids';
 import { renderMarkdown } from '../lib/markdown';
 import { exportPdf } from '../lib/print';
 import { firstRow, qDocument, qDocumentList, qDocumentVersions, qMaterials, qPapers } from '../lib/query';
@@ -122,7 +122,8 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     onCleanup(db.subscribeToPendingMutations((n) => setPending(n)));
   });
 
-  const { text, textOf, edit, saveAll, unsaved } = createDrafts({
+  const { text, textOf, edit, hold, saveAll, whenSaved, unsaved, rejected } = createDrafts({
+    db,
     rows: () => [props.doc],
     save: (row, content) => db.update('document', row, { content }),
   });
@@ -265,10 +266,9 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     if (!m) return;
     const untouched = text(props.doc).trim() === draftMarkdown(lectureMarkdown('tex', m.content)).trim();
     if (!untouched && !confirm(`Switch to LaTeX? The text becomes the LaTeX source of “${m.title}” again, so what you changed here since is replaced. The papers stay.`)) return;
-    edit(id, m.content);
+    hold(id, m.content);
     // Format and text at once: one version.
     await db.update('document', id, { format: 'tex', content: m.content });
-    saveAll();
   };
   const paperOf = (material: string) => props.papers.find((p) => p.material && idString(p.material) === material);
   const addAsPaper = (material: string) =>
@@ -320,14 +320,12 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     if (!wide()) setShowPapers(false);
   };
   const restore = async ({ n, content, format }: DocumentVersion) => {
-    saveAll();
-    await whenSynced(db);
+    // A save still on its way would land after this and bring the old text back.
+    await whenSaved();
     const { version, status } = await restoreDocumentVersion(db, id, n);
-    // At once, not when the row syncs: what is typed until then would save over it.
-    // The database already holds this text, so it makes no version of its own.
-    edit(id, content);
-    await db.update('document', id, { format, content });
-    saveAll();
+    // In the editor at once, not when the row syncs: what is typed until then would save over it.
+    hold(id, content);
+    if (format !== props.doc.format) await db.update('document', id, { format });
     setSelected(null);
     setNotice(status === 'restored' ? `Version ${n} is back, as version ${version}. Version ${version - 1} still has the text from before.` : `The document already holds the text of version ${n}.`);
     setTimeout(() => setNotice(null), 8000);
@@ -478,7 +476,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
           <span class="text-faint">/</span>
           <EditableTitle value={props.doc.title} onSave={(title) => void db.update('document', id, { title })} />
           <span class="hidden shrink-0 text-[12px] text-muted sm:inline">
-            {pending() > 0 || unsaved() ? 'Saving…' : `${words()} ${words() === 1 ? 'word' : 'words'} · saved`}
+            {rejected() ? 'Not saved yet. Type anything to try again.' : pending() > 0 || unsaved() ? 'Saving…' : `${words()} ${words() === 1 ? 'word' : 'words'} · saved`}
           </span>
         </div>
       </HeaderTitle>

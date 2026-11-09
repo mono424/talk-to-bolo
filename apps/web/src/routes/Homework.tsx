@@ -155,7 +155,8 @@ function Workspace(props: { id: string; title: string; answers: AnswerRow[]; she
     onCleanup(db.subscribeToPendingMutations((n) => setPending(n)));
   });
 
-  const { text, textOf, edit, saveAll, unsaved } = createDrafts({
+  const { text, textOf, edit, saveAll, unsaved, rejected } = createDrafts({
+    db,
     rows: () => props.answers,
     save: (id, content) => db.update('answer', id, { content }),
   });
@@ -271,7 +272,7 @@ function Workspace(props: { id: string; title: string; answers: AnswerRow[]; she
           <span class="text-faint">/</span>
           <h1 class="min-w-0 truncate text-[16px] font-semibold tracking-tight sm:text-[17px]">{props.title}</h1>
           <span class="hidden shrink-0 text-[12px] text-muted sm:inline">
-            {pending() > 0 || unsaved() ? 'Saving…' : `${answered()} of ${props.answers.length} answered · saved`}
+            {rejected() ? 'Not saved yet. Type anything to try again.' : pending() > 0 || unsaved() ? 'Saving…' : `${answered()} of ${props.answers.length} answered · saved`}
           </span>
         </div>
       </HeaderTitle>

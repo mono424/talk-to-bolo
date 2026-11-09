@@ -17,6 +17,7 @@ import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import type { MarkdownConfig } from '@lezer/markdown';
 import { defaultKeymap, history, historyKeymap, indentLess, indentMore } from '@codemirror/commands';
+import { replacedStretch } from '../lib/drafts';
 import { isImage } from '../lib/images';
 import { focusField, liveMarkdown } from '../lib/live-markdown';
 
@@ -392,17 +393,17 @@ export default function Editor(props: Props) {
     };
 
     const reconcile = () => {
-      if (!alive) return;
+      if (!alive || view.composing) return;
       const state = view.state;
       const layout = state.field(layoutField);
-      // The part being written is the writer's until they leave it.
-      const editing = view.hasFocus ? partAt(layout, state.selection.main.head) : -1;
+      // While a part is being written `content` is that text, so this only
+      // ever brings in a change from elsewhere, also with the cursor in that part.
       const changes: ChangeSpec[] = [];
       layout.parts.forEach((part, i) => {
-        if (i === editing) return;
         const text = props.content(part.id);
         const { from, to } = bounds(layout, state.doc.length, i);
-        if (state.sliceDoc(from, to) !== text) changes.push({ from, to, insert: text });
+        const held = state.sliceDoc(from, to);
+        if (held !== text) changes.push(replacedStretch(held, text, from));
       });
       if (changes.length) view.dispatch({ changes, annotations: [synced.of(true), Transaction.addToHistory.of(false)] });
     };
