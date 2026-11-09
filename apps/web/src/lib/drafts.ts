@@ -61,6 +61,21 @@ async function dropSupersededSaves(db: Db) {
   }
 }
 
+/** Of `texts`, the one sharing the most with `text` at both ends: what it was most likely built on. */
+function closest(texts: readonly string[], text: string): string | undefined {
+  let best: string | undefined;
+  let score = -1;
+  for (const candidate of texts) {
+    const { from, to } = replacedStretch(candidate, text);
+    const shared = from + candidate.length - to;
+    if (shared >= score) {
+      best = candidate;
+      score = shared;
+    }
+  }
+  return best;
+}
+
 /** `mine`'s changes since `base`, made to `theirs`. Null where both changed the same lines. */
 function mergeChanges(base: string, mine: string, theirs: string): string | null {
   const merged = applyPatch(theirs, structuredPatch('', '', base, mine, '', '', { context: 2 }));
@@ -112,10 +127,7 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
     ours.set(id, list);
   };
 
-  /**
-   * Text from elsewhere in the row: a saved draft makes way for it, one still
-   * being written takes it in, so that neither side loses its changes.
-   */
+  /** Text from elsewhere in the row: taken in, keeping what was written here, so that neither side loses its changes. */
   const check = () => {
     if (rejected()) return;
     const busy = writing > 0 || db.pendingMutationCount > 0;
@@ -126,21 +138,29 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
       if (row && (held === value || ours.get(id)?.includes(held))) continue;
       theirs.delete(id);
       const settled = !busy && !timers.has(id) && !waiting.has(id) && sent.get(id) === value;
-      if (!row || settled) {
-        if (!settled) continue;
+      const release = () => {
         sent.delete(id);
         ours.delete(id);
         seen.delete(id);
         setDrafts(({ [id]: _released, ...rest }) => rest);
+      };
+      if (!row) {
+        if (settled) release();
         continue;
       }
-      const combined = mergeChanges(sent.get(id) ?? seen.get(id) ?? held, value, held);
+      // That text may be built on an older one than the last saved here, so what
+      // this page wrote since then is put back, saved or not.
+      const combined = mergeChanges(closest(ours.get(id) ?? [], held) ?? seen.get(id) ?? held, value, held);
       remember(id, held);
       seen.set(id, held);
+      if (combined === held) {
+        if (settled) release();
+        else hold(id, held);
+        continue;
+      }
       sent.delete(id);
       if (combined === null) opts.onOverlap?.();
-      if (combined === held) hold(id, held);
-      else edit(id, combined ?? value);
+      edit(id, combined ?? value);
     }
   };
   createEffect(() => {
