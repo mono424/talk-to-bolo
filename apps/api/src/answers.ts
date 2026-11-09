@@ -11,6 +11,13 @@ import { BadRequest, NotFound, Surreal, recordId, toBase64 } from './surreal';
 
 export const MAX_ANSWER_IMAGE_BYTES = 10 * 1024 * 1024;
 
+// In a text these are `answer-image:<id>`, in parentheses in Markdown and in
+// braces in LaTeX. AI clients see the image's address and may write either back.
+export const imagesOutside = (text: string, origin: string) =>
+  text.replace(/([({])answer-image:([A-Za-z0-9_-]+)(?=[)}])/g, (_m, open: string, id: string) => `${open}${origin}/answer-images/${id}`);
+export const imagesInside = (text: string, origin: string) =>
+  text.replaceAll(`(${origin}/answer-images/`, '(answer-image:').replaceAll(`{${origin}/answer-images/`, '{answer-image:');
+
 const TYPES: { mime: string; magic: (b: Uint8Array) => boolean }[] = [
   { mime: 'image/png', magic: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
   { mime: 'image/jpeg', magic: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },

@@ -1,3 +1,4 @@
+import { addedImage } from '../../../shared/latex';
 import { lectureMarkdown } from '../../../shared/lecture';
 import {
   bibtexEntry,
@@ -10,6 +11,8 @@ import {
   matchMaterials,
   texCitesToMarkdown,
 } from '../../../shared/references';
+import { storeAnswerImage } from './answers';
+import type { Env } from './env';
 import { appendText, applyEdits, assertStored, type AnswerEdit, type AnswerText } from './homework';
 import { BadRequest, NotFound, recordId, retryConflicts, type Surreal } from './surreal';
 
@@ -67,7 +70,7 @@ const present = (v: string | null | undefined) => (v?.trim() ? v.trim() : undefi
 
 /** How each format is written, said with every read so a client keeps to it. */
 const WRITING = {
-  tex: 'LaTeX source, shown and edited as such in the app. Write and edit it only as LaTeX: \\section{...}, \\textbf{...}, \\emph{...}, itemize and enumerate, \\href{url}{text}, math in $...$ or \\[...\\]. Cite with \\cite{key}, never [@key], and never write Markdown into it. Images the student added are \\includegraphics{answer-image:...}: keep those commands as they are.',
+  tex: 'LaTeX source, shown and edited as such in the app. Write and edit it only as LaTeX: \\section{...}, \\textbf{...}, \\emph{...}, itemize and enumerate, \\href{url}{text}, math in $...$ or \\[...\\]. Cite with \\cite{key}, never [@key], and never write Markdown into it. Images are \\includegraphics{address}: keep those commands as they are.',
   markdown: 'Markdown: # headings, **bold**, lists, $...$ math. Cite with [@key].',
 };
 
@@ -95,6 +98,13 @@ async function loadDocument(user: Surreal, documentId: string) {
   ) as [DocumentRow | null, PaperRow[], number | null | undefined];
   if (!doc) throw new NotFound('Document not found.');
   return { doc, papers: papers ?? [], version: version ?? undefined };
+}
+
+/** Stores an image for a document and says the line that shows it, for the client to write where it goes. */
+export async function addDocumentImage(env: Env, user: Surreal, userId: string, text: AnswerText, documentId: string, body: ReadableStream<Uint8Array> | null) {
+  const { doc } = await loadDocument(user, documentId);
+  const image = await storeAnswerImage(env, userId, 'document', documentId, body);
+  return { document: doc.id, format: doc.format ?? 'markdown', image, write_as: text.external(addedImage(key(image), doc.format)) };
 }
 
 /** A document with its text and its papers, each with the citation to write for it. */

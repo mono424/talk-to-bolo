@@ -20,7 +20,7 @@ import {
   printCitations,
   updatePapers,
 } from '../lib/citations';
-import { latexLayout, latexToMarkdown, texImageKeys, texWithImageFiles } from '../../../../shared/latex';
+import { addedImage, latexLayout, latexToMarkdown, texImageKeys, texWithImageFiles } from '../../../../shared/latex';
 import { lectureMarkdown } from '../../../../shared/lecture';
 import { bibtexEntry, countCitations, draftMarkdown, makeCiteKey, texCitesToMarkdown } from '../../../../shared/references';
 import { createDrafts, textHash } from '../lib/drafts';
@@ -137,7 +137,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     try {
       const { id: image } = await uploadDocumentImage(db, id, file);
       setNotice(null);
-      return isTex() ? `\\includegraphics[width=\\linewidth]{answer-image:${idKey(image)}}` : `![](answer-image:${idKey(image)})`;
+      return addedImage(idKey(image), props.doc.format);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'The image could not be added.');
       return null;

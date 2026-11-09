@@ -301,6 +301,12 @@ downloads as a `.zip`: the `.tex` pointing at `images/<key>.png` or `.jpg`, the
 images (GIF and WebP redrawn as PNG for pdfLaTeX), and `graphicx` loaded if the
 source does not load it. LaTeX materials have no image upload.
 
+Over MCP a document's images read as their addresses, `\includegraphics{<api>/answer-images/<key>}`
+or `![](<api>/answer-images/<key>)`, and go back to `answer-image:<key>` on every
+write (`imagesOutside` and `imagesInside` in `apps/api/src/answers.ts`).
+`add_document_image` stores a new one from an https URL or base64 and answers
+the line to write with `edit_document` or `write_document`.
+
 ## Document versions
 
 Every change to a document's text is kept, however it was written: the

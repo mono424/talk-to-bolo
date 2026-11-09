@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { bibtexEntry } from '../../../shared/references.ts';
+import { imagesInside, imagesOutside } from '../src/answers.ts';
 import { updateDocument, writeDocument } from '../src/documents.ts';
 import { writeAnswers } from '../src/homework.ts';
 import type { Surreal } from '../src/surreal.ts';
@@ -24,6 +25,20 @@ function fakeUser(content: string, stored: (wanted: string) => string[]) {
 // What a `@crdt` field's VALUE guard does: the row comes back with the old text.
 const keepsOldValue = () => ['old'];
 const storesIt = (wanted: string) => [wanted];
+
+test('a LaTeX image goes out as its address and comes back as its app reference', async () => {
+  const origin = 'https://api.example';
+  const text = { external: (md: string) => imagesOutside(md, origin), internal: (md: string) => imagesInside(md, origin) };
+  const inside = String.raw`\includegraphics[width=\linewidth]{answer-image:ka} and ![](answer-image:kb)`;
+  const outside = String.raw`\includegraphics[width=\linewidth]{https://api.example/answer-images/ka} and ![](https://api.example/answer-images/kb)`;
+  assert.equal(text.external(inside), outside);
+  assert.equal(text.internal(outside), inside);
+
+  const tex = String.raw`\includegraphics{https://api.example/answer-images/ka}`;
+  const saved: string[] = [];
+  await writeDocument(fakeUser('old', (wanted) => (saved.push(wanted), [wanted])), text, 'document:d1', tex);
+  assert.deepEqual(saved, [String.raw`\includegraphics{answer-image:ka}`]);
+});
 
 test('write_document reports saved only when the text was stored', async () => {
   const result = await writeDocument(fakeUser('old', storesIt), plain, 'document:d1', 'new');

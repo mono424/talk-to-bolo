@@ -987,6 +987,10 @@ export function latexLayout(tex: string): { columns: 1 | 2; ownHead: boolean } {
   };
 }
 
+/** How a document's text shows an image added to it. */
+export const addedImage = (key: string, format: string | null | undefined) =>
+  format === 'tex' ? `\\includegraphics[width=\\linewidth]{answer-image:${key}}` : `![](answer-image:${key})`;
+
 const ADDED_IMAGE = /(\\includegraphics\s*(?:\[[^\]]*\])?\s*\{)\s*answer-image:([A-Za-z0-9_-]+)\s*\}/g;
 
 /** The images added in the app that a LaTeX source shows, each once. */

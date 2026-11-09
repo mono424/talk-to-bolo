@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import type { Env } from '../src/env.ts';
+import { loadAnswerImage } from '../src/answers.ts';
 import { sha256Hex } from '../src/auth.ts';
 import { handleMcp } from '../src/mcp.ts';
 import { ensureServerSchema } from '../src/service.ts';
@@ -229,6 +230,30 @@ test('studying over MCP keeps lecture boundaries, writes progress forward and lo
       assert.equal(await db.query('RETURN (SELECT VALUE assistant FROM ONLY type::record($id))', { id: savedId }), 'ChatGPT on my phone');
       const profile = (await rpc('tools/call', { name: 'get_profile', arguments: {} })).result as { content: { text: string }[] };
       assert.equal(JSON.parse(profile.content[0].text).email, 'student@example.test');
+
+      // An image in a LaTeX document: stored, written where it goes, read back as its address.
+      await db.query(`DEFINE BUCKET IF NOT EXISTS materials BACKEND 'memory' PERMISSIONS NONE;
+        CREATE document:foreign CONTENT {owner:user:u2,course:course:c2,title:'Theirs',format:'tex',content:'x'};`);
+      const call = async (name: string, args: Record<string, unknown>) => {
+        const result = (await rpc('tools/call', { name, arguments: args })).result as { content: { text: string }[]; isError?: boolean };
+        assert.ok(!result.isError, result.content[0].text);
+        return JSON.parse(result.content[0].text);
+      };
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64');
+      const created = await call('create_document', { course_id: 'course:c1', title: 'With a figure', format: 'tex', content: '\\documentclass{article}\n\\begin{document}\nText.\n\\end{document}\n' });
+      assert.match(byName.get('add_document_image')?.description ?? '', /LaTeX/);
+      const added = await call('add_document_image', { document_id: created.id, base64: png });
+      const imageKey = added.image.slice(added.image.indexOf(':') + 1);
+      assert.equal(added.write_as, `\\includegraphics[width=\\linewidth]{${origin}/answer-images/${imageKey}}`);
+      await call('edit_document', { document_id: created.id, edits: [{ old_text: 'Text.', new_text: `Text.\n${added.write_as}` }] });
+      const stored = await db.query<string>('RETURN (SELECT VALUE content FROM ONLY type::record($id))', { id: created.id });
+      assert.ok(stored.includes(`\\includegraphics[width=\\linewidth]{answer-image:${imageKey}}`), stored);
+      assert.ok((await call('get_document', { document_id: created.id })).content.includes(added.write_as));
+      assert.equal((await loadAnswerImage(env, added.image))?.mime, 'image/png');
+      const theirs = (await rpc('tools/call', { name: 'add_document_image', arguments: { document_id: 'document:foreign', base64: png } })).result as { isError: boolean };
+      assert.equal(theirs.isError, true, "Another student's document takes no image.");
+      const notImage = (await rpc('tools/call', { name: 'add_document_image', arguments: { document_id: created.id, base64: Buffer.from('not an image').toString('base64') } })).result as { isError: boolean };
+      assert.equal(notImage.isError, true, 'Only image files are kept.');
     });
   } finally {
     await db.query(`REMOVE NAMESPACE ${namespace};`);
