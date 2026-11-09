@@ -10,10 +10,14 @@ export const dbConfig: SyncedDbConfig<typeof schema> = {
   // SQLite-WASM in a worker, persisted in OPFS, one store shared by every tab.
   localEngine: 'sqlite',
   sharedTabs: true,
+  // A write can take 20 seconds on staging. A batch past its deadline is sent
+  // again from the start and puts its older text back, so it needs room to finish.
+  pushTimeoutMs: 120_000,
   database: {
     namespace: import.meta.env.VITE_DB_NS || 'main',
     database: import.meta.env.VITE_DB_DB || 'studycall',
     endpoint: import.meta.env.VITE_DB_ENDPOINT || 'ws://localhost:8666/rpc',
     store: 'indexeddb',
+    queryTimeoutMs: 130_000,
   },
 };
