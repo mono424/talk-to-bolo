@@ -126,6 +126,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     db,
     rows: () => [props.doc],
     save: (row, content) => db.update('document', row, { content }),
+    onOverlap: () => setNotice('This text was also changed elsewhere, in the same place you are writing. Your text is kept, the other one is in History.'),
   });
 
   // The editor shows an image where it goes while it uploads; only a failure is said here.

@@ -1,4 +1,5 @@
 import { RecordId } from '@spooky-sync/client-solid';
+import { applyPatch, structuredPatch } from 'diff';
 import { createEffect, createSignal, onCleanup } from 'solid-js';
 import { idString } from './ids';
 import type { Db } from './query';
@@ -50,10 +51,18 @@ async function dropSupersededSaves(db: Db) {
   }
 }
 
+/** `mine`'s changes since `base`, made to `theirs`. Null where both changed the same lines. */
+function mergeChanges(base: string, mine: string, theirs: string): string | null {
+  const merged = applyPatch(theirs, structuredPatch('', '', base, mine, '', '', { context: 2 }));
+  return merged === false ? null : merged;
+}
+
 export function createDrafts<R extends { id: unknown; content?: string | null }>(opts: {
   db: Db;
   rows: () => readonly R[];
   save: (id: string, value: string) => Promise<unknown>;
+  /** The text changed elsewhere in the same place as what is being written, which is kept. */
+  onOverlap?: () => void;
 }) {
   const { db } = opts;
   void dropSupersededSaves(db);
@@ -66,6 +75,8 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   const sent = new Map<string, string>();
   // The texts this page has written or built on, per row.
   const ours = new Map<string, string[]>();
+  // The text a draft started from, until it has been saved.
+  const seen = new Map<string, string>();
   // Calls of `save` still writing locally: not in the pending count yet.
   let writing = 0;
   const [progress, bump] = createSignal(0);
@@ -85,17 +96,32 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
     ours.set(id, list);
   };
 
-  /** Lets go of a saved draft once the row holds text from elsewhere. */
+  /**
+   * Text from elsewhere in the row: a saved draft makes way for it, one still
+   * being written takes it in, so that neither side loses its changes.
+   */
   const check = () => {
-    if (rejected() || writing > 0 || db.pendingMutationCount > 0) return;
+    if (rejected()) return;
+    const busy = writing > 0 || db.pendingMutationCount > 0;
     for (const [id, value] of Object.entries(drafts())) {
-      if (timers.has(id) || waiting.has(id) || sent.get(id) !== value) continue;
       const row = rowOf(id);
       const held = row?.content ?? '';
       if (row && (held === value || ours.get(id)?.includes(held))) continue;
-      sent.delete(id);
-      ours.delete(id);
-      setDrafts(({ [id]: _released, ...rest }) => rest);
+      const settled = !busy && !timers.has(id) && !waiting.has(id) && sent.get(id) === value;
+      if (!row || settled) {
+        if (!settled) continue;
+        sent.delete(id);
+        ours.delete(id);
+        seen.delete(id);
+        setDrafts(({ [id]: _released, ...rest }) => rest);
+        continue;
+      }
+      const combined = mergeChanges(sent.get(id) ?? seen.get(id) ?? held, value, held);
+      remember(id, held);
+      seen.set(id, held);
+      if (combined === null) opts.onOverlap?.();
+      else if (combined === held) hold(id, held);
+      else edit(id, combined);
     }
   };
   createEffect(() => {
@@ -183,6 +209,7 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
     setRejected(false);
     // What the row holds now is what this edit builds on.
     remember(id, rowOf(id)?.content ?? '');
+    if (drafts()[id] === undefined) seen.set(id, rowOf(id)?.content ?? '');
     setDrafts((d) => ({ ...d, [id]: value }));
     clearTimeout(timers.get(id));
     timers.set(

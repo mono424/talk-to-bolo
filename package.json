@@ -25,6 +25,9 @@
       "esbuild",
       "workerd",
       "@spooky-sync/cli"
-    ]
+    ],
+    "patchedDependencies": {
+      "@spooky-sync/core@0.0.1-canary.366": "patches/@spooky-sync__core@0.0.1-canary.366.patch"
+    }
   }
 }
