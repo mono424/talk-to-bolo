@@ -168,6 +168,13 @@ app.get('/api/documents/:id/versions/:n', async (c) => {
   return c.json(await readVersion(Surreal.as(c.env, c.var.caller.token), c.req.param('id'), Number(c.req.param('n'))));
 });
 
+// A document's text as it stands now, for the editor to merge with after a save was refused.
+app.get('/api/documents/:id/text', async (c) => {
+  const id = recordId('document', c.req.param('id'));
+  const content = await Surreal.as(c.env, c.var.caller.token).query<string>('RETURN (SELECT VALUE content FROM ONLY type::record($id));', { id });
+  return c.json({ content });
+});
+
 // Goes back to a version, as a new version.
 app.post('/api/documents/:id/versions/:n/restore', async (c) => {
   const { userId, token } = c.var.caller;

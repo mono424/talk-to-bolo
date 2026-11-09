@@ -5,7 +5,7 @@ import { type GetTable, type TableModel, useDb, useQuery } from '@spooky-sync/cl
 import type { EditorView } from '@codemirror/view';
 import { Download, FileCode2, FileDown, FileText, History, ImagePlus, Library, PanelRight, Plus, Trash2, X } from 'lucide-solid';
 import type { schema } from '../schema.gen';
-import { type DocumentVersion, restoreDocumentVersion, uploadDocumentImage } from '../lib/api';
+import { type DocumentVersion, documentText, restoreDocumentVersion, uploadDocumentImage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import {
   authorList,
@@ -127,6 +127,7 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
     rows: () => [props.doc],
     // The database refuses a save whose text changed meanwhile (`document_stale_save`).
     save: async (row, content, parent) => db.update('document', row, parent === undefined ? { content } : { content, base: await textHash(parent) }),
+    current: async (row) => (await documentText(db, row)).content,
     onOverlap: () => setNotice('This text was also changed elsewhere, in the same place you are writing. Your text is kept, the other one is in History.'),
   });
 

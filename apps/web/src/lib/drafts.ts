@@ -24,8 +24,6 @@ const SAVE_DELAY_MS = 500;
 const REMEMBERED = 30;
 /** The database's refusal of a save built on text that has changed (`document_stale_save`). */
 const STALE_SAVE = 'document_changed_elsewhere';
-/** How long a refused save waits for the text that changed before it goes out regardless. */
-const MERGE_WAIT_MS = 90_000;
 
 /** SHA-256 of a text, as the database computes it. */
 export async function textHash(text: string) {
@@ -87,6 +85,8 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   rows: () => readonly R[];
   /** `parent` is the text this one was built on, when that is known. */
   save: (id: string, value: string, parent?: string) => Promise<unknown>;
+  /** The text as the database holds it right now, to merge with after a save was refused. */
+  current?: (id: string) => Promise<string>;
   /** The text changed elsewhere in the same place as what is being written, which is kept. */
   onOverlap?: () => void;
 }) {
@@ -103,11 +103,8 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   const ours = new Map<string, string[]>();
   // The text a draft started from, until it has been saved.
   const seen = new Map<string, string>();
-  // What the last save was built on, to go back to if it is refused.
-  const sentFrom = new Map<string, string | undefined>();
-  // Refused saves waiting for the text that changed, and those that gave up on it.
-  const theirs = new Set<string>();
-  const unguarded = new Set<string>();
+  // Saves that were refused, while the text that changed is being read.
+  const rebasing = new Set<string>();
   // Calls of `save` still writing locally: not in the pending count yet.
   let writing = 0;
   // A save was just refused: which one is not known yet, so nothing goes out.
@@ -129,40 +126,45 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
     ours.set(id, list);
   };
 
-  /** Text from elsewhere in the row: taken in, keeping what was written here, so that neither side loses its changes. */
+  const release = (id: string) => {
+    sent.delete(id);
+    ours.delete(id);
+    seen.delete(id);
+    setDrafts(({ [id]: _released, ...rest }) => rest);
+  };
+
+  /**
+   * Takes in text from elsewhere, keeping what was written here. It may be built
+   * on an older text than the last one saved here, so what this page wrote since
+   * then is put back, saved or not.
+   */
+  const takeIn = (id: string, held: string, settled = false) => {
+    const value = drafts()[id];
+    if (value === undefined) return;
+    const combined = mergeChanges(closest(ours.get(id) ?? [], held) ?? seen.get(id) ?? held, value, held);
+    remember(id, held);
+    seen.set(id, held);
+    sent.delete(id);
+    if (combined === held) {
+      if (settled) release(id);
+      else hold(id, held);
+      return;
+    }
+    if (combined === null) opts.onOverlap?.();
+    edit(id, combined ?? value);
+  };
+
   const check = () => {
     if (rejected()) return;
     const busy = writing > 0 || db.pendingMutationCount > 0;
     for (const [id, value] of Object.entries(drafts())) {
+      if (rebasing.has(id)) continue;
       const row = rowOf(id);
       const held = row?.content ?? '';
-      if (row && held === value && theirs.delete(id)) sent.set(id, value);
       if (row && (held === value || ours.get(id)?.includes(held))) continue;
-      theirs.delete(id);
       const settled = !busy && !timers.has(id) && !waiting.has(id) && sent.get(id) === value;
-      const release = () => {
-        sent.delete(id);
-        ours.delete(id);
-        seen.delete(id);
-        setDrafts(({ [id]: _released, ...rest }) => rest);
-      };
-      if (!row) {
-        if (settled) release();
-        continue;
-      }
-      // That text may be built on an older one than the last saved here, so what
-      // this page wrote since then is put back, saved or not.
-      const combined = mergeChanges(closest(ours.get(id) ?? [], held) ?? seen.get(id) ?? held, value, held);
-      remember(id, held);
-      seen.set(id, held);
-      if (combined === held) {
-        if (settled) release();
-        else hold(id, held);
-        continue;
-      }
-      sent.delete(id);
-      if (combined === null) opts.onOverlap?.();
-      edit(id, combined ?? value);
+      if (row) takeIn(id, held, settled);
+      else if (settled) release(id);
     }
   };
   createEffect(() => {
@@ -175,12 +177,11 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   const send = (now = false) => {
     if (!now && (writing > 0 || sorting || db.pendingMutationCount > 0)) return;
     for (const id of [...waiting]) {
-      if (theirs.has(id)) continue;
+      if (rebasing.has(id)) continue;
       waiting.delete(id);
       const value = drafts()[id];
       if (value === undefined || value === sent.get(id)) continue;
-      const parent = unguarded.delete(id) ? undefined : (sent.get(id) ?? seen.get(id));
-      sentFrom.set(id, parent);
+      const parent = sent.get(id) ?? seen.get(id);
       sent.set(id, value);
       remember(id, value);
       bump((n) => n + 1);
@@ -200,15 +201,28 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
     }
   };
 
-  onCleanup(
-    db.subscribeToPendingMutations(() => {
-      send();
-      check();
-    }),
-  );
+  /** Reads the text that changed and saves again on top of it. Never saves without having seen it. */
+  const rebase = async (id: string) => {
+    if (rebasing.has(id) || !opts.current) return;
+    rebasing.add(id);
+    waiting.add(id);
+    bump((n) => n + 1);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const current = await opts.current(id);
+        rebasing.delete(id);
+        takeIn(id, current);
+        send();
+        return;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(15_000, 1000 * 2 ** attempt)));
+      }
+    }
+  };
 
   // A save the database refused is taken back from the row. The text stays in
-  // the editor and goes out again with the next edit.
+  // the editor. One built on outdated text is merged and saved again, any other
+  // goes out again with the next edit.
   const client = db.getSp00ky();
   let failed = client.failedMutationCount;
   const since = Date.now();
@@ -221,18 +235,8 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
         other = true;
         continue;
       }
-      // The text changed elsewhere: wait for it and merge, then save again.
       void client.discardFailedMutation(row.id);
-      const id = row.recordId;
-      if (sent.has(id)) seen.set(id, sentFrom.get(id) ?? seen.get(id) ?? '');
-      sent.delete(id);
-      theirs.add(id);
-      waiting.add(id);
-      setTimeout(() => {
-        if (!theirs.delete(id)) return;
-        unguarded.add(id);
-        send();
-      }, MERGE_WAIT_MS);
+      void rebase(row.recordId);
     }
     sorting = false;
     if (other) {
@@ -244,11 +248,17 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   };
   onCleanup(
     client.subscribeToFailedMutations((n) => {
-      if (n > failed) {
-        sorting = true;
-        void refused();
-      }
+      if (n > failed) void refused();
       failed = n;
+    }),
+  );
+
+  onCleanup(
+    db.subscribeToPendingMutations(() => {
+      // A refusal is announced after the queue empties: the next save must not overtake it.
+      if (client.failedMutationCount > failed) sorting = true;
+      send();
+      check();
     }),
   );
 
@@ -313,7 +323,7 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   const whenSaved = async (timeoutMs = 120_000) => {
     saveAll();
     const deadline = Date.now() + timeoutMs;
-    while (waiting.size > 0 || writing > 0 || db.pendingMutationCount > 0) {
+    while (waiting.size > 0 || writing > 0 || rebasing.size > 0 || sorting || db.pendingMutationCount > 0) {
       if (Date.now() > deadline) throw new Error('Your latest changes are still being saved. Try again in a moment.');
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -322,7 +332,7 @@ export function createDrafts<R extends { id: unknown; content?: string | null }>
   /** Some text has not gone out yet. */
   const unsaved = () => {
     progress();
-    return Object.entries(drafts()).some(([id, value]) => timers.has(id) || waiting.has(id) || sent.get(id) !== value);
+    return Object.entries(drafts()).some(([id, value]) => timers.has(id) || waiting.has(id) || rebasing.has(id) || sent.get(id) !== value);
   };
 
   return { text, textOf, edit, hold, saveAll, whenSaved, unsaved, rejected };

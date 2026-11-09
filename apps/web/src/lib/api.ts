@@ -292,6 +292,10 @@ export interface DocumentVersion {
 export const documentVersion = (db: Db, documentId: string, n: number) =>
   api<DocumentVersion>(db, `/api/documents/${encodeURIComponent(documentId)}/versions/${n}`);
 
+/** A document's text as the database holds it right now. */
+export const documentText = (db: Db, documentId: string) =>
+  api<{ content: string }>(db, `/api/documents/${encodeURIComponent(documentId)}/text`);
+
 /** Goes back to a version, as a new version. Save the editor's text first: see whenSynced. */
 export const restoreDocumentVersion = (db: Db, documentId: string, n: number) =>
   api<{ status: 'restored' | 'unchanged'; version: number }>(db, `/api/documents/${encodeURIComponent(documentId)}/versions/${n}/restore`, { method: 'POST' });
