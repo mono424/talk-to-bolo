@@ -384,6 +384,10 @@ DEFINE FIELD OVERWRITE source ON TABLE document TYPE option<record<material>>;
 DEFINE FIELD OVERWRITE format ON TABLE document TYPE string DEFAULT 'markdown'
   ASSERT $value IN ['markdown', 'tex'];
 DEFINE FIELD OVERWRITE content ON TABLE document TYPE string;
+-- What a save from the editor was built on: the SHA-256 of the text it started
+-- from. The `document_stale_save` event (apps/api/src/server-schema.surql) refuses
+-- a save whose text has changed meanwhile.
+DEFINE FIELD OVERWRITE base ON TABLE document TYPE option<string>;
 -- How citations print: (Author, 2024) or [1].
 DEFINE FIELD OVERWRITE cite_style ON TABLE document TYPE string DEFAULT 'author-year'
   ASSERT $value IN ['author-year', 'numeric'];

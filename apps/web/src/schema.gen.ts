@@ -294,6 +294,7 @@ export const schema = {
          * Record ID. Pass the full `'<table>:<id>'` string when reading or writing.
          */
         id: { type: 'string' as const, recordId: true, optional: false },
+        base: { type: 'string' as const, optional: true },
         cite_style: { type: 'string' as const, optional: false },
         content: { type: 'string' as const, optional: false },
         /**
@@ -1759,6 +1760,10 @@ DEFINE FIELD OVERWRITE source ON TABLE document TYPE option<record<material>>;
 -- LaTeX source, citing \`\\cite{key}\`. Pasted images are \`answer-image:<id>\`.
 DEFINE FIELD OVERWRITE format ON TABLE document TYPE option<string> DEFAULT 'markdown' ASSERT $value IN ['markdown', 'tex'];
 DEFINE FIELD OVERWRITE content ON TABLE document TYPE option<string>;
+-- What a save from the editor was built on: the SHA-256 of the text it started
+-- from. The \`document_stale_save\` event (apps/api/src/server-schema.surql) refuses
+-- a save whose text has changed meanwhile.
+DEFINE FIELD OVERWRITE base ON TABLE document TYPE option<string>;
 -- How citations print: (Author, 2024) or [1].
 DEFINE FIELD OVERWRITE cite_style ON TABLE document TYPE option<string> DEFAULT 'author-year' ASSERT $value IN ['author-year', 'numeric'];
 DEFINE FIELD OVERWRITE created_at ON TABLE document TYPE option<datetime> DEFAULT time::now() READONLY;

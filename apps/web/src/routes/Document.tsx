@@ -125,8 +125,8 @@ function Workspace(props: { doc: DocumentRow; papers: PaperRow[]; courseKey: str
   const { text, textOf, edit, hold, saveAll, whenSaved, unsaved, rejected } = createDrafts({
     db,
     rows: () => [props.doc],
-    // `base` is not in the sp00ky schema (apps/api/src/server-schema.surql): the database refuses a save whose text changed meanwhile.
-    save: async (row, content, parent) => db.update('document', row, (parent === undefined ? { content } : { content, base: await textHash(parent) }) as { content: string }),
+    // The database refuses a save whose text changed meanwhile (`document_stale_save`).
+    save: async (row, content, parent) => db.update('document', row, parent === undefined ? { content } : { content, base: await textHash(parent) }),
     onOverlap: () => setNotice('This text was also changed elsewhere, in the same place you are writing. Your text is kept, the other one is in History.'),
   });
 
