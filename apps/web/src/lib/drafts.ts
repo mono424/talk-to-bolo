@@ -59,14 +59,18 @@ async function dropSupersededSaves(db: Db) {
   }
 }
 
-/** Of `texts`, the one sharing the most with `text` at both ends: what it was most likely built on. */
+/**
+ * Of `texts`, oldest first, the one sharing the most with `text` at both ends:
+ * what it was most likely built on. A tie goes to the older one, so that a change
+ * of this page that the other text also rewrote still counts as a change.
+ */
 function closest(texts: readonly string[], text: string): string | undefined {
   let best: string | undefined;
   let score = -1;
   for (const candidate of texts) {
     const { from, to } = replacedStretch(candidate, text);
     const shared = from + candidate.length - to;
-    if (shared >= score) {
+    if (shared > score) {
       best = candidate;
       score = shared;
     }
