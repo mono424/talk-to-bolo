@@ -1,3 +1,4 @@
+import { RecordId } from '@spooky-sync/client-solid';
 import { createEffect, createSignal, onCleanup } from 'solid-js';
 import { idString } from './ids';
 import type { Db } from './query';
@@ -21,12 +22,41 @@ const ECHO_MS = 2000;
 /** With every save through and the row still holding something else, someone else wrote after them. */
 const FOREIGN_MS = 20_000;
 
+/**
+ * Clears out what a browser queued before only one save went out at a time:
+ * every save held the whole text, and a queue too long to go through before
+ * the push deadline was sent again from the start, again and again, putting
+ * old text back each time. Only the last save of a row is still needed. The
+ * outbox has no API for this, so this reaches into the client. Once per page
+ * load, and a failure only leaves the queue as it was.
+ */
+let swept = false;
+async function dropSupersededSaves(db: Db) {
+  if (swept) return;
+  swept = true;
+  try {
+    const { local } = (db.getSp00ky() as unknown as { services: { local: { query: (sql: string, vars?: Record<string, unknown>) => Promise<unknown[]> } } }).services;
+    const result = await local.query('SELECT * FROM _00_pending_mutations ORDER BY id ASC');
+    const rows = (Array.isArray(result[0]) ? result[0] : []) as { id: unknown; mutationType?: string; recordId?: unknown; tableName?: string; data?: Record<string, unknown> }[];
+    const saves = rows.filter((r) => r.mutationType === 'update' && (r.tableName === 'document' || r.tableName === 'answer') && Object.keys(r.data ?? {}).join() === 'content');
+    const last = new Map(saves.map((r) => [idString(r.recordId), r]));
+    for (const row of saves) {
+      if (last.get(idString(row.recordId)) === row) continue;
+      const key = idString(row.id).replace(/^[^:]*:/, '').replace(/^⟨|⟩$/g, '');
+      await local.query('DELETE $mid', { mid: new RecordId('_00_pending_mutations', key) });
+    }
+  } catch (err) {
+    console.warn('Could not shorten the queue of saves', err);
+  }
+}
+
 export function createDrafts<R extends { id: unknown; content?: string | null }>(opts: {
   db: Db;
   rows: () => readonly R[];
   save: (id: string, value: string) => Promise<unknown>;
 }) {
   const { db } = opts;
+  void dropSupersededSaves(db);
   const [drafts, setDrafts] = createSignal<Record<string, string>>({});
   const [rejected, setRejected] = createSignal(false);
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
